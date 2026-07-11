@@ -915,6 +915,7 @@ class MQTTClient:
     async def _publish_entity(
         self, device: CyncDevice, registry_struct: dict, entity_uuid: str
     ):
+        lp = f"{self.lp}publish entity:"
         tpc_str_template = "{0}/{1}/{2}/config"
         dev_type = "light"
         if device.is_light:
@@ -988,6 +989,27 @@ class MQTTClient:
             logger.error(
                 "%s - Unable to publish mqtt message... skipped -> %s" % (lp, e)
             )
+
+        # A device's classification can change between cync-lan versions (e.g. a switch
+        # type gets reclassified from LIGHT to SWITCH). HA has no way to know the old
+        # platform's entity is stale, so it lingers as a duplicate alongside the new one.
+        # Clear any other platform's discovery config for this same entity every time we
+        # (re)announce it, so stale entities from a prior classification get removed.
+        for stale_type in ("light", "switch", "fan"):
+            if stale_type == dev_type:
+                continue
+            stale_tpc = tpc_str_template.format(self.ha_topic, stale_type, entity_uuid)
+            try:
+                _ = (
+                    await self.client.publish(stale_tpc, b"", qos=0, retain=True)
+                    if not MQTT_DEAD
+                    else None
+                )
+            except Exception as e:
+                logger.debug(
+                    f"{lp} Unable to clear stale '{stale_type}' discovery config for "
+                    f"{entity_uuid}, skipped -> {e}"
+                )
 
     def _get_device_registry(self, node: CyncDevice):
         device_uuid = node.hass_id
