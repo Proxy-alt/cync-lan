@@ -280,6 +280,16 @@ device_type_map = {
         model_name="Full Color Light (Unknown)",
         capabilities=LightCapabilities(color=True, tunable_white=True),
     ),
+    36: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Light Switch",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(dimmable=True),
+        notes=[
+            "Confirmed dimmable by an owner; RGB/tunable-white support and exact "
+            "protocol (BT only vs BT & WiFi vs Matter) unconfirmed, see issue #12",
+        ],
+    ),
     37: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Dimmer Switch with Motion and Ambient Light",
@@ -357,10 +367,15 @@ device_type_map = {
         capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
     ),
     53: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Toggle Switch",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "Binary on/off only, confirmed via owner's debug logs (bri always 0 "
+            "regardless of state) and cloud export showing the same deviceType used "
+            "for both fan-wired and light-wired toggle switches",
+        ],
     ),
     55: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -484,6 +499,19 @@ device_type_map = {
         type=DeviceClassification.LIGHT,
         model_name="Tunable White Light (Unknown)",
         capabilities=LightCapabilities(tunable_white=True),
+    ),
+    96: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="Motion Sensor",
+        supported=False,
+        notes=[
+            "Standalone BTLE motion sensor accessory (not a light or switch with "
+            "built-in motion detection like type 56/37/49).",
+            "cync-lan has no entity model for standalone sensors yet (no binary_sensor "
+            "discovery, no parsing for motion-trigger packets). Marked unsupported "
+            "rather than silently dropped so it shows up correctly in HASS discovery logs. "
+            "Needs a packet capture of a motion-trigger event to add real support.",
+        ],
     ),
     107: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,

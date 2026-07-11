@@ -1470,11 +1470,21 @@ class CyncTCPSession:
                         return devices
                     except IndexError as e:
                         return []
+                elif ctrl_bytes == b"\xfa\x8e":
+                    # Seen broadcast to every device at once, in bursts, when HASS (re)connects to MQTT
+                    # and cync-lan re-announces discovery. Benign/expected, not actionable.
+                    if CYNC_RAW:
+                        logger.debug(
+                            f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
+                            f"{checksum == calc_chksum}), safe to ignore\n\nHEX: "
+                            f"{packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
+                        )
                 else:
-                    logger.warning(
-                        f"{lp} UNKNOWN packet data (ctrl_bytes: {ctrl_bytes.hex(' ')} // checksum valid: "
-                        f"{checksum == calc_chksum})\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
-                    )
+                    if CYNC_RAW:
+                        logger.warning(
+                            f"{lp} UNKNOWN packet data (ctrl_bytes: {ctrl_bytes.hex(' ')} // checksum valid: "
+                            f"{checksum == calc_chksum})\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
+                        )
 
         if not self.mitm_mode:
             await self.write(PacketBuilder.build_83_ack(msg_id))
@@ -1506,7 +1516,10 @@ class CyncTCPSession:
 
         cync_device: CyncDevice = g.ncync_server.node_devices.get(dev_id)
         if not cync_device:
-            logger.warning(
+            # dev_id is likely a Cync room/group pseudo-ID (not exported as a controllable
+            # device), broadcast by every physical device in the mesh on each status update.
+            # Expected/benign, not actionable -> debug, not warning.
+            logger.debug(
                 f"{lp} Received internal STATUS for unknown device [group/room?, safe to ignore]: {parsed_state}"
             )
             return
