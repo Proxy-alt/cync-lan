@@ -949,6 +949,9 @@ class MQTTClient:
             if not registry_struct["supported_color_modes"]:
                 registry_struct["supported_color_modes"].append("brightness")
 
+        elif dev_type == "switch":
+            registry_struct["device_class"] = "outlet" if device.is_plug else "switch"
+
         elif dev_type == "fan":
             registry_struct["platform"] = "fan"
             # fan can be controlled via light control structs: brightness -> max=100, high=75, medium=50, low=25, off=0
