@@ -1448,6 +1448,17 @@ class CyncTCPSession:
                     await self._parse_83_device_state(
                         packet_data, checksum, calc_chksum, lp
                     )
+                elif ctrl_bytes == b"\xfa\xdb":
+                    # Other fa db sub-types (packet_data[7] != 0x13) are seen when the
+                    # Cync phone app connects to a device via BTLE (not TCP). Benign,
+                    # not actionable.
+                    if CYNC_RAW:
+                        logger.debug(
+                            f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} sub-type "
+                            f"{packet_data[7]:#04x} // checksum valid: "
+                            f"{checksum == calc_chksum}), safe to ignore\n\nHEX: "
+                            f"{packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
+                        )
                 elif ctrl_bytes == b"\xfa\xd9":
                     # seems to be some sort of bulk status msg. seen when updating devices firmware,
                     # it seemed to broadcast each devices percentage complete status
@@ -1473,6 +1484,15 @@ class CyncTCPSession:
                 elif ctrl_bytes == b"\xfa\x8e":
                     # Seen broadcast to every device at once, in bursts, when HASS (re)connects to MQTT
                     # and cync-lan re-announces discovery. Benign/expected, not actionable.
+                    if CYNC_RAW:
+                        logger.debug(
+                            f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
+                            f"{checksum == calc_chksum}), safe to ignore\n\nHEX: "
+                            f"{packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
+                        )
+                elif ctrl_bytes == b"\xfa\xaf":
+                    # Seen broadcast to many devices at once, in bursts, when the Cync
+                    # phone app (dis)connects to the BTLE mesh. Benign, not actionable.
                     if CYNC_RAW:
                         logger.debug(
                             f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
