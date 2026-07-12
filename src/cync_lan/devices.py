@@ -1674,6 +1674,14 @@ class CyncTCPSession:
                 continue
 
             dev_id = mesh_dev_struct[0]
+            if CYNC_RAW:
+                # TEMP diagnostic: confirm whether packet_devices/total_devices bound
+                # the real entries and slots beyond it are zero-padding (dev_id 0).
+                logger.debug(
+                    f"{lp}mesh: DIAG packet_devices={packet_devices} "
+                    f"total_devices={total_devices} loop_num={loop_num} dev_id={dev_id} "
+                    f"raw={mesh_dev_struct.hex(' ')}"
+                )
             dev_type_id = mesh_dev_struct[2]
             dev_state, dev_bri, dev_tmp = (
                 mesh_dev_struct[8],
