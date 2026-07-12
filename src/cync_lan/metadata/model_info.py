@@ -27,7 +27,7 @@ class LightCapabilities:
 
 @dataclass
 class SwitchCapabilities(LightCapabilities):
-    dimmable = False
+    dimmable: bool = False
     fan: bool = False
     plug: bool = False
 
@@ -335,7 +335,7 @@ device_type_map = {
     47: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name='Reveal Full Color 6" Recessed Downlight',
-        model_info="CFIXRSCR6CRVD",
+        model_id="CFIXRSCR6CRVD",
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(color=True, tunable_white=True),
     ),
@@ -448,7 +448,7 @@ device_type_map = {
     71: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Full Color Dynamic Effects Premium Thin Light Strip",
-        model_info="CSTR16CDID",
+        model_id="CSTR16CDID",
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
@@ -464,7 +464,7 @@ device_type_map = {
     76: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Full Color Dynamic Effects Cafe` Lights",
-        model_info="CCF48CDOD",
+        model_id="CCF48CDOD",
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True, dynamic=True),
         characteristics=LightCharacteristics(
@@ -516,7 +516,7 @@ device_type_map = {
     107: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Full Color Reveal HD+ Bulb",
-        model_info="CLEDA199CDRV",
+        model_id="CLEDA199CDRV",
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
