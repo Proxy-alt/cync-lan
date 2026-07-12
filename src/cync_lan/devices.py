@@ -1451,7 +1451,8 @@ class CyncTCPSession:
                 elif ctrl_bytes == b"\xfa\xdb":
                     # Other fa db sub-types (packet_data[7] != 0x13) are seen when the
                     # Cync phone app connects to a device via BTLE (not TCP). Benign,
-                    # not actionable.
+                    # not actionable, but useful as an "app is active" signal.
+                    await g.mqtt_client.mark_app_mesh_active()
                     if CYNC_RAW:
                         logger.debug(
                             f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} sub-type "
@@ -1492,9 +1493,11 @@ class CyncTCPSession:
                         )
                 elif ctrl_bytes in (b"\xfa\xaf", b"\xfa\xf0"):
                     # Seen broadcast to many devices at once, in bursts, when the Cync
-                    # phone app (dis)connects to the BTLE mesh. Benign, not actionable.
+                    # phone app (dis)connects to the BTLE mesh. Benign, not actionable,
+                    # but useful as an "app is active" signal.
                     # (fa af is documented elsewhere in this file; fa f0 is undocumented
                     # but observed firing on the exact same devices in the same bursts.)
+                    await g.mqtt_client.mark_app_mesh_active()
                     if CYNC_RAW:
                         logger.debug(
                             f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "

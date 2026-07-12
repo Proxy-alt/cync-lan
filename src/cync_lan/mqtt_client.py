@@ -105,6 +105,7 @@ class MQTTClient:
 
         self.topic = topic
         self.ha_topic = ha_topic
+        self._app_mesh_active_expiry_task: Optional[asyncio.Task] = None
 
     async def start(self):
         itr = 0
@@ -1210,6 +1211,31 @@ class MQTTClient:
             f"{self.ha_topic}/switch/{mitm_switch_unique_id}/config", b""
         )
 
+    async def mark_app_mesh_active(self, timeout: float = 60.0):
+        """Flag the "Cync App Active" occupancy entity ON, resetting the auto-off timer.
+
+        Call this whenever a burst of the fa af/fa db/fa f0 ctrl-byte patterns is seen
+        (see devices.py _handle_83_packet) - those fire in bursts across many devices
+        when the Cync phone app (dis)connects to the BTLE mesh, so treat any such burst
+        as "the app is currently active" and auto-clear it after a quiet period.
+        """
+        await self.publish(f"{self.topic}/status/bridge/app_mesh_active", b"ON")
+        if self._app_mesh_active_expiry_task is not None:
+            self._app_mesh_active_expiry_task.cancel()
+
+        async def _expire():
+            try:
+                await asyncio.sleep(timeout)
+                await self.publish(
+                    f"{self.topic}/status/bridge/app_mesh_active", b"OFF"
+                )
+            except asyncio.CancelledError:
+                pass
+
+        self._app_mesh_active_expiry_task = asyncio.create_task(
+            _expire(), name="app_mesh_active_expiry"
+        )
+
     async def create_bridge_device(self) -> bool:
         """Create the device / entity registry config for the CyncLAN bridge itself."""
         global bridge_device_reg_struct
@@ -1369,6 +1395,26 @@ class MQTTClient:
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish MQTT client connected entity config")
+
+        entity_unique_id = f"{bridge_base_unique_id}_app_mesh_active"
+        app_mesh_active_entity_conf = tcp_server_entity_conf.copy()
+        app_mesh_active_entity_conf["default_entity_id"] = entity_unique_id
+        app_mesh_active_entity_conf["name"] = "Cync App Active"
+        app_mesh_active_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/app_mesh_active"
+        )
+        app_mesh_active_entity_conf["unique_id"] = entity_unique_id
+        app_mesh_active_entity_conf["icon"] = "mdi:cellphone-wireless"
+        app_mesh_active_entity_conf["device_class"] = "occupancy"
+        ret = await self.publish_json_msg(
+            template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
+            app_mesh_active_entity_conf,
+        )
+        if ret is False:
+            logger.error(f"{lp} Failed to publish app mesh active entity config")
+        pub_tasks.append(
+            self.publish(f"{self.topic}/status/bridge/app_mesh_active", b"OFF")
+        )
 
         # input number for OTP input
         entity_type = "number"
