@@ -67,6 +67,7 @@ __all__ = [
     "CYNC_ACCOUNT_USERNAME",
     "CYNC_ACCOUNT_PASSWORD",
     "CYNC_ACCOUNT_LANGUAGE",
+    "CYNC_MITM_ENTITIES",
 ]
 
 YES_ANSWER = ("true", "1", "yes", "y", "t", 1, "on", "o")
@@ -101,6 +102,10 @@ CYNC_ACCOUNT_USERNAME: str = os.environ.get("CYNC_ACCOUNT_USERNAME", None)
 CYNC_ACCOUNT_PASSWORD: str = os.environ.get("CYNC_ACCOUNT_PASSWORD", None)
 CYNC_MITM_DEV_LOGGER: bool = os.environ.get("CYNC_MITM_DEV_LOGGER", 'no').casefold() in YES_ANSWER
 CYNC_MITM_APP_LOGGER: bool = os.environ.get("CYNC_MITM_APP_LOGGER", 'no').casefold() in YES_ANSWER
+# Whether to expose a per-device "MITM Mode" switch entity in HASS. Off by default since
+# it's a developer/reverse-engineering feature most users don't want cluttering their
+# entity list; MITM mode itself is still usable via raw MQTT if needed.
+CYNC_MITM_ENTITIES: bool = os.environ.get("CYNC_MITM_ENTITIES", 'no').casefold() in YES_ANSWER
 
 CYNC_CMD_BROADCASTS: int = os.environ.get("CYNC_CMD_BROADCASTS", 2)
 if not CYNC_CMD_BROADCASTS:

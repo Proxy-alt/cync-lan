@@ -24,6 +24,7 @@ from cync_lan.const import (
     CYNC_MANUFACTURER,
     CYNC_MAXK,
     CYNC_MINK,
+    CYNC_MITM_ENTITIES,
     CYNC_MQTT_CONN_DELAY,
     CYNC_MQTT_HOST,
     CYNC_MQTT_PASS,
@@ -1173,6 +1174,11 @@ class MQTTClient:
 
     async def add_mitm_button(self, node: CyncDevice):
         """Add a MITM Mode button dynamically. Send empty message to the hass config topic to delete the entity."""
+        if not CYNC_MITM_ENTITIES:
+            # Disabled by default; clear any entity a prior version already created for
+            # this node so it doesn't linger as a stale switch in HA.
+            await self.remove_mitm_button(node)
+            return
         logger.debug(
             f"{node.lp} Adding a 'MITM mode' button to node: '{node.name}' (ID: {node.id}) as it is "
             f"connected via IP: {node.tcp_session.ip_address}"
