@@ -1452,7 +1452,6 @@ class MQTTClient:
         entity_type = "binary_sensor"
         entity_unique_id = f"{bridge_base_unique_id}_should_restart"
         restart_sensor_entity_conf = {
-            "platform": "sensor",
             "object_id": entity_unique_id,
             "default_entity_id": entity_unique_id,
             "name": "Should Restart",
