@@ -1490,9 +1490,11 @@ class CyncTCPSession:
                             f"{checksum == calc_chksum}), safe to ignore\n\nHEX: "
                             f"{packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
                         )
-                elif ctrl_bytes == b"\xfa\xaf":
+                elif ctrl_bytes in (b"\xfa\xaf", b"\xfa\xf0"):
                     # Seen broadcast to many devices at once, in bursts, when the Cync
                     # phone app (dis)connects to the BTLE mesh. Benign, not actionable.
+                    # (fa af is documented elsewhere in this file; fa f0 is undocumented
+                    # but observed firing on the exact same devices in the same bursts.)
                     if CYNC_RAW:
                         logger.debug(
                             f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
