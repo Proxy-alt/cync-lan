@@ -106,6 +106,21 @@ def capture_unsupported_device(
     )
 
 
+def capture_unknown_packet(ip_lp: str, reason: str, raw: bytes):
+    """Write a genuinely unrecognized packet to the dedicated unsupported-devices log
+    - one that doesn't even parse far enough to have a dev_id (an unrecognized
+    top-level header byte, or unrecognized ctrl_bytes on a 0x83/0x73 packet). This is
+    the more important case for something like a standalone sensor that might not use
+    any packet shape cync-lan already knows about at all. See capture_unsupported_device
+    for the dev_id-based case. No-op unless CYNC_UNSUPPORTED_RAW_DEBUG is set.
+    """
+    if not CYNC_UNSUPPORTED_RAW_DEBUG:
+        return
+    _get_unsupported_logger().debug(
+        f"{ip_lp} UNKNOWN ({reason})\nHEX: {raw.hex(' ')}\nINT: {list(raw)}"
+    )
+
+
 class CyncDevice:
     """
     A class to represent a physical Cync device
@@ -1302,6 +1317,11 @@ class CyncTCPSession:
                 logger.warning(
                     f"{loop_lp} Unknown packet header: {data[0].to_bytes(1, 'big').hex(' ')}"
                 )
+                capture_unknown_packet(
+                    loop_lp,
+                    f"packet header {data[0]:#04x}",
+                    data,
+                )
 
             if length_needed > data_len:
                 self.needs_more_data = True
@@ -1587,6 +1607,9 @@ class CyncTCPSession:
                             f"{lp} UNKNOWN packet data (ctrl_bytes: {ctrl_bytes.hex(' ')} // checksum valid: "
                             f"{checksum == calc_chksum})\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
                         )
+                    capture_unknown_packet(
+                        lp, f"0x83 ctrl_bytes {ctrl_bytes.hex(' ')}", packet_data[1:-1]
+                    )
 
         if not self.mitm_mode:
             await self.write(PacketBuilder.build_83_ack(msg_id))
@@ -1712,6 +1735,19 @@ class CyncTCPSession:
                                 self.protocol_version, self.protocol_version_str = fw_ver, fw_str
                         except Exception as e:
                             logger.debug(f"{lp} Exception during firmware parsing: {e}")
+
+                else:
+                    # Unlike _handle_83_packet, this had no catch-all at all - an
+                    # unrecognized 0x73 ctrl_bytes pattern was previously silently
+                    # dropped with zero logging.
+                    if CYNC_RAW:
+                        logger.debug(
+                            f"{lp} UNKNOWN 0x73 ctrl_bytes: {ctrl_bytes.hex(' ')}\n\n"
+                            f"HEX: {packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
+                        )
+                    capture_unknown_packet(
+                        lp, f"0x73 ctrl_bytes {ctrl_bytes.hex(' ')}", packet_data[1:-1]
+                    )
 
         if not self.mitm_mode:
             # logger.debug(f"DBG>>>> Queue ID = {queue_id.hex(' ')}")
