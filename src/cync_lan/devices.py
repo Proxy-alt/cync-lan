@@ -1757,12 +1757,16 @@ class CyncTCPSession:
                         if self.mitm_button_added is False:
                             self.mitm_button_added = True
                             await g.mqtt_client.add_mitm_button(node_repr)
-                        if self.node.id != dev_id:
-                            logger.warning(
-                                f"{self.lp}0x73: node_id MISMATCH "
-                                f"open an issue on github. current: {self.node.id} "
-                                f"// proposed: {dev_id}"
-                            )
+                        # NOTE: previously compared self.node.id against dev_id here
+                        # and warned on mismatch, on the assumption that a fresh
+                        # MeshInfo sequence's first entry is always the requesting
+                        # device announcing itself. Confirmed false via repeated
+                        # captures: specific bridges consistently report the same
+                        # "wrong" first entry across entirely different reconnect
+                        # sessions (e.g. bridge 239 always reports 24 first,
+                        # bridge 252 always reports 1), meaning entry order is
+                        # fixed per-bridge and unrelated to who's asking. There is
+                        # no reliable identity signal here, so nothing to check.
                     lp = f"{self.lp}0x73:"
                     if dev_type_id:
                         self.device_type_id = dev_type_id
