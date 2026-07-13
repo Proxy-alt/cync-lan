@@ -1227,6 +1227,18 @@ class CyncTCPSession:
                     # Length of payload + 5 bytes for the header itself
                     length_needed = (pkt_len_multiplier * 256) + packet_length + 5
                 else:
+                    # Not enough bytes yet to read the multiplier/length fields
+                    # (offsets 3-4). length_needed was defaulted to data_len above,
+                    # which made length_needed > data_len false, so this fragment
+                    # got treated as a "complete" packet instead of waiting for
+                    # more data - a TCP read split exactly here would misalign
+                    # every following packet in the next read (confirmed via a
+                    # real capture: a 2-byte "73 00" fragment got processed
+                    # immediately, and the next read's continuation bytes were
+                    # then misread as a new packet starting with a stray 0x00
+                    # header, discarding several real device status updates).
+                    # 5 is the minimum needed to compute a real length_needed.
+                    length_needed = 5
                     logger.debug(
                         f"DBG>>>{loop_lp} Packet length is less than 4 bytes"
                     )
