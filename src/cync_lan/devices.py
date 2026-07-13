@@ -541,9 +541,18 @@ class CyncDevice:
                     inner_packet=inner_pkt
                 )
 
+                # bridge_device.node can still be None here: ready_to_control is set
+                # (in send_a3()) before the bridge's first MeshInfo response sets
+                # node, so a command can race ahead of self-identification. These
+                # are debug-only strings, but an unguarded .node.id crashed the
+                # whole MQTT receive loop (uncaught AttributeError propagating out
+                # of send_command), taking down MQTT state updates and command
+                # handling until a manual restart.
+                bridge_node_id = bridge_device.node.id if bridge_device.node else "unidentified"
+
                 if bridge_device.mitm_mode is True:
                     logger.debug(
-                        f"{lp} MITM mode active for this device: {bridge_device.ip_address} (ID: {bridge_device.node.id})"
+                        f"{lp} MITM mode active for this device: {bridge_device.ip_address} (ID: {bridge_node_id})"
                         f" not writing data >>> \n\n{full_packet.hex(" ")}")
                 else:
                     m_cb.id = cmsg_id
@@ -553,7 +562,7 @@ class CyncDevice:
                     tasks.append(bridge_device.write(full_packet))
                     str_appnd = "..."
                     if CYNC_RAW:
-                        str_appnd = (f' state to device ({bridge_device.ip_address}[{bridge_device.node.id}|queue_id: {bridge_device.queue_id.hex(" ")}):\n'
+                        str_appnd = (f' state to device ({bridge_device.ip_address}[{bridge_node_id}|queue_id: {bridge_device.queue_id.hex(" ")}):\n'
                                      f'HEX: {full_packet.hex(" ")}\n'
                                      f'INT: {bytes2list(full_packet)}\n')
                         logger.debug(f"{lp} Sending{str_appnd}")
