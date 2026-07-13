@@ -1544,8 +1544,17 @@ class CyncTCPSession:
             # dev_id is likely a Cync room/group pseudo-ID (not exported as a controllable
             # device), broadcast by every physical device in the mesh on each status update.
             # Expected/benign, not actionable -> debug, not warning.
+            _raw = ""
+            if CYNC_RAW:
+                # TEMP diagnostic: dev_id=0 entries have shown atypical field values
+                # (power=2, recently_seen=17, etc - not valid booleans), unlike the
+                # dev_id=28 "room/group" case which is always static/all-zero. Dump
+                # the raw bytes to check whether this is genuinely dev_id=0 on the
+                # wire or a byte-alignment misread, and whether it might be an
+                # unrecognized device type (e.g. a motion sensor) reusing this format.
+                _raw = f"\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
             logger.debug(
-                f"{lp} Received internal STATUS for unknown device [group/room?, safe to ignore]: {parsed_state}"
+                f"{lp} Received internal STATUS for unknown device [group/room?, safe to ignore]: {parsed_state}{_raw}"
             )
             return
 
