@@ -87,9 +87,26 @@ def capture_unsupported_device(
     unsupported-devices log, tagged with whatever identity info is available.
     No-op unless CYNC_UNSUPPORTED_RAW_DEBUG is set - independent of CYNC_RAW_DEBUG,
     so this can be left running for an extended capture without full raw-debug noise.
+
+    Filters:
+      - Feature flag off                       → no-op
+      - Known + supported device               → no-op (nothing unusual)
+      - dev_id == 0 (mesh broadcast pseudo-ID) → no-op (protocol artifact, not a device)
+
+    About dev_id == 0
+    -----------------
+    In the Cync BTLE mesh protocol, valid addressable device IDs occupy the
+    1–255 range.  ID 0 is reserved as a broadcast / group pseudo-address used
+    by the mesh network itself.  Every bridge re-broadcasts a status update for
+    dev_id=0 on every state-change cycle (fa db 13 packets with the group's
+    aggregate power state).  These are expected, benign, and appear in very high
+    volume — logging them would drown the unsupported-devices file with hundreds
+    of false-positives per minute.
     """
     if not CYNC_UNSUPPORTED_RAW_DEBUG:
         return
+    if dev_id == 0:
+        return  # mesh broadcast/group pseudo-ID, not an actual device
     node_repr = g.ncync_server.node_devices.get(dev_id)
     if node_repr is not None:
         if node_repr.metadata is not None and node_repr.metadata.supported:
@@ -1753,6 +1770,21 @@ class CyncTCPSession:
                     elif success and not msg:
                         logger.debug(
                             f"{lp} CONTROL packet ACK callback NOT found for msg ID: {ctrl_msg_id}"
+                        )
+
+                elif ctrl_bytes == b"\xf9\xaf":
+                    # Device confirmation of our 0xF8/0xAF mesh-status-ack.  The
+                    # server sends "f8 af 02 00 af 01" after each MeshInfo page;
+                    # the device echoes back "f9 af 01 00 00" to acknowledge it.
+                    # packet_data[7] == 0x01 means the device accepted the ack
+                    # successfully.  Nothing actionable beyond logging; the outer
+                    # 0x78 ack is sent unconditionally at the end of this handler.
+                    if CYNC_RAW:
+                        success = packet_data[7] == 1
+                        logger.debug(
+                            f"{lp} Mesh-status-ack confirmation (f9 af) received, "
+                            f"success={success}\nHEX: {packet_data[1:-1].hex(' ')}\n"
+                            f"INT: {list(packet_data[1:-1])}"
                         )
 
                 elif ctrl_bytes == b"\xfa\x8e":
