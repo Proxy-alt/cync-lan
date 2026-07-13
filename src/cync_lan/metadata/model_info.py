@@ -553,6 +553,25 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
+    112: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Wireless Switch (BTLE only, battery-powered scene remote)",
+        capabilities=SwitchCapabilities(),
+        supported=False,
+        notes=[
+            "Confirmed via a real cloud export (4 units): deviceType 112, no "
+            "dimmable/color output of its own - 'lightRing*' fields (brightness/"
+            "color/mode) describe a status LED ring, not a controllable light. "
+            "occupancyEnable/occupancySensitivity present but disabled on these "
+            "units. No wifiMac (BTLE-only, same as the type-96 motion sensors - "
+            "see the wifiMac-optional cloud_api.py export fix). Pressing the "
+            "physical switch to toggle its paired light produced no observable "
+            "packet in a live capture (unsupported_devices.log unchanged) - it "
+            "likely drives its paired light directly over the BTLE mesh without "
+            "routing through the WiFi-connected bridge our TCP listener sees. "
+            "Marked unsupported until real packet data surfaces for it.",
+        ],
+    ),
     113: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Wire-Free Dimmer with White Temperature Switch (BTLE only)",
