@@ -21,6 +21,8 @@ from cync_lan.const import (
     CYNC_MITM_DEV_LOGGER,
     CYNC_RAW,
     CYNC_TCP_WHITELIST,
+    CYNC_UNSUPPORTED_LOG_PATH,
+    CYNC_UNSUPPORTED_RAW_DEBUG,
     DATA_BOUNDARY,
     FACTORY_EFFECTS_BYTES,
     RAW_MSG,
@@ -48,6 +50,60 @@ from cync_lan.utils import bytes2list, extract_firmware_dynamically, format_soca
 __all__ = ["CyncDevice", "CyncTCPSession"]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
+
+_unsupported_logger: Optional[logging.Logger] = None
+
+
+def _get_unsupported_logger() -> logging.Logger:
+    """Lazily set up the dedicated, always-separate log file for unsupported/unknown
+    device captures (see CYNC_UNSUPPORTED_RAW_DEBUG). Mirrors the per-connection MITM
+    logger setup, but as a single shared logger so all sightings land in one file."""
+    global _unsupported_logger
+    if _unsupported_logger is not None:
+        return _unsupported_logger
+    ulogger = logging.getLogger("cync_lan.unsupported")
+    ulogger.setLevel(logging.DEBUG)
+    ulogger.propagate = False
+    log_path = Path(CYNC_UNSUPPORTED_LOG_PATH)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    formatter = logging.Formatter(
+        "%(asctime)s.%(msecs)03d %(message)s", datefmt="%Y/%m/%d %H:%M:%S"
+    )
+    file_handler = logging.handlers.TimedRotatingFileHandler(log_path, when="midnight")
+    file_handler.setFormatter(formatter)
+    ulogger.addHandler(file_handler)
+    _unsupported_logger = ulogger
+    return ulogger
+
+
+def capture_unsupported_device(
+    ip_lp: str,
+    dev_id: int,
+    from_pkt: str,
+    ctrl_bytes: Optional[bytes],
+    raw: bytes,
+):
+    """Write one sighting of an unrecognized/unsupported device to the dedicated
+    unsupported-devices log, tagged with whatever identity info is available.
+    No-op unless CYNC_UNSUPPORTED_RAW_DEBUG is set - independent of CYNC_RAW_DEBUG,
+    so this can be left running for an extended capture without full raw-debug noise.
+    """
+    if not CYNC_UNSUPPORTED_RAW_DEBUG:
+        return
+    node_repr = g.ncync_server.node_devices.get(dev_id)
+    if node_repr is not None:
+        if node_repr.metadata is not None and node_repr.metadata.supported:
+            return  # a real, supported device - nothing unusual to capture
+        name = node_repr.name
+        dev_type = node_repr.type
+    else:
+        name = "(not in local config)"
+        dev_type = "?"
+    ctrl_str = ctrl_bytes.hex(" ") if ctrl_bytes else "n/a"
+    _get_unsupported_logger().debug(
+        f"{ip_lp} dev_id={dev_id} name='{name}' type={dev_type} from_pkt={from_pkt} "
+        f"ctrl_bytes={ctrl_str}\nHEX: {raw.hex(' ')}\nINT: {list(raw)}"
+    )
 
 
 class CyncDevice:
@@ -1561,21 +1617,15 @@ class CyncTCPSession:
             return
 
         cync_device: CyncDevice = g.ncync_server.node_devices.get(dev_id)
+        capture_unsupported_device(
+            lp, dev_id, from_pkt="0x83", ctrl_bytes=b"\xfa\xdb", raw=packet_data[1:-1]
+        )
         if not cync_device:
             # dev_id is likely a Cync room/group pseudo-ID (not exported as a controllable
             # device), broadcast by every physical device in the mesh on each status update.
             # Expected/benign, not actionable -> debug, not warning.
-            _raw = ""
-            if CYNC_RAW:
-                # TEMP diagnostic: dev_id=0 entries have shown atypical field values
-                # (power=2, recently_seen=17, etc - not valid booleans), unlike the
-                # dev_id=28 "room/group" case which is always static/all-zero. Dump
-                # the raw bytes to check whether this is genuinely dev_id=0 on the
-                # wire or a byte-alignment misread, and whether it might be an
-                # unrecognized device type (e.g. a motion sensor) reusing this format.
-                _raw = f"\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
             logger.debug(
-                f"{lp} Received internal STATUS for unknown device [group/room?, safe to ignore]: {parsed_state}{_raw}"
+                f"{lp} Received internal STATUS for unknown device [group/room?, safe to ignore]: {parsed_state}"
             )
             return
 
@@ -1746,6 +1796,9 @@ class CyncTCPSession:
                 dev_bri = 0
 
             node_repr: Optional["CyncDevice"] = g.ncync_server.node_devices.get(dev_id)
+            capture_unsupported_device(
+                lp, dev_id, from_pkt="0x73", ctrl_bytes=b"\xf9\x52", raw=mesh_dev_struct
+            )
             if node_repr:
                 dev_name = node_repr.name
                 if loop_num == 1 and is_new_sequence:

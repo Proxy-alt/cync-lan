@@ -68,6 +68,8 @@ __all__ = [
     "CYNC_ACCOUNT_PASSWORD",
     "CYNC_ACCOUNT_LANGUAGE",
     "CYNC_MITM_ENTITIES",
+    "CYNC_UNSUPPORTED_RAW_DEBUG",
+    "CYNC_UNSUPPORTED_LOG_PATH",
 ]
 
 YES_ANSWER = ("true", "1", "yes", "y", "t", 1, "on", "o")
@@ -191,6 +193,17 @@ CYNC_MITM_LOG_PATH = os.environ.get("CYNC_MITM_LOG_PATH", f"{CYNC_CONFIG_DIR}/mi
 CYNC_MITM_LOG_DIR = os.environ.get("CYNC_MITM_LOG_DIR", f"{CYNC_CONFIG_DIR}/mitm_logs")
 CYNC_APP_MITM_LOGGING = (
     os.environ.get("CYNC_APP_MITM_LOGGING", "0").casefold() in YES_ANSWER
+)
+# Independent of CYNC_RAW_DEBUG (which floods logs with everything). When enabled,
+# any packet involving a device with no metadata (never-seen deviceType) or with
+# metadata.supported=False gets its raw hex dumped to a dedicated log file, so this
+# can be left on for an extended capture (e.g. overnight) without the noise cost of
+# full raw debugging, to gather data for adding real support for that device type.
+CYNC_UNSUPPORTED_RAW_DEBUG: bool = (
+    os.environ.get("CYNC_UNSUPPORTED_RAW_DEBUG", "no").casefold() in YES_ANSWER
+)
+CYNC_UNSUPPORTED_LOG_PATH = os.environ.get(
+    "CYNC_UNSUPPORTED_LOG_PATH", f"{CYNC_CONFIG_DIR}/unsupported_devices.log"
 )
 CYNC_CLOUD_IP = os.environ.get("CYNC_CLOUD_IP", "34.73.130.191")
 
