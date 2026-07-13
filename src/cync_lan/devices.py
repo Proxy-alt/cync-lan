@@ -1554,7 +1554,14 @@ class CyncTCPSession:
 
             else:
                 # --- Broadcast Status Parsing ---
-                struct_len = 20 if b"\x2e" in packet_data else 19
+                # Status structs are always 19 bytes. A previous heuristic bumped this
+                # to 20 whenever a 0x2e byte appeared anywhere in the packet, but that
+                # byte is just an ordinary field value on some devices (e.g. an index/
+                # marker byte), not a length indicator - confirmed via a real capture
+                # of a 2-device broadcast where the flat 19-byte stride correctly
+                # decoded both devices (matching their independently-reported 0x73
+                # status) while the 0x2e heuristic silently dropped the second one.
+                struct_len = 19
                 extractions = []
 
                 for i in range(0, packet_length, struct_len):
