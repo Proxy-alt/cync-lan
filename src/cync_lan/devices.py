@@ -1656,9 +1656,10 @@ class CyncTCPSession:
 
         packet_devices = inner_struct[8]
         total_devices = inner_struct[12]
-        if getattr(self, "_mesh_expected", 0) == 0 or getattr(
+        is_new_sequence = getattr(self, "_mesh_expected", 0) == 0 or getattr(
             self, "_mesh_received", 0
-        ) >= getattr(self, "_mesh_expected", 0):
+        ) >= getattr(self, "_mesh_expected", 0)
+        if is_new_sequence:
             self._mesh_expected = total_devices
             self._mesh_received = 0
             logger.debug(
@@ -1717,7 +1718,14 @@ class CyncTCPSession:
             node_repr: Optional["CyncDevice"] = g.ncync_server.node_devices.get(dev_id)
             if node_repr:
                 dev_name = node_repr.name
-                if loop_num == 1:
+                if loop_num == 1 and is_new_sequence:
+                    # Only the first entry of the FIRST page of a fresh MeshInfo
+                    # sequence is the device announcing itself. MeshInfo is
+                    # paginated (see is_new_sequence above); loop_num resets to 1
+                    # on every subsequent page too, but that page's first entry is
+                    # just whatever device the firmware happened to list first, not
+                    # necessarily self - checking identity against it produced
+                    # spurious "node_id MISMATCH" warnings.
                     # byte 3 (idx 2) is a device type byte but,
                     # it only reports on the first item (itself)
                     # convert to int, and it is the same as deviceType from cloud.
