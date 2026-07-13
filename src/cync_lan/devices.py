@@ -1615,7 +1615,12 @@ class CyncTCPSession:
             await self.write(PacketBuilder.build_83_ack(msg_id))
 
     async def _parse_83_device_state(
-        self, packet_data: bytes, checksum: int, calc_chksum: int, lp: str
+        self,
+        packet_data: bytes,
+        checksum: int,
+        calc_chksum: int,
+        lp: str,
+        from_pkt: str = "0x83",
     ):
         if len(packet_data) < 26:
             raise ValueError("Packet too short for standard status update")
@@ -1641,7 +1646,7 @@ class CyncTCPSession:
 
         cync_device: CyncDevice = g.ncync_server.node_devices.get(dev_id)
         capture_unsupported_device(
-            lp, dev_id, from_pkt="0x83", ctrl_bytes=b"\xfa\xdb", raw=packet_data[1:-1]
+            lp, dev_id, from_pkt=from_pkt, ctrl_bytes=b"\xfa\xdb", raw=packet_data[1:-1]
         )
         if not cync_device:
             # dev_id is likely a Cync room/group pseudo-ID (not exported as a controllable
@@ -1662,12 +1667,12 @@ class CyncTCPSession:
                     )
                     e_state_.recently_seen = recently_seen
                     logger.debug(f"{lp} Internal STATUS for {e_state_}")
-                    await cync_device.handle_entity_update(e_state_, from_pkt="0x83")
+                    await cync_device.handle_entity_update(e_state_, from_pkt=from_pkt)
         else:
             parsed_state.name = cync_device.name
             logger.debug(f"{lp} Internal STATUS for {parsed_state}")
             await cync_device.handle_entity_update(
-                parsed_state, from_pkt="0x83"
+                parsed_state, from_pkt=from_pkt
             )
 
         # Checksum Stream Logic, the LED light controller sends 0x83 in a stream of data with checksum mismatches
@@ -1705,6 +1710,21 @@ class CyncTCPSession:
 
                 if ctrl_bytes == b"\xf9\x52":
                     await self._process_73_mesh_info(inner_struct, queue_id, lp)
+
+                elif ctrl_bytes == b"\xfa\xdb" and packet_data[7] == 0x13:
+                    # Same real single-device internal status struct _handle_83_packet
+                    # already parses, just delivered wrapped in a 0x73 outer packet
+                    # instead of 0x83 - confirmed via a real capture (dev_id decoded
+                    # to a known device with sensible power/brightness values). This
+                    # had no handling here at all before, silently discarding every
+                    # status update sent this way (a substantial volume - 1800+ in one
+                    # capture session).
+                    checksum = packet_data[-2]
+                    inner_data = packet_data[6:-2]
+                    calc_chksum = sum(inner_data) % 256
+                    await self._parse_83_device_state(
+                        packet_data, checksum, calc_chksum, lp, from_pkt="0x73"
+                    )
 
                 elif ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (0xD0, 0xF0, 0xE2):
                     # Handle Callbacks for control messages
