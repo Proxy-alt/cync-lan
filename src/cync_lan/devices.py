@@ -1667,21 +1667,42 @@ class CyncTCPSession:
         self._mesh_received += packet_devices
 
         loop_num = 0
-        for i in range(minfo_start_idx, len(inner_struct), minfo_length):
+        i = minfo_start_idx
+        while i < len(inner_struct):
             loop_num += 1
             mesh_dev_struct = inner_struct[i : i + minfo_length]
             if len(mesh_dev_struct) < minfo_length:
-                continue
+                break
 
             dev_id = mesh_dev_struct[0]
-            if CYNC_RAW:
-                # TEMP diagnostic: confirm whether packet_devices/total_devices bound
-                # the real entries and slots beyond it are zero-padding (dev_id 0).
-                logger.debug(
-                    f"{lp}mesh: DIAG packet_devices={packet_devices} "
-                    f"total_devices={total_devices} loop_num={loop_num} dev_id={dev_id} "
-                    f"raw={mesh_dev_struct.hex(' ')}"
-                )
+            entry_len = minfo_length
+
+            if dev_id == 0:
+                # When a bridge reports more devices (packet_devices) than the true
+                # mesh total, it's folding in duplicate BTLE relay-path observations
+                # of the same device, and at least one relay path's entry is 1 byte
+                # longer/shorter than the normal 24-byte struct. That desyncs every
+                # following slot in the fixed-stride loop, producing a spurious
+                # dev_id=0 (reading a neighboring entry's leading zero byte instead
+                # of the real dev_id). Try shifting by +/-1 byte; if that lands on a
+                # recognized device, adopt the correction and keep going from there.
+                for shift in (1, -1):
+                    if i + shift < minfo_start_idx:
+                        continue
+                    shifted = inner_struct[i + shift : i + shift + minfo_length]
+                    if (
+                        len(shifted) == minfo_length
+                        and shifted[0] in g.ncync_server.node_devices
+                    ):
+                        logger.debug(
+                            f"{lp}mesh: resynced at loop_num={loop_num} via "
+                            f"{shift:+d} byte shift (dev_id 0 -> {shifted[0]})"
+                        )
+                        mesh_dev_struct = shifted
+                        dev_id = shifted[0]
+                        entry_len = minfo_length + shift
+                        break
+
             dev_type_id = mesh_dev_struct[2]
             dev_state, dev_bri, dev_tmp = (
                 mesh_dev_struct[8],
@@ -1777,6 +1798,8 @@ class CyncTCPSession:
                     f"{lp} Received MeshInfo for unknown device ID: "
                     f"{dev_id} -> You need to export a new config file from the cloud!"
                 )
+
+            i += entry_len
 
         if not self.mitm_mode:
             mesh_ack = PacketBuilder.build_mesh_status_ack(self.queue_id)
