@@ -1545,6 +1545,18 @@ class CyncTCPSession:
                     await self._parse_83_device_state(
                         packet_data, checksum, calc_chksum, lp
                     )
+                elif ctrl_bytes == b"\xf9\x52":
+                    # Same full MeshInfo dump _handle_73_mesh_control already parses,
+                    # just wrapped in a 0x83 outer packet instead of 0x73 - confirmed
+                    # via a real capture (a full multi-device dump with recognizable
+                    # dev_ids). send_ack=False: this function sends its own 0x83 ack
+                    # unconditionally below regardless of branch, so the 0x73-specific
+                    # mesh_status_ack would be the wrong format here and redundant.
+                    end_bndry_idx = packet_data[1:].find(DATA_BOUNDARY) + 1
+                    inner_struct = packet_data[1:end_bndry_idx]
+                    await self._process_73_mesh_info(
+                        inner_struct, self.queue_id, lp, send_ack=False
+                    )
                 elif ctrl_bytes == b"\xfa\xdb":
                     # Other fa db sub-types (packet_data[7] != 0x13) are seen when the
                     # Cync phone app connects to a device via BTLE (not TCP). Benign,
@@ -1774,9 +1786,15 @@ class CyncTCPSession:
             await self.write(PacketBuilder.build_73_ack(self.queue_id, msg_id))
 
     async def _process_73_mesh_info(
-        self, inner_struct: bytes, queue_id: bytes, lp: str
+        self, inner_struct: bytes, queue_id: bytes, lp: str, send_ack: bool = True
     ):
-        """Handles the 24-byte paginated mesh info loop."""
+        """Handles the 24-byte paginated mesh info loop.
+
+        send_ack=False when called for a MeshInfo dump delivered via 0x83 instead of
+        0x73 (same f9 52 ctrl_bytes/inner structure, different outer wrapper) - the
+        0x73-specific mesh_status_ack would be the wrong ack format there, and
+        _handle_83_packet already sends its own ack for every 0x83 packet regardless.
+        """
         if len(inner_struct) < 15:
             return
 
@@ -1952,7 +1970,7 @@ class CyncTCPSession:
 
             i += entry_len
 
-        if not self.mitm_mode:
+        if send_ack and not self.mitm_mode:
             mesh_ack = PacketBuilder.build_mesh_status_ack(self.queue_id)
             await self.write(mesh_ack)
 
