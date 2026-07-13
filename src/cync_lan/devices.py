@@ -1366,6 +1366,26 @@ class CyncTCPSession:
                     f"packet header {data[0]:#04x}",
                     data,
                 )
+                # Resync instead of discarding the rest of the buffer: length_needed
+                # is still just data_len here, so without this the whole remaining
+                # buffer - which can contain a real, otherwise-valid packet stream
+                # sitting right after a few stray/misaligned bytes - would be handed
+                # to parse_packet as one blob and silently dropped. Confirmed via a
+                # real capture: "00 00 84 7e 73 ..." led with 4 junk bytes followed
+                # by a fully valid MeshInfo burst covering ~40 devices that would
+                # otherwise have been lost entirely. Scan forward for the next
+                # recognized header and resume from there.
+                resync_idx = 1
+                while (
+                    resync_idx < data_len
+                    and data[resync_idx] not in PacketBuilder.ALL_HEADERS
+                ):
+                    resync_idx += 1
+                logger.debug(
+                    f"{loop_lp} Resyncing: dropping {resync_idx} leading byte(s)"
+                )
+                data = data[resync_idx:]
+                continue
 
             if length_needed > data_len:
                 self.needs_more_data = True
