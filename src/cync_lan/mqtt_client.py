@@ -774,6 +774,25 @@ class MQTTClient:
                 return True
         return False
 
+    async def publish_motion_state(
+        self, node: CyncDevice, motion: bool, from_pkt: Optional[str] = None
+    ) -> bool:
+        """Publish a motion-sensor trigger state.
+
+        For a standalone sensor (node.is_light/is_switch both False) this is the
+        device's only entity, so it uses the device's normal base state topic. For a
+        light/switch with a built-in occupancy sensor, it's a secondary entity, so it
+        publishes to a distinct /motion sub-topic instead of colliding with the
+        device's own primary state topic.
+        """
+        state = b"ON" if motion else b"OFF"
+        tpc = (
+            f"{self.topic}/status/{node.hass_id}/motion"
+            if (node.is_light or node.is_switch)
+            else None
+        )
+        return await self.pub_entity_state(node, state, 0, from_pkt=from_pkt, tpc=tpc)
+
     async def parse_entity_state(
         self,
         entity_state: EntityState,
@@ -913,6 +932,43 @@ class MQTTClient:
             else:
                 return True
         return False
+
+    async def _publish_motion_sensor_entity(
+        self,
+        node: CyncDevice,
+        device_registry_struct: dict,
+        unique_id: str,
+        is_secondary: bool,
+    ):
+        """Publish a read-only binary_sensor (device_class=motion) - either a
+        standalone sensor's only entity (is_secondary=False, e.g. type 96), or an
+        extra entity alongside a light/switch's own primary entity for its built-in
+        occupancy sensor (is_secondary=True, e.g. types 37/49/56). No command_topic:
+        motion sensors are read-only.
+        """
+        obj_id = f"cync_lan_{unique_id}"
+        state_topic = (
+            f"{self.topic}/status/{node.hass_id}/motion"
+            if is_secondary
+            else f"{self.topic}/status/{node.hass_id}"
+        )
+        motion_entity_conf = {
+            "object_id": obj_id,
+            "default_entity_id": obj_id,
+            "name": "Motion" if is_secondary else None,
+            "state_topic": state_topic,
+            "avty_t": f"{self.topic}/availability/{node.hass_id}",
+            "pl_avail": "online",
+            "pl_not_avail": "offline",
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device_class": "motion",
+            "unique_id": unique_id,
+            "origin": ORIGIN_STRUCT,
+            "device": device_registry_struct,
+        }
+        tpc = "{0}/binary_sensor/{1}/config".format(self.ha_topic, unique_id)
+        await self.publish_json_msg(tpc, motion_entity_conf)
 
     async def _publish_entity(
         self, device: CyncDevice, registry_struct: dict, entity_uuid: str
@@ -1096,6 +1152,21 @@ class MQTTClient:
                         "model": model_str,
                         "via_device": str(g.uuid),
                     }
+
+                    if (
+                        not node_repr.is_light
+                        and not node_repr.is_switch
+                        and node_repr.has_motion_sensor
+                    ):
+                        # Standalone motion sensor (e.g. type 96): no light/switch
+                        # entity at all, this binary_sensor IS the device's only
+                        # entity - skip the light/switch-oriented entity building
+                        # below entirely.
+                        await self._publish_motion_sensor_entity(
+                            node_repr, device_registry_struct, unique_id, is_secondary=False
+                        )
+                        continue
+
                     entity_registry_struct = {
                         # retain for older HASS versions
                         "object_id": obj_id,
@@ -1151,6 +1222,17 @@ class MQTTClient:
                         await self._publish_entity(
                             node_repr, entity_registry_struct, device_uuid
                         )
+
+                    if node_repr.has_motion_sensor:
+                        # Built-in occupancy sensor alongside this device's own
+                        # primary light/switch entity (e.g. types 37/49/56).
+                        await self._publish_motion_sensor_entity(
+                            node_repr,
+                            device_registry_struct,
+                            f"{unique_id}_motion",
+                            is_secondary=True,
+                        )
+
                     if node_repr.metadata and node_repr.metadata.type == DeviceClassification.LIGHT and node_repr.metadata.capabilities.dynamic:
                         # todo: segmented lights; can be controlled as a whole and/or per segment?
                         #  are segment lights only branded as 'dynamic', what about a music effects button?

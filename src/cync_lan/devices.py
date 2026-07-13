@@ -348,6 +348,17 @@ class CyncDevice:
         self._is_fan_controller = value
 
     @property
+    def has_motion_sensor(self) -> bool:
+        """True for a standalone motion sensor (type SENSOR) as well as a light/switch
+        with a built-in occupancy sensor (e.g. types 37/49/56) - unlike is_plug/
+        is_fan_controller this isn't gated to one DeviceClassification, since it can
+        apply as either a device's only capability or an addition to a light/switch.
+        """
+        if self.metadata and self.metadata.capabilities:
+            return bool(self.metadata.capabilities.motion_sensor)
+        return False
+
+    @property
     def is_dimmable(self) -> bool:
         if self.metadata:
             if self.metadata.type == DeviceClassification.LIGHT:
@@ -581,6 +592,22 @@ class CyncDevice:
         self.entities[e_state.sub_id] = e_state
         g.ncync_server.node_devices[self.id] = self
         return await g.mqtt_client.parse_entity_state(e_state, from_pkt=from_pkt)
+
+    async def handle_motion_update(self, motion: bool, from_pkt: Optional[str] = None) -> bool:
+        """Publish a motion-sensor trigger state.
+
+        Deliberately does NOT route through handle_entity_update: that function's
+        recently_seen handling means "is this update fresh" (marks the device
+        offline after enough stale reports), but for a motion-sensor-capable device
+        the same bit position instead means "is motion currently detected" - treating
+        the two the same would misinterpret every "motion cleared" event as the
+        device going offline.
+        """
+        if not self.online:
+            logger.info(f"{self.lp} is marked ONLINE.")
+            self.online = True
+        g.ncync_server.node_devices[self.id] = self
+        return await g.mqtt_client.publish_motion_state(self, motion, from_pkt=from_pkt)
 
     def get_ctrl_msg_id_bytes(self):
         """
@@ -1686,6 +1713,14 @@ class CyncTCPSession:
             )
             return
 
+        if cync_device.metadata and cync_device.metadata.type == DeviceClassification.SENSOR:
+            # Standalone motion sensor: recently_seen carries the actual trigger flag
+            # for this device type (confirmed via a real capture), not staleness -
+            # route through the dedicated path instead of handle_entity_update.
+            logger.debug(f"{lp} Motion STATUS for {cync_device.name}: {bool(recently_seen)}")
+            await cync_device.handle_motion_update(bool(recently_seen), from_pkt=from_pkt)
+            return
+
         if cync_device.type in MULTI_ENDPOINT_TYPES:
             if cync_device.type == 67:
                 # bri used as bitmask
@@ -1754,6 +1789,31 @@ class CyncTCPSession:
                     await self._parse_83_device_state(
                         packet_data, checksum, calc_chksum, lp, from_pkt="0x73"
                     )
+
+                elif ctrl_bytes == b"\xfa\x54" and len(packet_data) >= 16:
+                    # Built-in occupancy sensor telemetry from a motion-capable
+                    # light/switch (types 37/49/56), distinct from both the
+                    # standalone-sensor fa db 13 format and the mesh-wide broadcasts.
+                    # Confirmed via a real capture: single-device (not mesh-broadcast,
+                    # unlike everything else observed this session), dev_id at offset
+                    # 9 (self-reporting), trigger flag at offset 15 toggling in step
+                    # with real foot traffic over a multi-hour window.
+                    motion_dev_id = packet_data[9]
+                    motion_flag = bool(packet_data[15])
+                    motion_device = g.ncync_server.node_devices.get(motion_dev_id)
+                    if motion_device and motion_device.has_motion_sensor:
+                        logger.debug(
+                            f"{lp} Motion STATUS for {motion_device.name}: {motion_flag}"
+                        )
+                        await motion_device.handle_motion_update(
+                            motion_flag, from_pkt="0x73"
+                        )
+                    else:
+                        capture_unknown_packet(
+                            lp,
+                            f"0x73 ctrl_bytes fa 54 (dev_id {motion_dev_id} unrecognized)",
+                            packet_data[1:-1],
+                        )
 
                 elif ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (0xD0, 0xF0, 0xE2):
                     # Handle Callbacks for control messages

@@ -12,6 +12,7 @@ class DeviceClassification(StrEnum):
     SWITCH = "switch"
     THERMOSTAT = "thermostat"
     BRIDGE = "bridge"
+    SENSOR = "sensor"
     UNKNOWN = "unknown"
 
 
@@ -23,6 +24,14 @@ class LightCapabilities:
     dynamic: bool = False
     color: bool = False
     colour: Annotated[bool, Field(alias="color")] = False
+    # Confirmed via a real capture: standalone motion sensors (type 96) report their
+    # trigger state through the recently_seen field of the normal fa db 13 status
+    # struct, and some light/switch types with a built-in occupancy sensor (e.g. 37,
+    # 49, 56 - "...with Motion and Ambient Light") report it via a distinct fa 54
+    # ctrl_bytes packet, as an ADDITIONAL entity alongside their primary light/switch.
+    # One flag covers both: on a SENSOR-classified device it drives the device's only
+    # entity; on a LIGHT/SWITCH device it adds a secondary occupancy binary_sensor.
+    motion_sensor: bool = False
 
 
 @dataclass
@@ -295,7 +304,15 @@ device_type_map = {
         model_name="Dimmer Switch with Motion and Ambient Light",
         model_id="CSWDMOCBWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(
+            dimmable=True, color=True, tunable_white=True, motion_sensor=True
+        ),
+        notes=[
+            "Built-in occupancy sensor confirmed on this switch family via a real "
+            "capture (owner confirmed physical model has one); reports via a distinct "
+            "fa 54 ctrl_bytes packet (dev_id at offset 9, trigger flag at offset 15), "
+            "exposed as a secondary occupancy binary_sensor alongside the light.",
+        ],
     ),
     39: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -351,7 +368,17 @@ device_type_map = {
         model_name="C by GE (C Start Smart) Dimmer Switch with Motion and Ambient Light",
         model_id="CSWDMOCBWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(
+            dimmable=True, color=True, tunable_white=True, motion_sensor=True
+        ),
+        notes=[
+            "Built-in occupancy sensor confirmed via a real capture (owner-confirmed "
+            "physical device, 'Master Closet Lights'): reports via a distinct fa 54 "
+            "ctrl_bytes packet (dev_id at offset 9, trigger flag at offset 15), "
+            "exposed as a secondary occupancy binary_sensor alongside the light. "
+            "Toggle interval matched real foot traffic (irregular gaps, not a fixed "
+            "heartbeat) over a multi-hour capture.",
+        ],
     ),
     51: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -387,7 +414,14 @@ device_type_map = {
         type=DeviceClassification.LIGHT,
         model_name="Dimmable Motion Light Switch",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(
+            dimmable=True, color=True, tunable_white=True, motion_sensor=True
+        ),
+        notes=[
+            "Same motion-switch family as 37/49 (owner-confirmed); hasn't yet been "
+            "seen sending fa 54 in a capture (low foot traffic in that room during "
+            "the capture window, not a negative result) but marked accordingly.",
+        ],
     ),
     57: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -501,16 +535,15 @@ device_type_map = {
         capabilities=LightCapabilities(tunable_white=True),
     ),
     96: DeviceTypeInfo(
-        type=DeviceClassification.UNKNOWN,
+        type=DeviceClassification.SENSOR,
         model_name="Motion Sensor",
-        supported=False,
+        capabilities=LightCapabilities(motion_sensor=True),
         notes=[
-            "Standalone BTLE motion sensor accessory (not a light or switch with "
-            "built-in motion detection like type 56/37/49).",
-            "cync-lan has no entity model for standalone sensors yet (no binary_sensor "
-            "discovery, no parsing for motion-trigger packets). Marked unsupported "
-            "rather than silently dropped so it shows up correctly in HASS discovery logs. "
-            "Needs a packet capture of a motion-trigger event to add real support.",
+            "Standalone BTLE motion sensor accessory. Confirmed via a real capture "
+            "across 3 physical units: reports fa db 13 (the normal internal-status "
+            "struct) with recently_seen as the trigger flag (1=motion, 0=clear) - "
+            "power/brightness/rgb stay fixed at 0, temp fixed at 255 (unused-field "
+            "sentinel, same as noted on type 67).",
         ],
     ),
     107: DeviceTypeInfo(
