@@ -435,16 +435,22 @@ class CyncCloudAPI:
                         "displayName",
                         "mac",
                         "deviceType",
-                        "wifiMac",
                         "firmwareVersion",
                     )
                 ):
                     logger.warning(
-                        f"{lp} Missing required attribute (deviceID, displayName, deviceType, MACs, firmwareVersion) in Cync device, skipping: {raw_device}"
+                        f"{lp} Missing required attribute (deviceID, displayName, deviceType, mac, firmwareVersion) in Cync device, skipping: {raw_device}"
                     )
                     continue
                 new_device: dict = {}
-                wifi_mac = str(raw_device["wifiMac"])
+                # wifiMac is legitimately absent for standalone BTLE-only accessories
+                # (e.g. motion sensors, deviceType 96) - they have no WiFi radio at all.
+                # Requiring it here silently dropped every such device from the
+                # exported config (confirmed via a real export: a motion sensor's raw
+                # cloud entry has no wifiMac key whatsoever). Downstream code already
+                # handles this gracefully via CyncDevice.bt_only, which skips using
+                # wifi_mac entirely for BTLE-only protocol devices.
+                wifi_mac = str(raw_device["wifiMac"]) if "wifiMac" in raw_device else None
                 bt_mac = str(raw_device["mac"])
                 dev_name = str(raw_device["displayName"])
                 dev_type = int(raw_device["deviceType"])

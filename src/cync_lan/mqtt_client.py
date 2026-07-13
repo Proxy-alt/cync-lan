@@ -744,7 +744,8 @@ class MQTTClient:
         msg: bytes,
         sub_id: Optional[int],
         from_pkt: Optional[str] = None,
-        tpc: Optional[str] = None
+        tpc: Optional[str] = None,
+        retain: bool = False,
     ) -> bool:
 
         lp = f"{self.lp}device_status:"
@@ -763,6 +764,7 @@ class MQTTClient:
                     msg,
                     qos=0,
                     timeout=3.0,
+                    retain=retain,
                 ) if not MQTT_DEAD else None
             except aiomqtt.MqttError as mqtt_code_exc:
                 logger.warning(f"{lp} {mqtt_code_exc}")
@@ -791,7 +793,11 @@ class MQTTClient:
             if (node.is_light or node.is_switch)
             else None
         )
-        return await self.pub_entity_state(node, state, 0, from_pkt=from_pkt, tpc=tpc)
+        # Retained so the last known trigger state survives addon/HA restarts
+        # instead of showing "Unknown" until the next real motion event.
+        return await self.pub_entity_state(
+            node, state, 0, from_pkt=from_pkt, tpc=tpc, retain=True
+        )
 
     async def parse_entity_state(
         self,
@@ -969,6 +975,11 @@ class MQTTClient:
         }
         tpc = "{0}/binary_sensor/{1}/config".format(self.ha_topic, unique_id)
         await self.publish_json_msg(tpc, motion_entity_conf)
+        # Seed a retained OFF state if the topic has never been published to
+        # (e.g. a freshly added sensor that hasn't triggered yet), so HASS shows
+        # a real state instead of "Unknown" until the first actual detection.
+        # No-op if a retained value already exists - see get_startup_topic_state_sync.
+        self.get_startup_topic_state_sync(state_topic)
 
     async def _publish_entity(
         self, device: CyncDevice, registry_struct: dict, entity_uuid: str
