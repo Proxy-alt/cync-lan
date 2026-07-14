@@ -36,15 +36,15 @@ for what that dependency relationship means in practice).
 
 >[!NOTE]
 > This integration currently lives on the `feature/ha-custom-component`
-> branch, not the repository's default branch (`python`) - HACS's "Add
-> custom repository" flow defaults to the default branch, so **you must
-> select the `feature/ha-custom-component` branch explicitly** when adding
-> this repository (HACS's repository dialog has a branch/ref selector for
-> custom repositories). This note goes away once/if this branch is merged.
+> branch, not the repository's default branch (`python`). HACS 2.0 does
+> **not** support selecting a non-default branch when adding a custom
+> repository - it always tracks the repo's default branch. Until this
+> branch is merged into `python` (or made the new default branch), HACS
+> installs won't pick it up; see "Manual installation" below as a
+> workaround in the meantime.
 
 1. In HACS, go to **Integrations → ⋮ (top right) → Custom repositories**.
-2. Add `https://github.com/Proxy-alt/cync-lan`, category **Integration**,
-   and select the `feature/ha-custom-component` branch.
+2. Add `https://github.com/Proxy-alt/cync-lan`, category **Integration**.
 3. Find "Cync LAN" in HACS and install it.
 4. Restart Home Assistant.
 

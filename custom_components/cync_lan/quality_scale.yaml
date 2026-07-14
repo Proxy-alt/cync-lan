@@ -18,7 +18,14 @@ rules:
       TCP connection, never polled. The periodic device-*list* refresh
       (async_track_time_interval, default 24h, user-configurable) is a
       deliberate low-frequency background task, not device state polling.
-  brands: todo
+  brands:
+    status: done
+    comment: >-
+      brand/icon.png (256x256) and brand/icon@2x.png (512x512) bundled
+      locally under custom_components/cync_lan/brand/, supported without a
+      home-assistant/brands PR as of HA 2026.3.0. Placeholder artwork (no
+      existing "Cync LAN" brand identity to draw from), functional rather
+      than polished.
   common-modules:
     status: done
     comment: >-
@@ -41,13 +48,20 @@ rules:
   dependency-transparency:
     status: todo
     comment: >-
-      manifest.json's requirements references a git+https URL
-      (github.com/Proxy-alt/cync-lan) rather than a published PyPI release.
-      Honest about being fork-specific, but not ideal - hassfest/HACS
-      validation may flag it, and it means no pinned, reproducible version
-      resolution the way a real release would give. Publishing cync-lan to
-      PyPI would resolve this; requires an actual publish action outside
-      the scope of what a code change in this branch can do.
+      manifest.json's requirements previously referenced a git+https URL
+      (github.com/Proxy-alt/cync-lan); as of Home Assistant 2026.1, core's
+      requirement parser strictly validates against PEP 508 and rejects
+      git+https:// requirement URLs outright (home-assistant/core#160450),
+      making that approach unusable at all, not just non-ideal. Worked
+      around by vendoring the cync_lan protocol package directly under
+      custom_components/cync_lan/vendor/ (see const.py's sys.path
+      bootstrap); manifest.json's requirements now lists only real PyPI
+      packages (pyyaml, uvloop, pydantic, tzlocal, cryptography). Still
+      "todo" because vendoring a local copy isn't the same as a pinned,
+      independently-versioned, reproducible PyPI release - publishing
+      cync-lan to PyPI would resolve this properly, and requires an actual
+      publish action outside the scope of what a code change in this
+      branch can do.
   docs-actions:
     status: exempt
     comment: No custom service actions defined.

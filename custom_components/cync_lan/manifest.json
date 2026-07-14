@@ -9,7 +9,11 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Proxy-alt/cync-lan/issues",
   "requirements": [
-    "git+https://github.com/Proxy-alt/cync-lan@python#egg=cync-lan"
+    "pyyaml>=6.0.2",
+    "uvloop>=0.21.0",
+    "pydantic>=2.0.0",
+    "tzlocal>=5.3.1",
+    "cryptography>=46.0.7"
   ],
   "version": "0.1.0"
 }
