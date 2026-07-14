@@ -562,14 +562,17 @@ device_type_map = {
     ),
     112: DeviceTypeInfo(
         type=DeviceClassification.SENSOR,
-        model_name="Wireless Switch (BTLE only, battery-powered scene remote)",
+        model_name="Wire-Free Dimmer Switch (BTLE only, battery-powered)",
         capabilities=LightCapabilities(
             motion_sensor=True, sensor_device_class="occupancy"
         ),
         notes=[
-            "Confirmed via a real cloud export (4 units): deviceType 112, no "
-            "dimmable/color output of its own - 'lightRing*' fields (brightness/"
-            "color/mode) describe a status LED ring, not a controllable light. "
+            "Owner-confirmed model: a wire-free (battery) dimmer switch, not a "
+            "generic scene remote. It has no output of its own - its "
+            "'lightRing*' cloud-export fields (brightness/color/mode) describe "
+            "a status LED ring, not a controllable light - and it dims its "
+            "paired light directly over the BTLE mesh, invisible to the "
+            "WiFi-connected bridge our TCP listener sees. "
             "occupancyEnable/occupancySensitivity present but disabled on these "
             "units. No wifiMac (BTLE-only, same as the type-96 motion sensors - "
             "see the wifiMac-optional cloud_api.py export fix). Initially marked "
