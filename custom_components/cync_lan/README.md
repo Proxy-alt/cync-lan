@@ -106,6 +106,35 @@ settings like motion sensor sensitivity/timeout, status LED ring
 color/brightness, and OTA firmware update triggering - see
 [Known limitations](#known-limitations).
 
+## Use cases
+
+**Keep lighting control working when your internet is down.** Cync's own
+app and official integration route every command through Cync's cloud -
+if your ISP has an outage, your lights stop responding to voice assistants,
+automations, and the app, even though the bulbs and your Wi-Fi network are
+both fine. Because this integration replaces the cloud round-trip with a
+direct local connection, lighting control keeps working through an internet
+outage; only things that inherently need the internet (like the initial
+account setup and syncing your device list) are affected.
+
+**Faster automations.** A cloud round-trip adds real, noticeable latency to
+"motion detected → turn on light"-style automations. Local push means state
+changes and commands land in well under the round-trip time a cloud-based
+integration needs.
+
+**Reduce what leaves your network.** Every state change your Cync devices
+make - lights turning on and off, motion being detected - normally gets
+reported to Cync's servers whether or not you're using their app at that
+moment. Once set up, this integration's runtime traffic never leaves your
+LAN, for whichever devices you've pointed at it via DNS.
+
+**Bridge Cync devices into a broader smart-home setup.** Once your Cync
+lights and switches show up as normal `light`/`switch`/`fan`/`binary_sensor`
+entities, they compose with anything else in Home Assistant - group them
+into scenes with devices from other brands, use their motion sensors to
+trigger climate control, expose them to voice assistants through HA's own
+integrations rather than Cync's, etc.
+
 ## Example automations
 
 Trigger a scene when a motion-capable switch detects activity:

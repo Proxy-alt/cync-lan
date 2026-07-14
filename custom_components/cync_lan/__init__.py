@@ -22,7 +22,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
 from .bridge import CyncLanBridge
 from .const import (
@@ -34,7 +35,7 @@ from .const import (
     DEFAULT_LOCAL_PORT,
     DOMAIN,
 )
-from .util import configure_environment
+from .util import configure_environment, get_cloud_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +56,13 @@ PLATFORMS = [
 _BIND_TIMEOUT = 5.0
 _BIND_POLL_INTERVAL = 0.1
 
+# How long to wait after setup before checking whether any device has
+# actually connected (repair-issues, gold) - long enough that a device
+# doing its normal boot-time DNS lookup and TCP handshake has had a real
+# chance to show up, short enough that a genuine DNS misconfiguration gets
+# flagged promptly rather than silently sitting broken for hours.
+_NO_DEVICES_CHECK_DELAY = 600.0  # 10 minutes
+
 
 @dataclass
 class CyncLanRuntimeData:
@@ -64,6 +72,7 @@ class CyncLanRuntimeData:
     ncync_server: "object"  # cync_lan.server.nCyncServer
     server_task: asyncio.Task
     unsub_refresh: object = None
+    unsub_no_devices_check: object = None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -153,40 +162,115 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass, _periodic_refresh, timedelta(hours=refresh_hours)
         )
 
+    async def _check_no_devices_connected(_now) -> None:
+        await _check_and_report_no_devices(hass, entry, ncync_server)
+
+    runtime_data.unsub_no_devices_check = async_call_later(
+        hass, _NO_DEVICES_CHECK_DELAY, _check_no_devices_connected
+    )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _no_devices_issue_id(entry_id: str) -> str:
+    return f"no_devices_connected_{entry_id}"
+
+
+async def _check_and_report_no_devices(
+    hass: HomeAssistant, entry: ConfigEntry, ncync_server
+) -> None:
+    """repair-issues (gold): if nothing has connected by the time this
+    fires, that's a near-certain sign the DNS redirection prerequisite
+    (see README.md) isn't actually in place - surface it as an actionable
+    repair instead of a warning buried in the log. Not fixable from within
+    HA (the fix is a router/DNS change outside its control), so this is
+    informational: it tells the user what to check, not a button that
+    fixes it for them."""
+    issue_id = _no_devices_issue_id(entry.entry_id)
+    if not ncync_server.tcp_connections:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="no_devices_connected",
+            translation_placeholders={"port": str(ncync_server.port)},
+        )
+    else:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def _refresh_export_and_reload_if_changed(
     hass: HomeAssistant, entry: ConfigEntry, cfg_file: Path
 ) -> None:
-    """Periodically re-pull the cloud export so newly added Cync devices show
-    up without the user manually removing/re-adding the integration
-    (contributes to dynamic-devices, gold - see quality_scale.yaml for the
-    parts of that rule this doesn't fully satisfy yet)."""
-    from cync_lan.cloud_api import CyncCloudAPI
+    """Periodically re-pull the cloud export to catch devices added to or
+    removed from the Cync account since setup.
+
+    Removed devices (stale-devices, gold) are deleted from the device
+    registry directly - no reload needed, HA cascades that into removing
+    their entities too. Added devices still require a full entry reload
+    (dynamic-devices, gold) since this integration doesn't yet keep a
+    reference to each platform's async_add_entities callback for
+    incremental addition - see quality_scale.yaml for the reasoning. A
+    refresh with only removals, no additions, no longer reloads at all.
+    """
     from cync_lan.utils import parse_config
 
     try:
         before = cfg_file.stat().st_mtime if cfg_file.exists() else None
-        api = CyncCloudAPI()
+        api = get_cloud_api(hass)
         await api.export_config_file()
         after = cfg_file.stat().st_mtime if cfg_file.exists() else None
-        if before != after:
-            new_map = await parse_config(cfg_file)
-            if set(new_map) != set(entry.runtime_data.ncync_server.node_devices):
-                _LOGGER.info(
-                    "Cync device list changed on periodic refresh, reloading entry"
-                )
-                await hass.config_entries.async_reload(entry.entry_id)
+        if before == after:
+            return
+
+        new_map = await parse_config(cfg_file)
+        old_ids = set(entry.runtime_data.ncync_server.node_devices)
+        new_ids = set(new_map)
+        removed_ids = old_ids - new_ids
+        added_ids = new_ids - old_ids
+
+        if removed_ids:
+            _remove_stale_devices(hass, entry, removed_ids)
+
+        if added_ids:
+            _LOGGER.info(
+                "Cync account has %d new device(s), reloading entry to add them",
+                len(added_ids),
+            )
+            await hass.config_entries.async_reload(entry.entry_id)
+        elif removed_ids:
+            _LOGGER.info(
+                "Removed %d stale Cync device(s) from the device registry "
+                "without a reload",
+                len(removed_ids),
+            )
     except Exception:  # noqa: BLE001 - a failed background refresh must not crash HA
         _LOGGER.exception("Periodic Cync export refresh failed")
+
+
+def _remove_stale_devices(
+    hass: HomeAssistant, entry: ConfigEntry, removed_dev_ids: set[int]
+) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    device_reg = dr.async_get(hass)
+    for dev_id in removed_dev_ids:
+        identifier = (DOMAIN, f"{entry.entry_id}_{dev_id}")
+        device = device_reg.async_get_device(identifiers={identifier})
+        if device is not None:
+            device_reg.async_remove_device(device.id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime_data: CyncLanRuntimeData = entry.runtime_data
     if runtime_data.unsub_refresh is not None:
         runtime_data.unsub_refresh()
+    if runtime_data.unsub_no_devices_check is not None:
+        runtime_data.unsub_no_devices_check()
+    ir.async_delete_issue(hass, DOMAIN, _no_devices_issue_id(entry.entry_id))
     await runtime_data.ncync_server.stop()
     runtime_data.server_task.cancel()
     try:

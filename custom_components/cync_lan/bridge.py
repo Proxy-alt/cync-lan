@@ -93,6 +93,18 @@ class CyncLanBridge:
     def is_online(self, dev_id: int) -> bool:
         return self._get(dev_id).online
 
+    def _set_online(self, dev_id: int, value: bool) -> None:
+        """log-when-unavailable (silver): log the transition, not every call -
+        every one of this method's callers fires on every status packet, so
+        logging unconditionally would be noise, not a useful diagnostic
+        trail."""
+        bucket = self._get(dev_id)
+        if bucket.online != value:
+            _LOGGER.info(
+                "Cync device %s is now %s", dev_id, "online" if value else "offline"
+            )
+        bucket.online = value
+
     # --- primary state-reporting surface, called from devices.py ---
 
     async def parse_entity_state(
@@ -100,7 +112,7 @@ class CyncLanBridge:
     ) -> bool:
         bucket = self._get(entity_state.dev_id, entity_state.sub_id)
         bucket.entity_state = entity_state
-        bucket.online = True
+        self._set_online(entity_state.dev_id, True)
         unique_id = f"{self.entry_id}_{entity_state.dev_id}"
         if entity_state.sub_id:
             unique_id = f"{unique_id}_{entity_state.sub_id}"
@@ -112,14 +124,13 @@ class CyncLanBridge:
     ) -> bool:
         bucket = self._get(node.id)
         bucket.motion = motion
-        bucket.online = True
+        self._set_online(node.id, True)
         unique_id = f"{self.entry_id}_{node.id}"
         async_dispatcher_send(self.hass, signal_entity_update(unique_id))
         return True
 
     def pub_online(self, dev_id: int, value: bool) -> None:
-        bucket = self._get(dev_id)
-        bucket.online = value
+        self._set_online(dev_id, value)
         async_dispatcher_send(self.hass, signal_device_online(dev_id))
 
     async def mark_app_mesh_active(self, timeout: float = 60.0) -> None:

@@ -53,6 +53,9 @@
     "binary_sensor": {
       "motion": {
         "name": "Motion"
+      },
+      "app_mesh_active": {
+        "name": "Cync App Active"
       }
     }
   },
@@ -68,6 +71,12 @@
     },
     "config_parse_failed": {
       "message": "Failed to parse the exported device config: {error}"
+    }
+  },
+  "issues": {
+    "no_devices_connected": {
+      "title": "No Cync devices have connected",
+      "description": "No Cync devices have connected to the local listener on port {port} since setup finished. This almost always means the DNS redirection prerequisite isn't actually in place yet, or the affected devices haven't been power-cycled since you set it up (they only do a fresh DNS lookup on boot). See the integration's README for the DNS redirection steps, then power-cycle your devices."
     }
   }
 }

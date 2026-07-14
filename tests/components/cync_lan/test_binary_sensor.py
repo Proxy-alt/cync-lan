@@ -61,12 +61,15 @@ async def test_standalone_sensor_has_no_secondary_suffix(hass):
     assert entity.name is None
 
 
-async def test_secondary_sensor_has_motion_suffix_and_name(hass):
+async def test_secondary_sensor_has_motion_suffix_and_translation_key(hass):
     node = _fake_node(is_light=True)
     bridge = CyncLanBridge(hass, "entry1")
     entity = CyncLanMotionSensor(bridge, "entry1", node, is_secondary=True)
     assert entity.unique_id == "entry1_5_motion"
-    assert entity.name == "Motion"
+    # name resolution through translation_key requires real platform setup
+    # (self.platform_data) - see test_entity_translations.py for that,
+    # end-to-end, against the actual strings.json content.
+    assert entity.translation_key == "motion"
 
 
 async def test_device_class_comes_from_capabilities(hass):

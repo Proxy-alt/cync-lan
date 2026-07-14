@@ -73,6 +73,34 @@ def test_rgb_mode_exposes_effect_list():
     assert entity.effect_list
 
 
+def test_kelvin_range_pulled_from_characteristics():
+    node = _fake_node(supports_temperature=True)
+    node.metadata.characteristics = MagicMock(min_kelvin=2000, max_kelvin=6500)
+    bridge = MagicMock()
+    entity = CyncLanLight(bridge, "entry1", node)
+    assert entity.min_color_temp_kelvin == 2000
+    assert entity.max_color_temp_kelvin == 6500
+
+
+def test_no_characteristics_leaves_kelvin_range_at_ha_default():
+    node = _fake_node(supports_temperature=True)
+    node.metadata.characteristics = None
+    bridge = MagicMock()
+    entity = CyncLanLight(bridge, "entry1", node)
+    # Falls back to LightEntity's own class-level defaults - just confirm
+    # constructing it didn't blow up trying to read a None characteristics.
+    assert entity.min_color_temp_kelvin is not None
+
+
+def test_brightness_is_none_without_state(hass):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+
+    node = _fake_node()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanLight(bridge, "entry1", node)
+    assert entity.brightness is None
+
+
 async def test_is_on_and_brightness_scale_from_bridge(hass):
     from cync_lan.structs import EntityState
 

@@ -1,0 +1,18 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "motion": {
+        "default": "mdi:motion-sensor",
+        "state": {
+          "off": "mdi:motion-sensor-off"
+        }
+      },
+      "app_mesh_active": {
+        "default": "mdi:cellphone-wireless",
+        "state": {
+          "off": "mdi:cellphone-off"
+        }
+      }
+    }
+  }
+}

@@ -48,7 +48,12 @@ async def async_setup_entry(
 class CyncLanMotionSensor(CyncLanEntity, BinarySensorEntity):
     def __init__(self, bridge, entry_id: str, node, is_secondary: bool) -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_motion" if is_secondary else "")
-        self._attr_name = "Motion" if is_secondary else None
+        # entity-translations (gold): resolve the name through strings.json's
+        # entity.binary_sensor.motion.name instead of a hardcoded literal, so
+        # translators can override it without touching code. Only secondary
+        # entities (alongside a light/switch's own primary entity) get a name
+        # at all - a standalone sensor's only entity uses the device name.
+        self._attr_translation_key = "motion" if is_secondary else None
         device_class = "motion"
         if node.metadata and node.metadata.capabilities:
             device_class = node.metadata.capabilities.sensor_device_class
@@ -66,7 +71,7 @@ class CyncLanAppMeshActiveSensor(BinarySensorEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_name = "Cync App Active"
+    _attr_translation_key = "app_mesh_active"
     _attr_device_class = "occupancy"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = "app_mesh_active" not in DEFAULT_DISABLED_ENTITIES

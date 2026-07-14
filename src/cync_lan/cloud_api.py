@@ -41,6 +41,10 @@ class CyncCloudAPI:
     auth_cache_file = CYNC_CLOUD_AUTH_PATH
     token_cache: ComputedTokenStruct
     http_session: aiohttp.ClientSession = None
+    # inject-websession: True once a caller-owned session has been injected
+    # via the session= kwarg (see __init__) - close() must not close a
+    # session it doesn't own.
+    _session_injected: bool = False
     _instance: "CyncCloudAPI" = None
 
     def __new__(cls, *args, **kwargs):
@@ -51,12 +55,30 @@ class CyncCloudAPI:
     def __init__(self, **kwargs):
         self.api_timeout = kwargs.get("api_timeout", 8)
         self.lp = kwargs.get("lp", self.lp)
+        session = kwargs.get("session")
+        if session is not None:
+            # Accept a caller-owned aiohttp session (e.g. Home Assistant's
+            # shared session via
+            # homeassistant.helpers.aiohttp_client.async_get_clientsession)
+            # instead of always creating our own. This is a singleton
+            # (__new__ above), so __init__ re-runs on every CyncCloudAPI()
+            # call - only overwrite http_session when a session is actually
+            # passed, so bare CyncCloudAPI() calls elsewhere in the codebase
+            # keep using whatever session (injected or self-created) is
+            # already set, rather than clobbering it back to None.
+            self.http_session = session
+            self._session_injected = True
 
     async def close(self):
         """
-        Close the aiohttp session if it exists and is not closed.
+        Close the aiohttp session if it exists, is not closed, and is one
+        we created ourselves - never close a caller-injected session, its
+        lifecycle belongs to whoever passed it in.
         """
         lp = f"{self.lp}:close:"
+        if self._session_injected:
+            logger.debug(f"{lp} Session was injected by caller, not closing it here")
+            return
         if self.http_session and not self.http_session.closed:
             logger.debug(f"{lp} Closing aiohttp ClientSession")
             await self.http_session.close()
@@ -65,8 +87,11 @@ class CyncCloudAPI:
     async def _check_session(self):
         """
         Check if the aiohttp session is initialized.
-        If not, create a new session.
+        If not, create a new session. No-op if a session was injected -
+        that session's readiness is the injecting caller's responsibility.
         """
+        if self._session_injected:
+            return
         if not self.http_session or self.http_session.closed:
             logger.debug(
                 f"{self.lp}:_check_session: Creating new aiohttp ClientSession"

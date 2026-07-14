@@ -54,6 +54,50 @@ async def test_pub_online_tracks_availability(bridge):
     assert bridge.is_online(7) is True
 
 
+async def test_online_transition_is_logged_only_on_change(bridge, caplog):
+    """log-when-unavailable (silver): a real transition logs, a repeated
+    call with the same value doesn't (would be noise - fires on every
+    status packet)."""
+    import logging
+
+    caplog.set_level(logging.INFO)
+
+    bridge.pub_online(7, False)  # default True -> False: logs
+    assert "Cync device 7 is now offline" in caplog.text
+
+    caplog.clear()
+    bridge.pub_online(7, False)  # no change: silent
+    assert caplog.text == ""
+
+    bridge.pub_online(7, True)  # False -> True: logs
+    assert "Cync device 7 is now online" in caplog.text
+
+
+async def test_parse_entity_state_logs_online_transition(bridge, caplog):
+    import logging
+
+    from cync_lan.structs import EntityState
+
+    caplog.set_level(logging.INFO)
+    bridge.pub_online(9, False)
+    caplog.clear()
+
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=9))
+    assert "Cync device 9 is now online" in caplog.text
+
+
+async def test_publish_motion_state_logs_online_transition(bridge, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    bridge.pub_online(11, False)
+    caplog.clear()
+
+    node = MagicMock(id=11)
+    await bridge.publish_motion_state(node, True)
+    assert "Cync device 11 is now online" in caplog.text
+
+
 async def test_update_callbacks_mutate_existing_state(bridge):
     from cync_lan.structs import EntityState
 
@@ -80,3 +124,56 @@ async def test_mitm_and_lifecycle_methods_are_safe_noops(bridge):
     await bridge.start()
     await bridge.stop()
     assert bridge.get_startup_topic_state_sync("anything") is None
+
+
+async def test_parse_entity_state_unique_id_includes_sub_id(bridge):
+    from cync_lan.structs import EntityState
+
+    calls = []
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    async_dispatcher_connect(
+        bridge.hass, "cync_lan_update_test_entry_6_2", lambda: calls.append(True)
+    )
+
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=6, sub_id=2, power=1))
+    await bridge.hass.async_block_till_done()
+
+    assert bridge.get_state(6, sub_id=2).power == 1
+    assert calls == [True]
+
+
+async def test_update_entity_power_updates_existing_state_and_sub_id_topic(bridge):
+    from cync_lan.structs import EntityState
+
+    node = MagicMock(id=4)
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=4, sub_id=1, power=0))
+
+    await bridge.update_entity_power(node, 1, 1)
+    assert bridge.get_state(4, sub_id=1).power == 1
+
+    # sub_id=0: no existing state yet for this bucket, still shouldn't raise
+    await bridge.update_entity_power(node, 1, 0)
+
+
+async def test_update_temperature_updates_existing_state(bridge):
+    from cync_lan.structs import EntityState
+
+    node = MagicMock(id=8)
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=8, temperature=2700))
+
+    await bridge.update_temperature(node, 4000)
+    assert bridge.get_state(8).temperature == 4000
+
+
+async def test_update_fan_percent_and_speed_update_brightness(bridge):
+    from cync_lan.structs import EntityState, FanSpeed
+
+    node = MagicMock(id=9)
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=9, brightness=0))
+
+    await bridge.update_fan_percent(node, 42)
+    assert bridge.get_state(9).brightness == 42
+
+    await bridge.update_fan_speed(node, FanSpeed.HIGH)
+    assert bridge.get_state(9).brightness == FanSpeed.HIGH.to_perc()

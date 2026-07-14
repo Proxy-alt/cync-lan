@@ -31,7 +31,7 @@ from .const import (
     DEFAULT_LOCAL_PORT,
     DOMAIN,
 )
-from .util import configure_environment
+from .util import configure_environment, get_cloud_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,9 +77,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             configure_environment(self.hass, self._username, self._password)
             try:
-                from cync_lan.cloud_api import CyncCloudAPI
-
-                api = CyncCloudAPI()
+                api = get_cloud_api(self.hass)
                 await api._check_session()
                 have_token = await api.check_token()
                 if have_token:
@@ -105,9 +103,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                from cync_lan.cloud_api import CyncCloudAPI
-
-                api = CyncCloudAPI()
+                api = get_cloud_api(self.hass)
                 ok = await api.send_otp(int(user_input["otp_code"]))
                 if not ok:
                     raise InvalidOtp
@@ -129,11 +125,10 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         here instead of silently producing zero entities after setup."""
         from pathlib import Path
 
-        from cync_lan.cloud_api import CyncCloudAPI
         from cync_lan.const import CYNC_CONFIG_FILE_PATH
         from cync_lan.utils import parse_config
 
-        api = CyncCloudAPI()
+        api = get_cloud_api(self.hass)
         exported = await api.export_config_file()
         if not exported:
             return self.async_show_form(
@@ -187,9 +182,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._password = user_input[CONF_ACCOUNT_PASSWORD]
             configure_environment(self.hass, self._username, self._password)
             try:
-                from cync_lan.cloud_api import CyncCloudAPI
-
-                api = CyncCloudAPI()
+                api = get_cloud_api(self.hass)
                 requested = await api.request_otp()
                 if not requested:
                     raise InvalidAuth

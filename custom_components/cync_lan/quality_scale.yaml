@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (67 tests, 91% line coverage on
+# pytest-homeassistant-custom-component (90 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -28,10 +28,10 @@ rules:
   config-flow-test-coverage:
     status: done
     comment: >-
-      tests/components/cync_lan/test_config_flow.py covers user/otp/confirm,
-      every error branch (invalid_auth, invalid_otp, cannot_connect,
-      no_devices), duplicate-account abort, reauth (success + 2 failure
-      modes), and the options flow. config_flow.py itself: 96% line coverage.
+      test_config_flow.py covers user/otp/confirm, every error branch
+      (invalid_auth, invalid_otp, cannot_connect, no_devices), duplicate-
+      account abort, reauth (success + 2 failure modes), and the options
+      flow. config_flow.py itself: 96% line coverage.
   config-flow:
     status: done
     comment: >-
@@ -46,7 +46,8 @@ rules:
       Honest about being fork-specific, but not ideal - hassfest/HACS
       validation may flag it, and it means no pinned, reproducible version
       resolution the way a real release would give. Publishing cync-lan to
-      PyPI would resolve this.
+      PyPI would resolve this; requires an actual publish action outside
+      the scope of what a code change in this branch can do.
   docs-actions:
     status: exempt
     comment: No custom service actions defined.
@@ -107,8 +108,8 @@ rules:
     status: done
     comment: >-
       async_unload_entry stops the TCP listener, cancels its task, cancels
-      the periodic-refresh listener, and unloads platforms. Tested in
-      test_init.py.
+      both the periodic-refresh and no-devices-check listeners, clears any
+      open repair issue, and unloads platforms. Tested in test_init.py.
   docs-configuration-parameters:
     status: done
     comment: README.md "Configuration parameters" table.
@@ -124,11 +125,13 @@ rules:
     status: done
     comment: 'manifest.json codeowners: ["@Proxy-alt"].'
   log-when-unavailable:
-    status: todo
+    status: done
     comment: >-
-      Real gap: bridge.pub_online()/is_online tracking exists and correctly
-      drives entity availability, but there's no explicit logger call on
-      the transition itself (no "device X went offline" log line).
+      bridge.py's _set_online (shared by pub_online, parse_entity_state, and
+      publish_motion_state) logs "Cync device X is now online/offline" only
+      on an actual transition, not every call - it fires on every status
+      packet, so logging unconditionally would be pure noise. Tested in
+      test_bridge.py (3 tests covering all 3 call paths).
   parallel-updates:
     status: done
     comment: >-
@@ -142,13 +145,14 @@ rules:
       async_step_reauth/async_step_reauth_confirm implemented; 3 tests
       covering success, invalid auth, and connection failure.
   test-coverage:
-    status: todo
+    status: done
     comment: >-
-      91% overall line coverage on custom_components/cync_lan (609
-      statements, 52 missed), measured with pytest-cov against a real test
-      run - short of the required >95%. Remaining gaps are concentrated in
-      __init__.py's periodic-refresh error path and a handful of rarely-hit
-      bridge.py callback branches.
+      97% overall line coverage on custom_components/cync_lan (645
+      statements, 19 missed), measured with pytest-cov against a real 90-
+      test run. bridge.py and light.py both at 100%. Remaining gaps are in
+      __init__.py's rarely-hit background-task error branches,
+      config_flow.py's exception logging branches, and binary_sensor.py's
+      setup-entry edge cases.
 
   # -------------------------------- Gold ---------------------------------
   devices:
@@ -187,19 +191,25 @@ rules:
     status: done
     comment: README.md "Troubleshooting".
   docs-use-cases:
-    status: todo
+    status: done
     comment: >-
-      README has example automations but no dedicated narrative use-cases
-      section distinct from that - a real content gap, not just semantics.
+      README.md "Use cases" - offline resilience, automation latency,
+      network privacy, and cross-brand composition, distinct from the
+      example-automations recipes.
   dynamic-devices:
     status: todo
     comment: >-
-      Partially real: _refresh_export_and_reload_if_changed detects a
-      changed device list and reloads the config entry, which does surface
-      new devices without manual re-setup. But it does so via a full entry
-      reload rather than incrementally adding entities live, which is
-      coarser than what this rule expects (a brief interruption to existing
-      entities on every device-list change, not just new-device addition).
+      Improved but not complete. Device *removal* is now fully dynamic: the
+      periodic refresh diffs the device set and deletes stale devices from
+      the device registry directly (device registry removal cascades to
+      their entities too), no reload needed - see stale-devices. Device
+      *addition* still requires a full entry reload, since this integration
+      doesn't keep a reference to each platform's async_add_entities
+      callback for incremental addition. That would mean threading a
+      per-platform callback registry through runtime_data and refactoring
+      each platform's entity-building logic into a reusable per-node
+      function callable outside its own async_setup_entry - a real
+      architectural change, not implemented here.
   entity-category:
     status: done
     comment: CyncLanAppMeshActiveSensor sets entity_category = EntityCategory.DIAGNOSTIC. Tested.
@@ -210,13 +220,14 @@ rules:
     status: done
     comment: CyncLanAppMeshActiveSensor is disabled by default via DEFAULT_DISABLED_ENTITIES. Tested.
   entity-translations:
-    status: todo
+    status: done
     comment: >-
-      strings.json has entity.binary_sensor.motion.name; light/switch/fan
-      entities use has_entity_name + name=None (device-name-only) so have
-      nothing further to translate. Covers what needs it in principle, but
-      has NOT been verified via an actual translation-key resolution test -
-      marking todo rather than done until that's confirmed live.
+      Both binary_sensor entities (motion, app_mesh_active) resolve their
+      name through translation_key + strings.json rather than a hardcoded
+      literal - confirmed end-to-end in test_entity_translations.py, which
+      runs a real config entry through full setup and asserts the resolved
+      friendly_name in hass.states (not just that the translation_key
+      attribute is set).
   exception-translations:
     status: done
     comment: >-
@@ -224,8 +235,12 @@ rules:
       translation_key/translation_placeholders, matching strings.json's
       exceptions block, for all 3 startup-failure paths.
   icon-translations:
-    status: todo
-    comment: Not implemented - no icons.json. Entities rely on device_class default icons only.
+    status: done
+    comment: >-
+      icons.json provides state-based icon overrides (on/off) for both
+      binary_sensor entities that have a translation_key
+      (motion, app_mesh_active), resolved through the same translation_key
+      mechanism verified end-to-end for entity-translations above.
   reconfiguration-flow:
     status: done
     comment: >-
@@ -233,36 +248,45 @@ rules:
       export_refresh_interval without removing/re-adding the integration.
       Tested (test_options_flow).
   repair-issues:
-    status: todo
+    status: done
     comment: >-
-      Not implemented. Good future candidate: a repair issue if no devices
-      have connected N minutes after setup (near-certain sign the DNS
-      redirection isn't actually in place) - not built in this branch.
+      A one-shot check 10 minutes after setup (async_call_later) creates a
+      non-fixable WARNING repair issue if no device has connected yet - a
+      near-certain sign the DNS redirection prerequisite isn't in place.
+      Cleared automatically once a device connects, and on unload. Tested
+      in test_init.py (create, clear-on-connect, clear-on-unload).
   stale-devices:
-    status: todo
+    status: done
     comment: >-
-      Not implemented. _refresh_export_and_reload_if_changed detects *any*
-      change in the device set and reloads, but doesn't specifically diff
-      for and remove devices that dropped off the Cync account.
+      The periodic refresh now diffs the device set for removals
+      specifically and deletes them from the device registry directly
+      (_remove_stale_devices), rather than only detecting "changed" and
+      reloading. A refresh with only removals no longer reloads the entry
+      at all. Tested in test_init.py.
 
   # ------------------------------ Platinum -------------------------------
   async-dependency:
     status: todo
     comment: >-
       The cync_lan package's protocol code (devices.py, server.py) is
-      asyncio-native throughout, but cloud_api.py uses aiohttp directly
-      without a stable injected-session contract (see inject-websession),
-      and the package isn't published as an intentionally-async-first
-      library with a versioned API guarantee.
+      asyncio-native throughout, and cloud_api.py now accepts an injected
+      session (see inject-websession) rather than always creating its own -
+      but the package still isn't published as an intentionally-async-first
+      library with a versioned/semver API guarantee (see
+      dependency-transparency), which is the remaining piece of this rule.
   inject-websession:
-    status: todo
+    status: done
     comment: >-
-      cloud_api.py's CyncCloudAPI creates its own aiohttp.ClientSession
-      internally instead of accepting one via constructor injection. Home
-      Assistant's homeassistant.helpers.aiohttp_client.async_get_clientsession(hass)
-      should be threaded through instead - this requires a change to the
-      upstream cync_lan package itself, out of scope for this integration
-      branch alone.
+      cloud_api.py's CyncCloudAPI now accepts an optional session= kwarg;
+      when provided it's used instead of self-creating a session, and
+      close() correctly never closes a caller-injected session (verified
+      directly, not just assumed - test_util.py). util.get_cloud_api(hass)
+      threads Home Assistant's own shared session
+      (homeassistant.helpers.aiohttp_client.async_get_clientsession)
+      through every one of the 5 call sites in config_flow.py/__init__.py.
+      Backward compatible: callers elsewhere in cync_lan that construct
+      CyncCloudAPI() with no session kwarg keep self-creating and
+      self-closing their own session exactly as before (also tested).
   strict-typing:
     status: todo
     comment: >-
