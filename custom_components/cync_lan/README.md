@@ -32,14 +32,34 @@ for what that dependency relationship means in practice).
 
 ### Installing the integration
 
-1. Install via [HACS](https://hacs.xyz/) (custom repository) or copy this
-   `custom_components/cync_lan` directory into your Home Assistant
-   `config/custom_components/` directory.
+#### Via HACS (recommended)
+
+>[!NOTE]
+> This integration currently lives on the `feature/ha-custom-component`
+> branch, not the repository's default branch (`python`) - HACS's "Add
+> custom repository" flow defaults to the default branch, so **you must
+> select the `feature/ha-custom-component` branch explicitly** when adding
+> this repository (HACS's repository dialog has a branch/ref selector for
+> custom repositories). This note goes away once/if this branch is merged.
+
+1. In HACS, go to **Integrations → ⋮ (top right) → Custom repositories**.
+2. Add `https://github.com/Proxy-alt/cync-lan`, category **Integration**,
+   and select the `feature/ha-custom-component` branch.
+3. Find "Cync LAN" in HACS and install it.
+4. Restart Home Assistant.
+
+#### Manual installation
+
+1. Copy this `custom_components/cync_lan` directory into your Home
+   Assistant `config/custom_components/` directory.
 2. Restart Home Assistant.
-3. Go to **Settings → Devices & Services → Add Integration**, search for
+
+#### Finishing setup
+
+1. Go to **Settings → Devices & Services → Add Integration**, search for
    "Cync LAN".
-4. Enter your Cync account email and password.
-5. If prompted, enter the one-time verification code emailed to your
+2. Enter your Cync account email and password.
+3. If prompted, enter the one-time verification code emailed to your
    account.
 6. Confirm the device count found on your account to finish setup.
 

@@ -1,6 +1,15 @@
 >[!IMPORTANT]
 > [DNS redirection REQUIRED](./docs/DNS.md)
 
+>[!NOTE]
+> Arrived here via HACS? You're looking at the `feature/ha-custom-component`
+> branch's native Home Assistant integration - see
+> [`custom_components/cync_lan/README.md`](./custom_components/cync_lan/README.md)
+> for setup, configuration, and troubleshooting specific to that integration.
+> This top-level README covers the whole project, most of which (the Docker
+> add-on, MQTT bridge) is a separate way to run cync-lan, not needed if
+> you're using the HACS integration.
+
 # THERE IS NOW A HASS *App* FOR THIS PROJECT!
 
 Huge thanks to [@CodeNeedsCoffee](https://github.com/CodeNeedsCoffee) for the initial work on the App!
