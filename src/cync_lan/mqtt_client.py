@@ -946,11 +946,16 @@ class MQTTClient:
         unique_id: str,
         is_secondary: bool,
     ):
-        """Publish a read-only binary_sensor (device_class=motion) - either a
-        standalone sensor's only entity (is_secondary=False, e.g. type 96), or an
-        extra entity alongside a light/switch's own primary entity for its built-in
-        occupancy sensor (is_secondary=True, e.g. types 37/49/56). No command_topic:
-        motion sensors are read-only.
+        """Publish a read-only binary_sensor - either a standalone sensor's only
+        entity (is_secondary=False, e.g. type 96 motion sensor or type 112
+        wireless switch), or an extra entity alongside a light/switch's own
+        primary entity for its built-in occupancy sensor (is_secondary=True,
+        e.g. types 37/49/56). No command_topic: these are read-only.
+
+        device_class comes from metadata.capabilities.sensor_device_class -
+        "motion" for genuine motion/occupancy-sensing hardware, "occupancy" for
+        devices that reuse the same recently_seen-as-trigger-flag mechanism for
+        a different "recently active" signal (e.g. type 112's button press).
         """
         obj_id = f"cync_lan_{unique_id}"
         state_topic = (
@@ -958,6 +963,9 @@ class MQTTClient:
             if is_secondary
             else f"{self.topic}/status/{node.hass_id}"
         )
+        device_class = "motion"
+        if node.metadata and node.metadata.capabilities:
+            device_class = node.metadata.capabilities.sensor_device_class
         motion_entity_conf = {
             "object_id": obj_id,
             "default_entity_id": f"binary_sensor.{obj_id}",
@@ -968,7 +976,7 @@ class MQTTClient:
             "pl_not_avail": "offline",
             "payload_on": "ON",
             "payload_off": "OFF",
-            "device_class": "motion",
+            "device_class": device_class,
             "unique_id": unique_id,
             "origin": ORIGIN_STRUCT,
             "device": device_registry_struct,

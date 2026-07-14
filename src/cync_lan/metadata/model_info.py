@@ -32,6 +32,13 @@ class LightCapabilities:
     # One flag covers both: on a SENSOR-classified device it drives the device's only
     # entity; on a LIGHT/SWITCH device it adds a secondary occupancy binary_sensor.
     motion_sensor: bool = False
+    # binary_sensor device_class for the entity motion_sensor drives. "motion" for
+    # genuine motion/occupancy-sensing hardware; "occupancy" for devices that reuse
+    # the same recently_seen-as-trigger-flag mechanism for a different kind of
+    # decaying "recently active" signal (e.g. type 112's battery scene remote -
+    # confirmed via a real capture: recently_seen goes 1->0 ~19s after a button
+    # press, same shape as a motion trigger, but it's not a PIR/motion sensor).
+    sensor_device_class: str = "motion"
 
 
 @dataclass
@@ -554,22 +561,30 @@ device_type_map = {
         capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     112: DeviceTypeInfo(
-        type=DeviceClassification.SWITCH,
+        type=DeviceClassification.SENSOR,
         model_name="Wireless Switch (BTLE only, battery-powered scene remote)",
-        capabilities=SwitchCapabilities(),
-        supported=False,
+        capabilities=LightCapabilities(
+            motion_sensor=True, sensor_device_class="occupancy"
+        ),
         notes=[
             "Confirmed via a real cloud export (4 units): deviceType 112, no "
             "dimmable/color output of its own - 'lightRing*' fields (brightness/"
             "color/mode) describe a status LED ring, not a controllable light. "
             "occupancyEnable/occupancySensitivity present but disabled on these "
             "units. No wifiMac (BTLE-only, same as the type-96 motion sensors - "
-            "see the wifiMac-optional cloud_api.py export fix). Pressing the "
-            "physical switch to toggle its paired light produced no observable "
-            "packet in a live capture (unsupported_devices.log unchanged) - it "
-            "likely drives its paired light directly over the BTLE mesh without "
-            "routing through the WiFi-connected bridge our TCP listener sees. "
-            "Marked unsupported until real packet data surfaces for it.",
+            "see the wifiMac-optional cloud_api.py export fix). Initially marked "
+            "unsupported after a toggle test produced nothing in "
+            "unsupported_devices.log - that was a false negative: this type "
+            "already has a metadata entry, so it's never routed through the "
+            "*unsupported*-device capture path regardless of whether real "
+            "packets arrive. A later real capture confirmed it: dev_id 34 "
+            "(Garage Outside) sent a normal fa db 13 status struct with "
+            "recently_seen going 1->0 about 19s after a physical button press - "
+            "same shape as the type-96 motion sensor's trigger flag - while "
+            "bri/red/green stayed 0 and temp stayed fixed at 255 (same unused-"
+            "field sentinel as type 96). Treated as an occupancy-style 'recently "
+            "active' binary_sensor rather than device_class=motion since this is "
+            "a button press, not a PIR motion sensor.",
         ],
     ),
     113: DeviceTypeInfo(
