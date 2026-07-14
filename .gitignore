@@ -9,3 +9,8 @@ docker-compose.yaml
 uv.lock
 dump.txt
 *.egg-info
+__pycache__/
+*.pyc
+.coverage
+.pytest_cache/
+.DS_Store

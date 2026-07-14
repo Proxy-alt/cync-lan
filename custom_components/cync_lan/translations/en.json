@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your Cync account",
+        "description": "Cync LAN controls your devices entirely on your local network at runtime. Your account credentials are only used once, here, to pull down your device list - they are not stored in plain text and are not used again unless you re-run setup.",
+        "data": {
+          "account_username": "Email",
+          "account_password": "Password"
+        }
+      },
+      "otp": {
+        "title": "Enter the verification code",
+        "description": "Cync emailed a one-time verification code to your account email address.",
+        "data": {
+          "otp_code": "Verification code"
+        }
+      },
+      "confirm": {
+        "title": "Confirm setup",
+        "description": "Found {device_count} device(s) on your Cync account. Continue to finish setup and start the local listener."
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with Cync",
+        "description": "Cync LAN needs to sign in to your account again - the cached session expired or your password changed.",
+        "data": {
+          "account_password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "invalid_otp": "That verification code wasn't accepted.",
+      "cannot_connect": "Could not reach the Cync cloud API. Check your internet connection and try again.",
+      "no_devices": "No devices were found on this Cync account."
+    },
+    "abort": {
+      "already_configured": "This Cync account is already configured. Only one Cync LAN account is supported per Home Assistant instance."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cync LAN options",
+        "data": {
+          "local_port": "Local TCP port (devices must be redirected here via DNS)",
+          "export_refresh_interval": "Hours between automatic device-list refreshes (0 to disable)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "motion": {
+        "name": "Motion"
+      }
+    }
+  },
+  "exceptions": {
+    "listener_bind_failed": {
+      "message": "The Cync LAN TCP listener could not bind to port {port} within {timeout}s."
+    },
+    "listener_start_failed": {
+      "message": "The Cync LAN TCP listener exited during startup: {error}"
+    },
+    "config_missing": {
+      "message": "Exported device config not found at {path}. Remove and re-add the integration to run the export again."
+    },
+    "config_parse_failed": {
+      "message": "Failed to parse the exported device config: {error}"
+    }
+  }
+}

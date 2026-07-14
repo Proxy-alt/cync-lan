@@ -1,0 +1,93 @@
+"""Shared base entity for Cync LAN platforms."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
+
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import Entity
+
+from .bridge import CyncLanBridge, signal_device_online, signal_entity_update
+from .const import DOMAIN, MANUFACTURER
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
+
+
+def build_device_info(entry_id: str, node: "CyncDevice") -> DeviceInfo:
+    """devices (gold): every entity belongs to a proper HA device entry."""
+    unique_id = f"{entry_id}_{node.id}"
+    connections = {("bluetooth", node.mac.casefold())} if node.mac else set()
+    if not node.bt_only and node.wifi_mac:
+        connections.add(("mac", node.wifi_mac.casefold()))
+    model = "Unknown"
+    if node.metadata is not None:
+        model = node.metadata.model_string
+    return DeviceInfo(
+        identifiers={(DOMAIN, unique_id)},
+        connections=connections,
+        manufacturer=MANUFACTURER,
+        name=node.name,
+        model=model,
+        via_device=(DOMAIN, entry_id),
+    )
+
+
+class CyncLanEntity(Entity):
+    """Common plumbing for every Cync LAN entity.
+
+    has-entity-name (bronze): has_entity_name = True, subclasses set
+    `_attr_name` to None (device-name-only) or a short suffix like "Motion".
+    entity-unique-id (bronze): unique_id always set below.
+    entity-unavailable (silver): available reflects the bridge's per-device
+    online tracking, updated from real fa db status packets.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        bridge: CyncLanBridge,
+        entry_id: str,
+        node: "CyncDevice",
+        sub_id: int = 0,
+        unique_id_suffix: str = "",
+    ) -> None:
+        self._bridge = bridge
+        self._entry_id = entry_id
+        self._node = node
+        self._sub_id = sub_id
+        self._attr_unique_id = f"{entry_id}_{node.id}" + (
+            f"_{sub_id}" if sub_id else ""
+        ) + unique_id_suffix
+        self._attr_device_info = build_device_info(entry_id, node)
+
+    @property
+    def available(self) -> bool:
+        return self._bridge.is_online(self._node.id)
+
+    async def async_added_to_hass(self) -> None:
+        """entity-event-setup (bronze): subscribe during the lifecycle phase
+        HA expects, not in __init__ (before the entity has a hass instance)."""
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_entity_update(self._attr_unique_id),
+                self._handle_update,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_device_online(self._node.id),
+                self._handle_update,
+            )
+        )
+
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    def _entity_state(self) -> Optional["object"]:
+        return self._bridge.get_state(self._node.id, self._sub_id)

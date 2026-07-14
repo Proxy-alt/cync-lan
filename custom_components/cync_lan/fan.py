@@ -1,0 +1,77 @@
+"""Fan platform for Cync LAN (fan controller switches, e.g. deviceType 81)."""
+
+from __future__ import annotations
+
+import logging
+
+from homeassistant.components.fan import FanEntity, FanEntityFeature
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .entity import CyncLanEntity
+
+_LOGGER = logging.getLogger(__name__)
+PARALLEL_UPDATES = 0
+
+_PRESET_MODES = ["low", "medium", "high", "max"]
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    bridge = entry.runtime_data.bridge
+    entities = [
+        CyncLanFan(bridge, entry.entry_id, node)
+        for node in g.ncync_server.node_devices.values()
+        if node.metadata is not None
+        and node.metadata.supported
+        and node.is_fan_controller
+    ]
+    async_add_entities(entities)
+
+
+class CyncLanFan(CyncLanEntity, FanEntity):
+    _attr_name = None
+    _attr_supported_features = (
+        FanEntityFeature.SET_SPEED
+        | FanEntityFeature.PRESET_MODE
+        | FanEntityFeature.TURN_ON
+        | FanEntityFeature.TURN_OFF
+    )
+    _attr_preset_modes = _PRESET_MODES
+    _attr_speed_count = 4
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self._entity_state()
+        return bool(state.power) if state else None
+
+    @property
+    def percentage(self) -> int | None:
+        state = self._entity_state()
+        return state.brightness if state else None
+
+    async def async_turn_on(
+        self, percentage: int | None = None, preset_mode: str | None = None, **kwargs
+    ) -> None:
+        if percentage is not None:
+            await self._node.set_fan_percentage(percentage)
+        elif preset_mode is not None:
+            await self.async_set_preset_mode(preset_mode)
+        else:
+            await self._node.set_power(1)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._node.set_power(0)
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        await self._node.set_fan_percentage(percentage)
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        from cync_lan.structs import FanSpeed
+
+        await self._node.set_fan_speed(FanSpeed(preset_mode))

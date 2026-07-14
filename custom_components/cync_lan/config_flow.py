@@ -1,0 +1,249 @@
+"""Config flow for Cync LAN.
+
+Known limitation (documented, not hidden): the upstream `cync_lan` package
+this integration depends on reads account credentials, secret key, and the
+exported-device-config path from process-wide environment variables /
+module-level constants (cync_lan.const), not per-call arguments - it was
+built for a one-account-per-container add-on. This flow sets those
+environment variables before touching the cloud API, which means Home
+Assistant can only run a single Cync LAN account/config entry at a time
+(unique-config-entry is enforced below for the same reason). Making the
+upstream package multi-instance-safe is out of scope for this integration
+and would be a breaking change to cync_lan itself.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import voluptuous as vol
+from homeassistant import config_entries
+from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
+
+from .const import (
+    CONF_ACCOUNT_PASSWORD,
+    CONF_ACCOUNT_USERNAME,
+    CONF_EXPORT_REFRESH_INTERVAL,
+    CONF_LOCAL_PORT,
+    DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
+    DEFAULT_LOCAL_PORT,
+    DOMAIN,
+)
+from .util import configure_environment
+
+_LOGGER = logging.getLogger(__name__)
+
+STEP_USER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ACCOUNT_USERNAME): str,
+        vol.Required(CONF_ACCOUNT_PASSWORD): str,
+    }
+)
+STEP_OTP_SCHEMA = vol.Schema({vol.Required("otp_code"): str})
+
+
+class InvalidAuth(HomeAssistantError):
+    """Username/password rejected."""
+
+
+class InvalidOtp(HomeAssistantError):
+    """OTP code rejected."""
+
+
+class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Cync LAN."""
+
+    VERSION = 1
+
+    def __init__(self) -> None:
+        self._username: str | None = None
+        self._password: str | None = None
+        self._device_count: int = 0
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._username = user_input[CONF_ACCOUNT_USERNAME]
+            self._password = user_input[CONF_ACCOUNT_PASSWORD]
+
+            # unique-config-entry: one HA instance, one Cync account (see
+            # module docstring for why this integration can't support more).
+            await self.async_set_unique_id(self._username.casefold())
+            self._abort_if_unique_id_configured()
+
+            configure_environment(self.hass, self._username, self._password)
+            try:
+                from cync_lan.cloud_api import CyncCloudAPI
+
+                api = CyncCloudAPI()
+                await api._check_session()
+                have_token = await api.check_token()
+                if have_token:
+                    return await self._finish_export()
+                requested = await api.request_otp()
+                if not requested:
+                    raise InvalidAuth
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001 - surfaced to the user as a form error
+                _LOGGER.exception("Unexpected error talking to the Cync cloud API")
+                errors["base"] = "cannot_connect"
+            else:
+                return await self.async_step_otp()
+
+        return self.async_show_form(
+            step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
+        )
+
+    async def async_step_otp(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                from cync_lan.cloud_api import CyncCloudAPI
+
+                api = CyncCloudAPI()
+                ok = await api.send_otp(int(user_input["otp_code"]))
+                if not ok:
+                    raise InvalidOtp
+            except (InvalidOtp, ValueError):
+                errors["base"] = "invalid_otp"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error submitting OTP to the Cync cloud API")
+                errors["base"] = "cannot_connect"
+            else:
+                return await self._finish_export()
+
+        return self.async_show_form(
+            step_id="otp", data_schema=STEP_OTP_SCHEMA, errors=errors
+        )
+
+    async def _finish_export(self) -> config_entries.ConfigFlowResult:
+        """test-before-configure: actually pull the device list before
+        letting the user finish setup, so a bad account/empty home fails
+        here instead of silently producing zero entities after setup."""
+        from pathlib import Path
+
+        from cync_lan.cloud_api import CyncCloudAPI
+        from cync_lan.const import CYNC_CONFIG_FILE_PATH
+        from cync_lan.utils import parse_config
+
+        api = CyncCloudAPI()
+        exported = await api.export_config_file()
+        if not exported:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=STEP_USER_SCHEMA,
+                errors={"base": "no_devices"},
+            )
+        node_map = await parse_config(Path(CYNC_CONFIG_FILE_PATH))
+        self._device_count = len(node_map)
+        if self._device_count == 0:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=STEP_USER_SCHEMA,
+                errors={"base": "no_devices"},
+            )
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(
+                title=self._username,
+                data={
+                    CONF_ACCOUNT_USERNAME: self._username,
+                    CONF_ACCOUNT_PASSWORD: self._password,
+                },
+                options={
+                    CONF_LOCAL_PORT: DEFAULT_LOCAL_PORT,
+                    CONF_EXPORT_REFRESH_INTERVAL: DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
+                },
+            )
+        return self.async_show_form(
+            step_id="confirm",
+            description_placeholders={"device_count": str(self._device_count)},
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> config_entries.ConfigFlowResult:
+        """Silver: reauthentication-flow - triggered when the cached cloud
+        token can't be refreshed (expired refresh token, password changed)."""
+        self._username = entry_data[CONF_ACCOUNT_USERNAME]
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._password = user_input[CONF_ACCOUNT_PASSWORD]
+            configure_environment(self.hass, self._username, self._password)
+            try:
+                from cync_lan.cloud_api import CyncCloudAPI
+
+                api = CyncCloudAPI()
+                requested = await api.request_otp()
+                if not requested:
+                    raise InvalidAuth
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during reauth")
+                errors["base"] = "cannot_connect"
+            else:
+                return await self.async_step_otp()
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_ACCOUNT_PASSWORD): str}),
+            errors=errors,
+        )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "CyncLanOptionsFlow":
+        return CyncLanOptionsFlow(config_entry)
+
+
+class CyncLanOptionsFlow(config_entries.OptionsFlow):
+    """Gold: reconfiguration-flow - lets the user change the local port and
+    export refresh interval without deleting and re-adding the integration."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self._config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        current = self._config_entry.options
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_LOCAL_PORT,
+                        default=current.get(CONF_LOCAL_PORT, DEFAULT_LOCAL_PORT),
+                    ): int,
+                    vol.Required(
+                        CONF_EXPORT_REFRESH_INTERVAL,
+                        default=current.get(
+                            CONF_EXPORT_REFRESH_INTERVAL,
+                            DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
+                        ),
+                    ): int,
+                }
+            ),
+        )

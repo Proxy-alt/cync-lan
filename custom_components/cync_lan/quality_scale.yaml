@@ -1,0 +1,271 @@
+# Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
+# Every "done" claim below was verified by an actual pytest run against
+# pytest-homeassistant-custom-component (67 tests, 91% line coverage on
+# custom_components/cync_lan as of this writing - not just static review).
+# "todo" items are real, identified gaps, not hedging.
+
+rules:
+  # ------------------------------- Bronze -------------------------------
+  action-setup:
+    status: exempt
+    comment: >-
+      No custom service actions are defined; all control goes through the
+      standard light/switch/fan entity platforms.
+  appropriate-polling:
+    status: exempt
+    comment: >-
+      local_push integration - device state is pushed over the persistent
+      TCP connection, never polled. The periodic device-*list* refresh
+      (async_track_time_interval, default 24h, user-configurable) is a
+      deliberate low-frequency background task, not device state polling.
+  brands: todo
+  common-modules:
+    status: done
+    comment: >-
+      Shared state/dispatch logic centralized in bridge.py; shared entity
+      boilerplate (unique_id, device_info, availability, dispatcher
+      subscription) centralized in entity.py's CyncLanEntity base class.
+  config-flow-test-coverage:
+    status: done
+    comment: >-
+      tests/components/cync_lan/test_config_flow.py covers user/otp/confirm,
+      every error branch (invalid_auth, invalid_otp, cannot_connect,
+      no_devices), duplicate-account abort, reauth (success + 2 failure
+      modes), and the options flow. config_flow.py itself: 96% line coverage.
+  config-flow:
+    status: done
+    comment: >-
+      Full UI setup wizard (config_flow.py). entry.data holds only
+      credentials (immutable identity); entry.options holds user-changeable
+      settings (local port, export refresh interval).
+  dependency-transparency:
+    status: todo
+    comment: >-
+      manifest.json's requirements references a git+https URL
+      (github.com/Proxy-alt/cync-lan) rather than a published PyPI release.
+      Honest about being fork-specific, but not ideal - hassfest/HACS
+      validation may flag it, and it means no pinned, reproducible version
+      resolution the way a real release would give. Publishing cync-lan to
+      PyPI would resolve this.
+  docs-actions:
+    status: exempt
+    comment: No custom service actions defined.
+  docs-triggers:
+    status: exempt
+    comment: No custom triggers defined (standard entity-state triggers apply).
+  docs-conditions:
+    status: exempt
+    comment: No custom conditions defined.
+  docs-high-level-description:
+    status: done
+    comment: README.md "What this is".
+  docs-installation-instructions:
+    status: done
+    comment: README.md "Prerequisites" + "Installing the integration".
+  docs-removal-instructions:
+    status: done
+    comment: README.md "Removing the integration".
+  entity-event-setup:
+    status: done
+    comment: >-
+      CyncLanEntity.async_added_to_hass subscribes via
+      async_dispatcher_connect + self.async_on_remove - not done in
+      __init__, which runs before the entity has a hass instance. Tested in
+      test_entity.py.
+  entity-unique-id:
+    status: done
+    comment: Every entity sets unique_id in CyncLanEntity.__init__.
+  has-entity-name:
+    status: done
+    comment: _attr_has_entity_name = True on CyncLanEntity and the diagnostic sensor.
+  runtime-data:
+    status: done
+    comment: CyncLanRuntimeData dataclass stored on entry.runtime_data.
+  test-before-configure:
+    status: done
+    comment: >-
+      config_flow's _finish_export pulls the real device list and requires
+      a non-zero count before allowing entry creation - a bad account or
+      empty home fails during setup, not silently after.
+  test-before-setup:
+    status: done
+    comment: >-
+      async_setup_entry polls ncync_server.running with a timeout before
+      returning True, raising ConfigEntryNotReady on bind failure/timeout.
+      Tested in test_init.py (both the success and timeout paths).
+  unique-config-entry:
+    status: done
+    comment: >-
+      async_set_unique_id(username) + _abort_if_unique_id_configured().
+      Tested (test_duplicate_account_aborts).
+
+  # ------------------------------- Silver -------------------------------
+  action-exceptions:
+    status: exempt
+    comment: No custom service actions to raise from.
+  config-entry-unloading:
+    status: done
+    comment: >-
+      async_unload_entry stops the TCP listener, cancels its task, cancels
+      the periodic-refresh listener, and unloads platforms. Tested in
+      test_init.py.
+  docs-configuration-parameters:
+    status: done
+    comment: README.md "Configuration parameters" table.
+  docs-installation-parameters:
+    status: done
+    comment: Covered in README.md's "Installing the integration" (only inputs are account email/password/OTP).
+  entity-unavailable:
+    status: done
+    comment: >-
+      CyncLanEntity.available reflects bridge.is_online(dev_id), driven by
+      real online/offline tracking from device status packets. Tested.
+  integration-owner:
+    status: done
+    comment: 'manifest.json codeowners: ["@Proxy-alt"].'
+  log-when-unavailable:
+    status: todo
+    comment: >-
+      Real gap: bridge.pub_online()/is_online tracking exists and correctly
+      drives entity availability, but there's no explicit logger call on
+      the transition itself (no "device X went offline" log line).
+  parallel-updates:
+    status: done
+    comment: >-
+      PARALLEL_UPDATES = 0 declared and explicitly justified in each
+      platform module (light/switch/fan/binary_sensor) - the protocol layer
+      serializes its own commands per bridge connection, so entities don't
+      need HA-side throttling.
+  reauthentication-flow:
+    status: done
+    comment: >-
+      async_step_reauth/async_step_reauth_confirm implemented; 3 tests
+      covering success, invalid auth, and connection failure.
+  test-coverage:
+    status: todo
+    comment: >-
+      91% overall line coverage on custom_components/cync_lan (609
+      statements, 52 missed), measured with pytest-cov against a real test
+      run - short of the required >95%. Remaining gaps are concentrated in
+      __init__.py's periodic-refresh error path and a handful of rarely-hit
+      bridge.py callback branches.
+
+  # -------------------------------- Gold ---------------------------------
+  devices:
+    status: done
+    comment: build_device_info() gives every entity a proper DeviceInfo (identifiers/connections/manufacturer/model). Tested.
+  diagnostics:
+    status: done
+    comment: diagnostics.py, redacts credentials and MAC addresses. Tested.
+  discovery-update-info:
+    status: exempt
+    comment: No LAN discovery protocol applies (see discovery below) - nothing to update from.
+  discovery:
+    status: exempt
+    comment: >-
+      Cync devices don't self-announce on the LAN via any HA-supported
+      discovery protocol (no mDNS/SSDP/DHCP broadcast, by design - they
+      phone home to Cync's cloud instead). New devices are found via the
+      periodic cloud re-export mechanism instead, which is a fundamentally
+      different mechanism than "discovery" in HA's sense.
+  docs-data-update:
+    status: done
+    comment: README.md "How data updates".
+  docs-examples:
+    status: done
+    comment: README.md "Example automations".
+  docs-known-limitations:
+    status: done
+    comment: README.md "Known limitations".
+  docs-supported-devices:
+    status: done
+    comment: README.md "Supported devices and functions", links to the dependency's known_devices.md.
+  docs-supported-functions:
+    status: done
+    comment: Same section as docs-supported-devices.
+  docs-troubleshooting:
+    status: done
+    comment: README.md "Troubleshooting".
+  docs-use-cases:
+    status: todo
+    comment: >-
+      README has example automations but no dedicated narrative use-cases
+      section distinct from that - a real content gap, not just semantics.
+  dynamic-devices:
+    status: todo
+    comment: >-
+      Partially real: _refresh_export_and_reload_if_changed detects a
+      changed device list and reloads the config entry, which does surface
+      new devices without manual re-setup. But it does so via a full entry
+      reload rather than incrementally adding entities live, which is
+      coarser than what this rule expects (a brief interruption to existing
+      entities on every device-list change, not just new-device addition).
+  entity-category:
+    status: done
+    comment: CyncLanAppMeshActiveSensor sets entity_category = EntityCategory.DIAGNOSTIC. Tested.
+  entity-device-class:
+    status: done
+    comment: SwitchDeviceClass.OUTLET/SWITCH in switch.py; motion/occupancy device_class in binary_sensor.py. Tested.
+  entity-disabled-by-default:
+    status: done
+    comment: CyncLanAppMeshActiveSensor is disabled by default via DEFAULT_DISABLED_ENTITIES. Tested.
+  entity-translations:
+    status: todo
+    comment: >-
+      strings.json has entity.binary_sensor.motion.name; light/switch/fan
+      entities use has_entity_name + name=None (device-name-only) so have
+      nothing further to translate. Covers what needs it in principle, but
+      has NOT been verified via an actual translation-key resolution test -
+      marking todo rather than done until that's confirmed live.
+  exception-translations:
+    status: done
+    comment: >-
+      __init__.py's ConfigEntryNotReady raises use translation_domain/
+      translation_key/translation_placeholders, matching strings.json's
+      exceptions block, for all 3 startup-failure paths.
+  icon-translations:
+    status: todo
+    comment: Not implemented - no icons.json. Entities rely on device_class default icons only.
+  reconfiguration-flow:
+    status: done
+    comment: >-
+      CyncLanOptionsFlow lets the user change local_port and
+      export_refresh_interval without removing/re-adding the integration.
+      Tested (test_options_flow).
+  repair-issues:
+    status: todo
+    comment: >-
+      Not implemented. Good future candidate: a repair issue if no devices
+      have connected N minutes after setup (near-certain sign the DNS
+      redirection isn't actually in place) - not built in this branch.
+  stale-devices:
+    status: todo
+    comment: >-
+      Not implemented. _refresh_export_and_reload_if_changed detects *any*
+      change in the device set and reloads, but doesn't specifically diff
+      for and remove devices that dropped off the Cync account.
+
+  # ------------------------------ Platinum -------------------------------
+  async-dependency:
+    status: todo
+    comment: >-
+      The cync_lan package's protocol code (devices.py, server.py) is
+      asyncio-native throughout, but cloud_api.py uses aiohttp directly
+      without a stable injected-session contract (see inject-websession),
+      and the package isn't published as an intentionally-async-first
+      library with a versioned API guarantee.
+  inject-websession:
+    status: todo
+    comment: >-
+      cloud_api.py's CyncCloudAPI creates its own aiohttp.ClientSession
+      internally instead of accepting one via constructor injection. Home
+      Assistant's homeassistant.helpers.aiohttp_client.async_get_clientsession(hass)
+      should be threaded through instead - this requires a change to the
+      upstream cync_lan package itself, out of scope for this integration
+      branch alone.
+  strict-typing:
+    status: todo
+    comment: >-
+      No py.typed marker on this integration, and the upstream cync_lan
+      package doesn't provide one either - a hard blocker for platinum
+      regardless of what this integration branch does on its own.
