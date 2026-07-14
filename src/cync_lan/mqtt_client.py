@@ -570,6 +570,18 @@ class MQTTClient:
             self.tasks = []
 
 
+    def report_unknown_device_id(self, dev_id: int) -> None:
+        """Called from devices.py when a MeshInfo entry names a dev_id we
+        have no CyncDevice for - the existing "you need to export a new
+        config file" log warning right before this call is already the
+        actionable signal for this add-on, since re-exporting happens via
+        the export server's own UI/API, not something this class can
+        trigger itself. No-op here; see
+        custom_components/cync_lan/bridge.py's CyncLanBridge for the real
+        implementation (which can and does trigger an immediate re-export).
+        """
+        return None
+
     async def pub_online(self, device_id: int, status: bool) -> bool:
         # no need for sub_id, if the parent device is online, children are online
         lp = f"{self.lp}pub_online:"

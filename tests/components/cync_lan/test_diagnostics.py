@@ -25,7 +25,7 @@ def _fake_node(**overrides):
 
 async def test_diagnostics_redacts_credentials_and_macs(hass):
     bridge = CyncLanBridge(hass, "entry1")
-    bridge.pub_online(5, True)
+    await bridge.pub_online(5, True)
     node = _fake_node()
 
     server = MagicMock()

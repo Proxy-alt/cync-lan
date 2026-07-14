@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (90 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (97 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -202,14 +202,32 @@ rules:
       Improved but not complete. Device *removal* is now fully dynamic: the
       periodic refresh diffs the device set and deletes stale devices from
       the device registry directly (device registry removal cascades to
-      their entities too), no reload needed - see stale-devices. Device
-      *addition* still requires a full entry reload, since this integration
-      doesn't keep a reference to each platform's async_add_entities
-      callback for incremental addition. That would mean threading a
-      per-platform callback registry through runtime_data and refactoring
-      each platform's entity-building logic into a reusable per-node
-      function callable outside its own async_setup_entry - a real
-      architectural change, not implemented here.
+      their entities too), no reload needed - see stale-devices. New
+      devices are now detected promptly too, not just on the (possibly
+      hours-away, or disabled) periodic timer: devices.py's existing
+      "Received MeshInfo for unknown device ID" branch
+      (_process_73_mesh_info) now calls bridge.report_unknown_device_id(),
+      which debounces (must see the same ID
+      UNKNOWN_DEVICE_SEEN_THRESHOLD=3 times - MeshInfo entries are
+      individually-addressed real devices, not the noisy group/broadcast
+      pseudo-IDs the per-status-packet path sees, so this is a trustworthy
+      signal) and rate-limits (max once per
+      UNKNOWN_DEVICE_TRIGGER_COOLDOWN_SECONDS=900s, protecting the real
+      Cync cloud API from being hammered) before triggering the same
+      _refresh_export_and_reload_if_changed the periodic timer uses. A
+      matching no-op was added to the real MQTTClient for the existing
+      MQTT-based add-on, which doesn't have anywhere to trigger a
+      re-export from itself. All of this is tested (test_bridge.py,
+      test_init.py), including a regression test for a real bug this work
+      surfaced: bridge.pub_online was a plain `def` when devices.py's
+      actual call site wraps it directly in asyncio.create_task(), which
+      requires a coroutine - fixed to `async def`, confirmed against the
+      real MQTTClient.pub_online. What's still missing: addition still
+      means a full entry reload once triggered, not incremental
+      async_add_entities-based addition of just the new device - that
+      still needs the per-platform callback registry / entity-building
+      refactor described previously, a larger architectural change not
+      attempted here.
   entity-category:
     status: done
     comment: CyncLanAppMeshActiveSensor sets entity_category = EntityCategory.DIAGNOSTIC. Tested.

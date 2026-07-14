@@ -108,8 +108,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             translation_placeholders={"error": str(err)},
         ) from err
 
+    async def _on_unknown_device_confirmed() -> None:
+        # dynamic-devices (gold): a real new device was seen in a MeshInfo
+        # dump - re-export now instead of waiting for the periodic refresh
+        # timer (which may be hours away, or disabled entirely).
+        await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)
+
     g = GlobalObject()
-    bridge = CyncLanBridge(hass, entry.entry_id)
+    bridge = CyncLanBridge(
+        hass, entry.entry_id, on_unknown_device=_on_unknown_device_confirmed
+    )
     g.mqtt_client = bridge
     g.ncync_server = ncync_server = nCyncServer(node_map)
 

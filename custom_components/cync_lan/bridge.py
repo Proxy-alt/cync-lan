@@ -4,20 +4,27 @@ JSON.
 
 devices.py (in the upstream `cync_lan` package this integration depends on)
 calls a fixed set of methods on a module-level `g.mqtt_client` singleton to
-report state changes and command acknowledgements - see MqttClient in
+report state changes and command acknowledgements - see MQTTClient in
 cync_lan/mqtt_client.py for the original MQTT-based implementation. This
 class implements the exact same call surface (verified against every
 `g.mqtt_client.<method>` call site in devices.py) but instead of touching
 MQTT, it records the latest EntityState per (dev_id, sub_id) and notifies
 entities via Home Assistant's dispatcher, which they listen to in
-async_added_to_hass. Nothing in devices.py needed to change.
+async_added_to_hass.
+
+One addition needed a small, matching change in devices.py itself:
+report_unknown_device_id() (see below) is called from
+_process_73_mesh_info's existing "Received MeshInfo for unknown device ID"
+branch, with a no-op mirror added to MQTTClient for the MQTT-based add-on
+so that branch doesn't need an isinstance check to stay safe for both.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -58,7 +65,22 @@ class CyncLanBridge:
     existing state-reporting/command-ack calls land here instead of MQTT.
     """
 
-    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+    # dynamic-devices (gold): require the same unknown dev_id to show up
+    # this many times before treating it as a real new device rather than
+    # transient packet noise (a single corrupted/misaligned MeshInfo entry).
+    UNKNOWN_DEVICE_SEEN_THRESHOLD = 3
+    # ...and never trigger more than once per cooldown window, regardless of
+    # how many different unknown dev_ids show up - this calls the real Cync
+    # cloud API, and the whole point of this integration is not hammering
+    # that cloud dependency at runtime.
+    UNKNOWN_DEVICE_TRIGGER_COOLDOWN_SECONDS = 900.0  # 15 minutes
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry_id: str,
+        on_unknown_device: Optional[Callable[[], None]] = None,
+    ) -> None:
         self.hass = hass
         self.entry_id = entry_id
         # topic is only read by devices.py to build a lookup key for
@@ -77,6 +99,13 @@ class CyncLanBridge:
         # main.py assigns its own asyncio.Task handle here after calling
         # start() - a plain attribute, not something this class manages.
         self.start_task = None
+        # Called (fire-and-forget, via hass.async_create_task) once a truly
+        # new device is confirmed - set by __init__.py to trigger an
+        # immediate cloud re-export instead of waiting for the periodic
+        # refresh timer (which may be hours away, or disabled).
+        self._on_unknown_device = on_unknown_device
+        self._unknown_device_sightings: dict[int, int] = {}
+        self._last_unknown_device_trigger: float = 0.0
 
     def _get(self, dev_id: int, sub_id: int = 0) -> BridgeEntityState:
         key = (dev_id, sub_id)
@@ -129,9 +158,62 @@ class CyncLanBridge:
         async_dispatcher_send(self.hass, signal_entity_update(unique_id))
         return True
 
-    def pub_online(self, dev_id: int, value: bool) -> None:
+    async def pub_online(self, dev_id: int, value: bool) -> None:
+        """Must stay async: devices.py wraps this call directly in
+        asyncio.create_task(), which requires a coroutine - a plain sync def
+        here would raise "a coroutine was expected, got None" at runtime.
+        Confirmed against the real MQTTClient.pub_online, which is async for
+        the same reason."""
         self._set_online(dev_id, value)
         async_dispatcher_send(self.hass, signal_device_online(dev_id))
+
+    def report_unknown_device_id(self, dev_id: int) -> None:
+        """dynamic-devices (gold): called from devices.py's
+        _process_73_mesh_info when a MeshInfo entry names a dev_id this
+        integration has no CyncDevice for - i.e. real mesh hardware Cync's
+        cloud hasn't told us about yet. Unlike the noisier per-status-packet
+        "unknown device" path (which fires constantly for group/room
+        broadcast pseudo-addresses), MeshInfo entries are individually
+        addressed real devices, so this is a much more trustworthy "there's
+        a new device" signal.
+
+        Debounced twice over: the same dev_id must be seen
+        UNKNOWN_DEVICE_SEEN_THRESHOLD times before being trusted (filters a
+        single corrupted/misaligned packet), and even a confirmed new device
+        won't trigger more than once per
+        UNKNOWN_DEVICE_TRIGGER_COOLDOWN_SECONDS - this ends up calling the
+        real Cync cloud API, and hammering it on every packet from a device
+        that, for whatever reason, never resolves would defeat this
+        integration's whole "don't depend on the cloud at runtime" premise.
+        """
+        if self._on_unknown_device is None:
+            return
+        count = self._unknown_device_sightings.get(dev_id, 0) + 1
+        self._unknown_device_sightings[dev_id] = count
+        if count < self.UNKNOWN_DEVICE_SEEN_THRESHOLD:
+            return
+        now = time.monotonic()
+        if (
+            now - self._last_unknown_device_trigger
+            < self.UNKNOWN_DEVICE_TRIGGER_COOLDOWN_SECONDS
+        ):
+            return
+        self._last_unknown_device_trigger = now
+        _LOGGER.info(
+            "Confirmed unknown Cync device ID %s seen %d times, triggering "
+            "an immediate cloud re-export",
+            dev_id,
+            count,
+        )
+        self.hass.async_create_task(self._call_on_unknown_device())
+
+    async def _call_on_unknown_device(self) -> None:
+        try:
+            result = self._on_unknown_device()
+            if result is not None:
+                await result
+        except Exception:  # noqa: BLE001 - must not crash the packet-parse loop
+            _LOGGER.exception("Error handling confirmed unknown device")
 
     async def mark_app_mesh_active(self, timeout: float = 60.0) -> None:
         # "Cync App Active" diagnostic entity - disabled by default (see

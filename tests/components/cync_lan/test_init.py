@@ -83,6 +83,40 @@ async def test_setup_entry_success(hass, tmp_path):
     server.start.assert_awaited_once()
 
 
+async def test_setup_entry_wires_unknown_device_callback_to_immediate_refresh(
+    hass, tmp_path
+):
+    """dynamic-devices (gold): a confirmed-new device (via
+    bridge.report_unknown_device_id crossing its threshold) should trigger
+    the same refresh-and-reload-if-changed logic the periodic timer uses,
+    not a separate/parallel code path."""
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "custom_components.cync_lan._refresh_export_and_reload_if_changed",
+        new=AsyncMock(),
+    ) as mock_refresh:
+        from custom_components.cync_lan import async_setup_entry
+
+        await async_setup_entry(hass, entry)
+
+        bridge = entry.runtime_data.bridge
+        for _ in range(bridge.UNKNOWN_DEVICE_SEEN_THRESHOLD):
+            bridge.report_unknown_device_id(99)
+        await hass.async_block_till_done()
+
+    mock_refresh.assert_awaited_once_with(hass, entry, cfg_file)
+
+
 async def test_setup_entry_bind_timeout_raises_not_ready(hass, tmp_path):
     cfg_file = tmp_path / "cync_mesh.yaml"
     cfg_file.write_text("devices: {}")

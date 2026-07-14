@@ -61,7 +61,7 @@ async def test_available_reflects_bridge_online_state(hass):
     entity = CyncLanEntity(bridge, "entry1", node)
 
     assert entity.available is True
-    bridge.pub_online(5, False)
+    await bridge.pub_online(5, False)
     assert entity.available is False
 
 
