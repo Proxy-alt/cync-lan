@@ -960,7 +960,7 @@ class MQTTClient:
         )
         motion_entity_conf = {
             "object_id": obj_id,
-            "default_entity_id": obj_id,
+            "default_entity_id": f"binary_sensor.{obj_id}",
             "name": "Motion" if is_secondary else None,
             "state_topic": state_topic,
             "avty_t": f"{self.topic}/availability/{node.hass_id}",
@@ -1043,6 +1043,16 @@ class MQTTClient:
             registry_struct["preset_mode_state_topic"] = "{0}/status/{1}/preset".format(
                 self.topic, entity_uuid
             )
+
+        # default_entity_id must be the full domain-prefixed entity_id (e.g.
+        # "light.cync_lan_..."), not a bare object_id/slug - HASS deprecated
+        # object_id for this purpose (removed entirely as of HA Core 2026.4);
+        # a bare slug here is silently rejected and HASS leaves entity_id blank.
+        # dev_type isn't known until here (light/switch/fan), so this overwrites
+        # whatever placeholder the caller set on registry_struct["object_id"].
+        registry_struct["default_entity_id"] = (
+            f"{dev_type}.{registry_struct.get('object_id', entity_uuid)}"
+        )
 
         tpc = tpc_str_template.format(self.ha_topic, dev_type, entity_uuid)
         try:
@@ -1181,7 +1191,8 @@ class MQTTClient:
                     entity_registry_struct = {
                         # retain for older HASS versions
                         "object_id": obj_id,
-                        "default_entity_id": obj_id,
+                        # default_entity_id needs the light/switch/fan domain prefix,
+                        # which isn't known until _publish_entity() - set there instead.
                         # set to None if only device name is relevant, this sets entity name
                         "name": None,
                         "command_topic": "{0}/set/{1}".format(self.topic, device_uuid),
@@ -1220,7 +1231,7 @@ class MQTTClient:
                                 "{0}/availability/{1}".format(self.topic, cdevice_uuid)
                             )
                             entity_registry_struct["object_id"] = cobj_id
-                            entity_registry_struct["default_entity_id"] = cobj_id
+                            # default_entity_id set inside _publish_entity() (needs dev_type)
                             entity_registry_struct["name"] = ep_state.name
                             entity_registry_struct["unique_id"] = (
                                 f"{node_repr.home_id}_{node_repr.id}_{ep_id}"
@@ -1364,7 +1375,7 @@ class MQTTClient:
             "platform": "button",
             # obj_id is to link back to the bridge device
             "object_id": CYNC_BRIDGE_OBJ_ID + "_restart",
-            "default_entity_id": CYNC_BRIDGE_OBJ_ID + "_restart",
+            "default_entity_id": f"{entity_type}.{CYNC_BRIDGE_OBJ_ID}_restart",
             "command_topic": f"{self.topic}/set/bridge/restart",
             "state_topic": f"{self.topic}/status/bridge/restart",
             "avty_t": f"{self.topic}/availability/bridge",
@@ -1383,7 +1394,7 @@ class MQTTClient:
 
         entity_unique_id = f"{bridge_base_unique_id}_start_export"
         xport_btn_entity_conf = restart_btn_entity_struct.copy()
-        xport_btn_entity_conf["default_entity_id"] = entity_unique_id
+        xport_btn_entity_conf["default_entity_id"] = f"{entity_type}.{entity_unique_id}"
         xport_btn_entity_conf["command_topic"] = f"{self.topic}/set/bridge/export/start"
         xport_btn_entity_conf["state_topic"] = (
             f"{self.topic}/status/bridge/export/start"
@@ -1400,7 +1411,7 @@ class MQTTClient:
         entity_unique_id = f"{bridge_base_unique_id}_submit_otp"
         submit_otp_btn_entity_conf = restart_btn_entity_struct.copy()
         submit_otp_btn_entity_conf["default_entity_id"] = (
-            CYNC_BRIDGE_OBJ_ID + "_submit_otp"
+            f"{entity_type}.{CYNC_BRIDGE_OBJ_ID}_submit_otp"
         )
         submit_otp_btn_entity_conf["command_topic"] = (
             f"{self.topic}/set/bridge/otp/submit"
@@ -1424,7 +1435,7 @@ class MQTTClient:
         entity_unique_id = f"{bridge_base_unique_id}_tcp_server_running"
         tcp_server_entity_conf = {
             "object_id": entity_unique_id,
-            "default_entity_id": entity_unique_id,
+            "default_entity_id": f"{entity_type}.{entity_unique_id}",
             "name": "nCync TCP Server Running",
             "state_topic": f"{self.topic}/status/bridge/tcp_server/running",
             "unique_id": entity_unique_id,
@@ -1450,7 +1461,7 @@ class MQTTClient:
 
         entity_unique_id = f"{bridge_base_unique_id}_export_server_running"
         export_server_entity_conf = tcp_server_entity_conf.copy()
-        export_server_entity_conf["default_entity_id"] = entity_unique_id
+        export_server_entity_conf["default_entity_id"] = f"{entity_type}.{entity_unique_id}"
         export_server_entity_conf["name"] = "Cync Export Server Running"
         export_server_entity_conf["state_topic"] = (
             f"{self.topic}/status/bridge/export_server/running"
@@ -1474,7 +1485,7 @@ class MQTTClient:
 
         entity_unique_id = f"{bridge_base_unique_id}_mqtt_client_connected"
         mqtt_client_entity_conf = tcp_server_entity_conf.copy()
-        mqtt_client_entity_conf["default_entity_id"] = entity_unique_id
+        mqtt_client_entity_conf["default_entity_id"] = f"{entity_type}.{entity_unique_id}"
         mqtt_client_entity_conf["name"] = "Cync MQTT Client Connected"
         mqtt_client_entity_conf["state_topic"] = (
             f"{self.topic}/status/bridge/mqtt_client/connected"
@@ -1491,7 +1502,7 @@ class MQTTClient:
 
         entity_unique_id = f"{bridge_base_unique_id}_app_mesh_active"
         app_mesh_active_entity_conf = tcp_server_entity_conf.copy()
-        app_mesh_active_entity_conf["default_entity_id"] = entity_unique_id
+        app_mesh_active_entity_conf["default_entity_id"] = f"{entity_type}.{entity_unique_id}"
         app_mesh_active_entity_conf["name"] = "Cync App Active"
         app_mesh_active_entity_conf["state_topic"] = (
             f"{self.topic}/status/bridge/app_mesh_active"
@@ -1515,7 +1526,7 @@ class MQTTClient:
         otp_num_entity_cfg = {
             "platform": "number",
             "object_id": entity_unique_id,
-            "default_entity_id": entity_unique_id,
+            "default_entity_id": f"{entity_type}.{entity_unique_id}",
             "icon": "mdi:lock",
             "command_topic": f"{self.topic}/set/bridge/otp/input",
             "state_topic": f"{self.topic}/status/bridge/otp/input",
@@ -1542,7 +1553,7 @@ class MQTTClient:
         num_tcp_devices_entity_conf = {
             "platform": "sensor",
             "object_id": entity_unique_id,
-            "default_entity_id": entity_unique_id,
+            "default_entity_id": f"{entity_type}.{entity_unique_id}",
             "name": "TCP Devices Connected",
             "state_topic": f"{self.topic}/status/bridge/tcp_devices/connected",
             "unique_id": entity_unique_id,
@@ -1571,7 +1582,7 @@ class MQTTClient:
         total_cync_devs = len(g.ncync_server.node_devices)
         entity_unique_id = f"{bridge_base_unique_id}_total_cync_devices"
         total_cync_devs_entity_conf = num_tcp_devices_entity_conf.copy()
-        total_cync_devs_entity_conf["default_entity_id"] = entity_unique_id
+        total_cync_devs_entity_conf["default_entity_id"] = f"{entity_type}.{entity_unique_id}"
         total_cync_devs_entity_conf["name"] = "Cync Devices Managed"
         total_cync_devs_entity_conf["state_topic"] = (
             f"{self.topic}/status/bridge/cync_devices/total"
@@ -1598,7 +1609,7 @@ class MQTTClient:
         entity_unique_id = f"{bridge_base_unique_id}_should_restart"
         restart_sensor_entity_conf = {
             "object_id": entity_unique_id,
-            "default_entity_id": entity_unique_id,
+            "default_entity_id": f"{entity_type}.{entity_unique_id}",
             "name": "Should Restart",
             "state_topic": f"{self.topic}/status/bridge/should_restart",
             "unique_id": entity_unique_id,

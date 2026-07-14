@@ -860,6 +860,57 @@ class CyncDevice:
         )
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
+    @staticmethod
+    def _build_motion_sensor_settings_payload(
+        setting_type: int,
+        enabled: Optional[bool] = None,
+        sensitivity: Optional[int] = None,
+        delay_seconds: int = 0,
+        deactivation_seconds: int = 0,
+    ) -> bytes:
+        """Build the full payload (VendorID + sub-opcode + params) for a
+        motion/ambient-light sensor settings write.
+
+        Sourced from decompiling the current Cync Android app
+        (MotionSensorSetting.java / SetMotionSensorSettingsCommand.java) - NOT
+        yet confirmed against a real packet capture. The command's `op`/`cmd_`
+        for the actual send_command() call are still unknown (see set_power/
+        set_brightness for the existing op+cmd_ envelope pattern this project
+        uses) - do not wire this into a live send until a real capture
+        confirms them.
+
+        Wire format: VendorID (0x11 0x02) + sub-opcode (0x07, fixed - marks
+        "sensor settings" as a command family) + an 8-byte params struct:
+          [0]   type discriminator: 1=motion sensor, 2=ambient light sensor
+          [1]   State write: enable flag (0/1). Parameters write: always 0.
+          [2]   State write: 0. Parameters write: sensitivity enum byte.
+          [3:5] State write: 0x0000. Parameters write: delaySeconds, big-endian u16.
+          [5:7] State write: 0x0000. Parameters write: deactivationSeconds, big-endian u16.
+          [7]   State write: 0xFF. Parameters write: 0x00.
+        (State vs Parameters are two distinct app-side commands that share this
+        8-byte shape; which one this builds is selected by whether `enabled`
+        is passed.)
+
+        setting_type: 1=motion sensor, 2=ambient light sensor
+        """
+        if setting_type not in (1, 2):
+            raise ValueError("setting_type must be 1 (motion) or 2 (ambient light)")
+        if enabled is not None:
+            params = struct.pack(
+                ">BBBHHB", setting_type, 1 if enabled else 0, 0, 0, 0, 0xFF
+            )
+        else:
+            params = struct.pack(
+                ">BBBHHB",
+                setting_type,
+                0,
+                sensitivity or 0,
+                delay_seconds,
+                deactivation_seconds,
+                0x00,
+            )
+        return struct.pack(">BBB", 0x11, 0x02, 0x07) + params
+
 
 class CyncTCPSession:
     """
@@ -1705,6 +1756,26 @@ class CyncTCPSession:
         lp: str,
         from_pkt: str = "0x83",
     ):
+        """Parse the fa db 13 internal-status struct.
+
+        Confirmed against Telink's "Communication Protocol for Telink BLE Mesh
+        Light APP" spec (AN-BLE-15120202-E3) - Cync's mesh firmware is built
+        directly on Telink's BLE Mesh SDK, and this struct is Telink's documented
+        MeshLightStatus notify payload (cmd=0xdb, VendorID=0x11 0x02) wrapped in
+        Cync's own fa/13 outer marker. Byte-exact mapping verified against a real
+        capture (dev_id 10, pow=1, bri=70): packet_data[16:19] == db 11 02 is
+        Telink's [cmd, VendorID_lo, VendorID_hi]; packet_data[14] is Telink's
+        "dup address" field (offset 6, == src address in Telink's documented
+        non-encrypted mode - this project never enables Telink's mesh encryption).
+        packet_data[19:25] are Telink's 6 LED PWM channel bytes (offsets 11-16),
+        repurposed by Cync as flag/brightness/temp/RG rather than literal PWM:
+        led1->recently_seen, led2->power, led3->brightness, led4->temperature,
+        led5->red, led6->green. packet_data[25] (blue) isn't a Telink LED channel
+        at all - it's Telink's first RESERVED byte (offset 17), repurposed by Cync
+        to fit a 3rd color channel since Telink's demo struct only has 6 PWM slots.
+        Telink's remaining reserved byte / ttc / hops fields (offsets 18-20) are
+        present in the wire format but unused here.
+        """
         if len(packet_data) < 26:
             raise ValueError("Packet too short for standard status update")
         try:
