@@ -58,10 +58,19 @@ class nCyncServer:
         return cls._instance
 
     async def get_dev_tcp_pool(self):
-        return [d for d in self.tcp_connections.values() if not d.is_closed() or not d.is_app]
+        # Was `or` - by De Morgan's law that's equivalent to "exclude only a
+        # session that is BOTH closed AND the app simultaneously", which is
+        # almost never true: a real device always has is_app=False, so
+        # `not d.is_app` is always True, making the whole expression always
+        # True regardless of is_closed(). Stale, already-closed sessions
+        # (writer=None) never actually got filtered out of the broadcast
+        # pool - confirmed via a real user's logs showing "writer is None,
+        # can't write data!" thousands of times, once per command broadcast
+        # per dead session still sitting in tcp_connections.
+        return [d for d in self.tcp_connections.values() if not d.is_closed() and not d.is_app]
 
     def get_dev_tcp_pool_sync(self):
-        return [d for d in self.tcp_connections.values() if not d.is_closed() or not d.is_app]
+        return [d for d in self.tcp_connections.values() if not d.is_closed() and not d.is_app]
 
     def __init__(self, node_map: Dict[int, "CyncDevice"]):
         self.node_devices: Dict[int, "CyncDevice"] = node_map

@@ -1265,13 +1265,25 @@ class CyncTCPSession:
 
     async def blackhole(self, reason: str, should_sleep: bool):
         lp = f"{self.lp}"
+        if self.reader is None and self.writer is None:
+            # Already blackholed/closed - calling this twice on the same
+            # session used to hit self.reader.feed_eof() on a None reader,
+            # raising AttributeError every time, logged as "Error closing
+            # reader/writer: 'NoneType' object has no attribute 'feed_eof'".
+            # Confirmed via a real user's logs showing this thousands of
+            # times, alongside the same reconnect-storm pattern the
+            # get_dev_tcp_pool fix above addresses. Idempotent no-op now.
+            logger.debug(f"{lp} blackhole() called on an already-closed session, no-op")
+            return False
         if should_sleep is True:
             await asyncio.sleep(TCP_BLACKHOLE_DELAY)
         try:
-            self.reader.feed_eof()
-            self.writer.close()
-            task = asyncio.create_task(self.writer.wait_closed())
-            await asyncio.wait([task], timeout=5)
+            if self.reader is not None:
+                self.reader.feed_eof()
+            if self.writer is not None:
+                self.writer.close()
+                task = asyncio.create_task(self.writer.wait_closed())
+                await asyncio.wait([task], timeout=5)
         except asyncio.CancelledError as ce:
             logger.debug(f"{lp} Task cancelled: {ce}")
             raise ce
