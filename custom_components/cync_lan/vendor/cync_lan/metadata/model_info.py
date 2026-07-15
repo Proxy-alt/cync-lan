@@ -297,7 +297,7 @@ device_type_map = {
         capabilities=LightCapabilities(color=True, tunable_white=True),
     ),
     36: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Light Switch",
         protocol=DeviceProtocol(TCP=True),
         capabilities=SwitchCapabilities(dimmable=True),
@@ -307,33 +307,45 @@ device_type_map = {
         ],
     ),
     37: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Dimmer Switch with Motion and Ambient Light",
         model_id="CSWDMOCBWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(
-            dimmable=True, color=True, tunable_white=True, motion_sensor=True
-        ),
+        capabilities=SwitchCapabilities(dimmable=True, motion_sensor=True),
         notes=[
             "Built-in occupancy sensor confirmed on this switch family via a real "
             "capture (owner confirmed physical model has one); reports via a distinct "
             "fa 54 ctrl_bytes packet (dev_id at offset 9, trigger flag at offset 15), "
-            "exposed as a secondary occupancy binary_sensor alongside the light.",
+            "exposed as a secondary occupancy binary_sensor alongside the light. "
+            "color/tunable_white removed: cross-referenced against the real Cync "
+            "Android app's device-type capability table, this switch family has no "
+            "CctColor/RgbColor capability at all - dimmable and motion_sensor confirmed "
+            "correct, color/tunable_white were not.",
         ],
     ),
     39: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Paddle Switch",
         model_id=" CSWONBLPWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "dimmable/color/tunable_white all removed: cross-referenced against the "
+            "real Cync Android app, this switch's load type is non-dimming (no "
+            "Dimming or CctColor/RgbColor capability) - binary on/off only.",
+        ],
     ),
     40: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Paddle Switch",
         model_id="CSWONBLTWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "dimmable/color/tunable_white all removed: cross-referenced against the "
+            "real Cync Android app, this switch's load type is non-dimming (no "
+            "Dimming or CctColor/RgbColor capability) - binary on/off only.",
+        ],
     ),
     41: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -364,90 +376,136 @@ device_type_map = {
         capabilities=LightCapabilities(color=True, tunable_white=True),
     ),
     48: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
-        model_name="C by GE (C Start Smart) Paddle Switch",
+        type=DeviceClassification.SWITCH,
+        model_name="C by GE (C Start Smart) Dimmer Switch",
         model_id="CSWDMBLBWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(dimmable=True),
+        notes=[
+            "Was labeled 'Paddle Switch'; the real Cync Android app's internal "
+            "naming (FourWireSwitchDimmerGen1, no 'paddle' anywhere in that family's "
+            "assets) points to this being the plain 4-wire dimmer, with the paddle "
+            "variant actually being type 125 (FourWireSwitchPaddleDimmerGen1) - "
+            "labels swapped accordingly. color/tunable_white also removed: this "
+            "switch family has no CctColor/RgbColor capability in the real app.",
+        ],
     ),
     49: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="C by GE (C Start Smart) Dimmer Switch with Motion and Ambient Light",
         model_id="CSWDMOCBWF1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(
-            dimmable=True, color=True, tunable_white=True, motion_sensor=True
-        ),
+        capabilities=SwitchCapabilities(dimmable=True, motion_sensor=True),
         notes=[
             "Built-in occupancy sensor confirmed via a real capture (owner-confirmed "
             "physical device, 'Master Closet Lights'): reports via a distinct fa 54 "
             "ctrl_bytes packet (dev_id at offset 9, trigger flag at offset 15), "
             "exposed as a secondary occupancy binary_sensor alongside the light. "
             "Toggle interval matched real foot traffic (irregular gaps, not a fixed "
-            "heartbeat) over a multi-hour capture.",
+            "heartbeat) over a multi-hour capture. color/tunable_white removed: "
+            "cross-referenced against the real Cync Android app, this switch family "
+            "has no CctColor/RgbColor capability - dimmable and motion_sensor "
+            "confirmed correct.",
         ],
     ),
     51: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Switch",
         model_id=None,
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "dimmable/color/tunable_white all removed: cross-referenced against the "
+            "real Cync Android app, this switch's load type is non-dimming (no "
+            "Dimming or CctColor/RgbColor capability) - binary on/off only.",
+        ],
     ),
     52: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
-        model_name="Switch",
+        type=DeviceClassification.SWITCH,
+        model_name="Toggle Switch",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "Was unlabeled generic 'Switch'; the real Cync Android app's internal "
+            "class name for this type is FourWireSwitchToggleGen1 - named accordingly. "
+            "(Type 53, previously labeled 'Toggle Switch', is actually the Circle-style "
+            "switch per the app - see its own entry.) dimmable/color/tunable_white all "
+            "removed: this switch's load type is non-dimming in the real app.",
+        ],
     ),
     53: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
-        model_name="Toggle Switch",
+        model_name="Circle Switch",
         protocol=DeviceProtocol(TCP=True),
         capabilities=SwitchCapabilities(),
         notes=[
             "Binary on/off only, confirmed via owner's debug logs (bri always 0 "
             "regardless of state) and cloud export showing the same deviceType used "
             "for both fan-wired and light-wired toggle switches",
+            "Renamed from 'Toggle Switch': the real Cync Android app's internal class "
+            "name for this type is FourWireSwitchCircleGen1 (type 52 is the actual "
+            "Toggle-style switch) - the behavioral notes above describe the wire "
+            "protocol for this type ID and are unaffected by the name correction.",
         ],
     ),
     55: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Dimmer Switch - No Neutral",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(dimmable=True),
+        notes=[
+            "color/tunable_white removed: cross-referenced against the real Cync "
+            "Android app, this switch family has no CctColor/RgbColor capability - "
+            "dimmable confirmed correct.",
+        ],
     ),
     56: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Dimmable Motion Light Switch",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(
-            dimmable=True, color=True, tunable_white=True, motion_sensor=True
-        ),
+        capabilities=SwitchCapabilities(dimmable=True, motion_sensor=True),
         notes=[
             "Same motion-switch family as 37/49 (owner-confirmed); hasn't yet been "
             "seen sending fa 54 in a capture (low foot traffic in that room during "
             "the capture window, not a negative result) but marked accordingly.",
+            "color/tunable_white removed: cross-referenced against the real Cync "
+            "Android app, this switch family has no CctColor/RgbColor capability - "
+            "dimmable and motion_sensor confirmed correct.",
         ],
     ),
     57: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Paddle Switch - No Neutral",
         model_id="CSWONBLPWF1NN",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "dimmable/color/tunable_white all removed: cross-referenced against the "
+            "real Cync Android app, this switch's load type is non-dimming (no "
+            "Dimming or CctColor/RgbColor capability) - binary on/off only.",
+        ],
     ),
     58: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Switch - No Neutral",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "dimmable/color/tunable_white all removed: cross-referenced against the "
+            "real Cync Android app, this switch's load type is non-dimming (no "
+            "Dimming or CctColor/RgbColor capability) - binary on/off only.",
+        ],
     ),
     59: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
+        type=DeviceClassification.SWITCH,
         model_name="Switch",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "dimmable/color/tunable_white all removed: cross-referenced against the "
+            "real Cync Android app, this switch's load type is non-dimming (no "
+            "Dimming or CctColor/RgbColor capability) - binary on/off only.",
+        ],
     ),
     64: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
@@ -597,19 +655,22 @@ device_type_map = {
         supported=False,
     ),
     125: DeviceTypeInfo(
-        type=DeviceClassification.LIGHT,
-        model_name="Dimmer Switch",
+        type=DeviceClassification.SWITCH,
+        model_name="Paddle Dimmer Switch",
         model_id="CSWDMBLBWF1",
         protocol=DeviceProtocol(TCP=True, MATTER=True),
-        capabilities=LightCapabilities(color=True, tunable_white=True),
+        capabilities=SwitchCapabilities(dimmable=True),
+        notes=[
+            "Was classified LIGHT with LightCapabilities(color, tunable_white); the "
+            "real Cync Android app classifies every 4-wire switch type (including "
+            "this one, FourWireSwitchPaddleDimmerGen1) as a Switch product with no "
+            "CctColor/RgbColor capability - reclassified and dimmable-only "
+            "SwitchCapabilities substituted accordingly. Also renamed from 'Dimmer "
+            "Switch' to 'Paddle Dimmer Switch': the app's own naming/asset data "
+            "points to the 'Paddle' descriptor belonging here rather than on type 48 "
+            "(see that entry's notes).",
+        ],
     ),
-    # 125: DeviceTypeInfo(
-    #     type=DeviceClassification.SWITCH,
-    #     model_name="Paddle Switch",
-    #     model_id="CSWDMBLBWF1",
-    #     protocol=DeviceProtocol(TCP=True, MATTER=True),
-    #     capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
-    # ),
     128: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Dimmable A19 Bulb",
