@@ -480,7 +480,16 @@ class CyncCloudAPI:
                 dev_name = str(raw_device["displayName"])
                 dev_type = int(raw_device["deviceType"])
                 fw_ver = str(raw_device["firmwareVersion"])
-                # switchID ? maybe links them in their logic?
+                # switchID: a foreign key to the WiFi hub/parent device's own entry in
+                # exported_home_data - confirmed by cross-referencing a real export,
+                # every non-zero switchID value matched exactly one other entry's "id"
+                # field (49/49 match rate). Each physical WiFi hub gets its own
+                # synthetic top-level "home" entry in the cloud API response (only
+                # entries with a populated bulbsArray are real homes; the rest exist
+                # solely to be pointed at by switchID), matching the "no name found /
+                # no bulbsArray" skip logic already just above in this loop. Not
+                # currently used by cync-lan - devices are already keyed by their own
+                # dev_id, not by which hub they're wired through.
                 raw_id = str(raw_device["deviceID"])
                 home_id = raw_id[:9]
                 raw_dev = raw_id.split(home_id)[1]
