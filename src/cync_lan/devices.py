@@ -284,7 +284,26 @@ class CyncDevice:
         if self._is_light is not None:
             return self._is_light
         if self.metadata:
-            self._is_light = self.metadata.type == DeviceClassification.LIGHT
+            if self.metadata.type == DeviceClassification.LIGHT:
+                self._is_light = True
+            elif self.metadata.type == DeviceClassification.SWITCH:
+                # A dimmable switch is dimming a light, not a fan - Cync
+                # sells fan speed control as its own dedicated "Fan
+                # Controller" product (capabilities.fan), so any other
+                # dimmable switch type is safe to assume is a light dimmer.
+                # HA's `switch` domain has no brightness concept at all, so
+                # leaving these routed to switch.py (as a bare
+                # DeviceClassification.SWITCH check would) silently drops
+                # dimming entirely - confirmed via a real user report after
+                # this session's earlier SWITCH reclassification (which was
+                # correct for capability data like color/tunable_white, but
+                # shouldn't have affected which HA platform these route to).
+                caps = self.metadata.capabilities
+                self._is_light = bool(
+                    caps and caps.dimmable and not caps.fan and not caps.plug
+                )
+            else:
+                self._is_light = False
         else:
             self._is_light = False
         return self._is_light
@@ -303,7 +322,13 @@ class CyncDevice:
         if self._is_switch is not None:
             return self._is_switch
         if self.metadata:
-            return self.metadata.type == DeviceClassification.SWITCH
+            if self.metadata.type != DeviceClassification.SWITCH:
+                return False
+            # Mirror is_light's dimmable carve-out: a dimmable switch
+            # routes through light.py instead (see is_light above), so it
+            # must not also claim is_switch here - that would create a
+            # second, binary-only entity for the same physical device.
+            return not self.is_light
         return False
 
     @is_switch.setter
