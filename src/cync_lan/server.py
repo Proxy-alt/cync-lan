@@ -1,14 +1,21 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import ssl
 import time
-from typing import Dict, Optional, Union
-
-import uvloop
+from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from cync_lan.const import CYNC_LOG_NAME, CYNC_SRV_HOST, CYNC_SRV_PORT
 from cync_lan.devices import CyncDevice, CyncTCPSession
 from cync_lan.structs import EntityState, GlobalObject
+
+if TYPE_CHECKING:
+    # See structs.py's identical guard for why this is TYPE_CHECKING-only:
+    # nothing here actually constructs a uvloop.Loop, only type-hints
+    # against it, and a real uvloop install currently has no PyPI wheels for
+    # newer CPython versions at all.
+    import uvloop
 
 __all__ = [
     "nCyncServer",
