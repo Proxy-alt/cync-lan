@@ -10,13 +10,21 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Coroutine, Dict, List, Optional, Tuple, Union
 import uuid
 
-import uvloop
 from pydantic import BaseModel, ConfigDict, computed_field
 from pydantic.dataclasses import dataclass
 
 from cync_lan.const import CYNC_LOG_NAME, YES_ANSWER
 
 if TYPE_CHECKING:
+    # uvloop is only ever referenced here for a type hint (GlobalObject.loop
+    # below) - nothing in this module actually constructs a uvloop.Loop
+    # itself (that only happens in main.py's standalone entry point, never
+    # reached from the HA custom_component's code path). Confined to
+    # TYPE_CHECKING so a real uvloop install isn't a hard runtime
+    # requirement - it currently has no PyPI wheels at all for newer CPython
+    # versions (e.g. 3.14), which broke installs before this change.
+    import uvloop
+
     from cync_lan.cloud_api import CyncCloudAPI
     from cync_lan.exporter import ExportServer
     from cync_lan.main import CyncLAN

@@ -56,8 +56,14 @@ rules:
       around by vendoring the cync_lan protocol package directly under
       custom_components/cync_lan/vendor/ (see const.py's sys.path
       bootstrap); manifest.json's requirements now lists only real PyPI
-      packages (pyyaml, uvloop, pydantic, tzlocal, cryptography). Still
-      "todo" because vendoring a local copy isn't the same as a pinned,
+      packages (pyyaml, pydantic, tzlocal, cryptography). uvloop was
+      dropped from requirements entirely after a real install failure on
+      Python 3.14 (no uvloop wheels exist for that ABI at all yet) - it
+      was only ever referenced for type hints in structs.py/server.py,
+      never actually constructed on the code path this integration uses,
+      so those imports were moved under TYPE_CHECKING instead of being a
+      hard runtime dependency. Still "todo" because vendoring a local
+      copy isn't the same as a pinned,
       independently-versioned, reproducible PyPI release - publishing
       cync-lan to PyPI would resolve this properly, and requires an actual
       publish action outside the scope of what a code change in this
