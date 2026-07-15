@@ -165,13 +165,71 @@ async def test_update_entity_power_updates_existing_state_and_sub_id_topic(bridg
     from cync_lan.structs import EntityState
 
     node = MagicMock(id=4)
+    node.name = "Test Device"  # MagicMock(name=...) sets the mock's own repr, not this
     await bridge.parse_entity_state(EntityState(name="x", dev_id=4, sub_id=1, power=0))
 
     await bridge.update_entity_power(node, 1, 1)
     assert bridge.get_state(4, sub_id=1).power == 1
 
-    # sub_id=0: no existing state yet for this bucket, still shouldn't raise
+    # sub_id=0: no existing state yet for this bucket - must not just avoid
+    # raising, the state must actually become readable afterward. Regression
+    # test: the original implementation only mutated an *existing*
+    # EntityState (`if bucket.entity_state is not None`), so a device whose
+    # state was never seeded by an unsolicited mesh broadcast would have
+    # every command ack silently no-op on the real state forever - the
+    # entity would still re-render (dispatcher fires regardless) but
+    # is_on/brightness/etc. stayed stuck at None, which HA's frontend shows
+    # as separate "Turn On"/"Turn Off" actions instead of a toggle
+    # reflecting real state (reported by a real user after the first
+    # command they ever sent).
     await bridge.update_entity_power(node, 1, 0)
+    assert bridge.get_state(4, sub_id=0).power == 1
+
+
+async def test_update_callbacks_create_state_when_none_exists(bridge):
+    """Same regression as test_update_entity_power_...: every command-ack
+    callback must be able to seed a fresh EntityState, not just mutate one
+    that already exists."""
+    from cync_lan.structs import EntityState, FanSpeed
+
+    def _node(dev_id: int) -> MagicMock:
+        # MagicMock(name=...) sets the mock's own repr, not a `.name`
+        # attribute - must be assigned after construction instead.
+        node = MagicMock(id=dev_id)
+        node.name = f"Fresh Device {dev_id}"
+        return node
+
+    assert bridge.get_state(20) is None
+
+    await bridge.update_brightness(_node(20), 77)
+    assert bridge.get_state(20).brightness == 77
+
+    await bridge.update_temperature(_node(21), 3500)
+    assert bridge.get_state(21).temperature == 3500
+
+    await bridge.update_rgb(_node(22), (5, 6, 7))
+    assert (
+        bridge.get_state(22).red,
+        bridge.get_state(22).green,
+        bridge.get_state(22).blue,
+    ) == (5, 6, 7)
+
+    await bridge.update_fan_percent(_node(23), 33)
+    assert bridge.get_state(23).brightness == 33
+
+    await bridge.update_fan_speed(_node(24), FanSpeed.LOW)
+    assert bridge.get_state(24).brightness == FanSpeed.LOW.to_perc()
+
+
+async def test_update_callbacks_handle_node_with_no_name_yet(bridge):
+    """node.name is Optional[str] on the real CyncDevice (None until
+    identity resolves) - a command ack racing ahead of that must not crash
+    with a pydantic ValidationError when seeding the first EntityState."""
+    node = MagicMock(id=30)
+    node.name = None
+
+    await bridge.update_entity_power(node, 1, 0)
+    assert bridge.get_state(30).power == 1
 
 
 async def test_update_temperature_updates_existing_state(bridge):

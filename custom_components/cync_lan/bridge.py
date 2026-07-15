@@ -264,35 +264,52 @@ class CyncLanBridge:
 
     # --- command-ack callbacks (bound via functools.partial in devices.py) ---
 
-    async def update_entity_power(self, node: "CyncDevice", state: int, sub_id: int) -> None:
+    def _ensure_entity_state(self, node: "CyncDevice", sub_id: int = 0) -> "EntityState":
+        """Get (creating if needed) the EntityState these command-ack
+        callbacks mutate. Without this, a device whose state was never
+        seeded by an unsolicited mesh/MeshInfo broadcast would have its
+        command acks silently no-op forever (the old code only mutated an
+        *existing* EntityState, never created the first one) - the entity
+        would still re-render on every command since the dispatcher signal
+        fires regardless, but is_on/brightness/etc. would stay stuck at
+        None (HA shows this as separate "Turn On"/"Turn Off" actions
+        instead of a toggle reflecting real state). EntityState only
+        strictly requires dev_id - every other field defaults - so
+        constructing one fresh here is always valid.
+        """
+        from cync_lan.structs import EntityState
+
         bucket = self._get(node.id, sub_id)
-        if bucket.entity_state is not None:
-            bucket.entity_state.power = state
+        if bucket.entity_state is None:
+            # node.name is Optional[str] on CyncDevice (None until identity
+            # resolves) but EntityState.name requires a str - coerce rather
+            # than let a command ack that races ahead of identification
+            # crash with a pydantic ValidationError.
+            bucket.entity_state = EntityState(
+                dev_id=node.id, sub_id=sub_id, name=node.name or ""
+            )
+        return bucket.entity_state
+
+    async def update_entity_power(self, node: "CyncDevice", state: int, sub_id: int) -> None:
+        self._ensure_entity_state(node, sub_id).power = state
         unique_id = f"{self.entry_id}_{node.id}" + (f"_{sub_id}" if sub_id else "")
         async_dispatcher_send(self.hass, signal_entity_update(unique_id))
 
     async def update_brightness(self, node: "CyncDevice", bri: int) -> None:
-        bucket = self._get(node.id)
-        if bucket.entity_state is not None:
-            bucket.entity_state.brightness = bri
+        self._ensure_entity_state(node).brightness = bri
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
 
     async def update_temperature(self, node: "CyncDevice", temp: int) -> None:
-        bucket = self._get(node.id)
-        if bucket.entity_state is not None:
-            bucket.entity_state.temperature = temp
+        self._ensure_entity_state(node).temperature = temp
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
 
     async def update_rgb(self, node: "CyncDevice", rgb: tuple[int, int, int]) -> None:
-        bucket = self._get(node.id)
-        if bucket.entity_state is not None:
-            bucket.entity_state.red, bucket.entity_state.green, bucket.entity_state.blue = rgb
+        state = self._ensure_entity_state(node)
+        state.red, state.green, state.blue = rgb
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
 
     async def update_fan_percent(self, node: "CyncDevice", perc: int) -> None:
-        bucket = self._get(node.id)
-        if bucket.entity_state is not None:
-            bucket.entity_state.brightness = perc
+        self._ensure_entity_state(node).brightness = perc
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
 
     async def update_fan_speed(self, node: "CyncDevice", speed) -> None:
