@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.components.group.light import LightGroup
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
@@ -13,10 +14,12 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS, DOMAIN
 from .entity import CyncLanEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +46,43 @@ async def async_setup_entry(
             continue
         entities.append(CyncLanLight(bridge, entry.entry_id, node))
     async_add_entities(entities)
+
+    if not entry.options.get(CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS):
+        return
+    groups = entry.runtime_data.groups or {}
+    if not groups:
+        return
+
+    # Member entity_ids are looked up via the entity registry rather than
+    # predicted from naming - individual lights must already be registered
+    # for this to find anything, which is why this runs as a second
+    # async_add_entities() call after the one above, not merged into it.
+    # async_add_entities() registers entities synchronously as part of
+    # adding them, so this is safe to do immediately afterward in the same
+    # setup call.
+    registry = er.async_get(hass)
+    group_entities = []
+    for group_id, group in groups.items():
+        member_entity_ids = []
+        for dev_id in group.get("device_ids", []):
+            unique_id = f"{entry.entry_id}_{dev_id}"
+            entity_id = registry.async_get_entity_id(Platform.LIGHT, DOMAIN, unique_id)
+            if entity_id is not None:
+                member_entity_ids.append(entity_id)
+        if not member_entity_ids:
+            # Group has no members that ended up as light entities here
+            # (e.g. a group of plugs/binary switches, or devices this
+            # account no longer has) - nothing to aggregate.
+            continue
+        group_entities.append(
+            CyncLanLightGroup(
+                unique_id=f"{entry.entry_id}_group_{group_id}",
+                name=group.get("name") or f"Group {group_id}",
+                entity_ids=member_entity_ids,
+            )
+        )
+    if group_entities:
+        async_add_entities(group_entities)
 
 
 class CyncLanLight(CyncLanEntity, LightEntity):
@@ -109,6 +149,30 @@ class CyncLanLight(CyncLanEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self._node.set_power(0)
+
+
+class CyncLanLightGroup(LightGroup):
+    """A Cync device group ("Living Room", etc.) exposed as an aggregate
+    light entity, built entirely on Home Assistant's own built-in group-
+    light implementation rather than reimplementing it:
+
+    - async_turn_on/async_turn_off forward to every member via the
+      standard light.turn_on/light.turn_off services (turning the group on
+      turns every member on, and vice versa).
+    - is_on is OR-based across members (LightGroup's `mode` parameter,
+      left at its default/falsy - `any`, not `all`) - the group reads as
+      "on" if any single member is on.
+    - Brightness/color/etc. are averaged across currently-on members by
+      LightGroup itself; nothing group-specific needed here for that.
+
+    No _attr_device_info: like HA's own native "Light Group" helper, this
+    is a virtual aggregate, not tied to a physical device.
+    """
+
+    _attr_icon = "mdi:lightbulb-group"
+
+    def __init__(self, unique_id: str, name: str, entity_ids: list[str]) -> None:
+        super().__init__(unique_id, name, entity_ids, mode=False)
 
 
 def _factory_effects():

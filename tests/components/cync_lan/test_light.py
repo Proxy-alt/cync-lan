@@ -5,7 +5,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.cync_lan.bridge import CyncLanBridge
-from custom_components.cync_lan.light import CyncLanLight, async_setup_entry
+from custom_components.cync_lan.const import DOMAIN
+from custom_components.cync_lan.light import (
+    CyncLanLight,
+    CyncLanLightGroup,
+    async_setup_entry,
+)
 
 
 def _fake_node(**overrides):
@@ -210,3 +215,130 @@ async def test_turn_on_with_effect():
 
     await entity.async_turn_on(effect="rainbow")
     node.set_lightshow.assert_awaited_with("rainbow")
+
+
+def test_light_group_uses_or_based_mode():
+    """The group's on/off state must be True if ANY member is on (LightGroup's
+    `mode` defaults to `any`, not `all`, when constructed with mode=False)."""
+    group = CyncLanLightGroup("entry1_group_1", "Test Group", ["light.a", "light.b"])
+    assert group.mode is any
+
+
+def test_light_group_uses_light_groups_icon():
+    group = CyncLanLightGroup("entry1_group_1", "Test Group", ["light.a", "light.b"])
+    assert group.icon == "mdi:lightbulb-group"
+
+
+def _make_group_entry(entry_id: str, **options):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    return MockConfigEntry(
+        domain=DOMAIN,
+        entry_id=entry_id,
+        unique_id="user@example.com",
+        options=options,
+    )
+
+
+async def test_groups_disabled_by_default_creates_no_group_entities(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = _make_group_entry("entry1")  # enable_light_groups defaults to False
+    entry.add_to_hass(hass)
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+    )
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert not any(isinstance(e, CyncLanLightGroup) for e in added)
+
+
+async def test_groups_created_when_enabled_with_registered_members(hass):
+    from cync_lan.structs import GlobalObject
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    # Simulate the individual CyncLanLight entities for dev_ids 1 and 2
+    # already being registered (as they would be from this same platform's
+    # own earlier async_add_entities call in a real HA setup).
+    registry = er.async_get(hass)
+    entry1 = registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry
+    )
+    entry2 = registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, "entry1_2", config_entry=entry
+    )
+
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        groups={
+            32770: {
+                "name": "Kitchen",
+                "device_ids": [1, 2],
+                "is_subgroup": False,
+            }
+        },
+    )
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    groups = [e for e in added if isinstance(e, CyncLanLightGroup)]
+    assert len(groups) == 1
+    assert groups[0].name == "Kitchen"
+    assert groups[0].unique_id == "entry1_group_32770"
+    assert set(groups[0]._entity_ids) == {entry1.entity_id, entry2.entity_id}
+
+
+async def test_groups_enabled_but_none_exist_creates_nothing(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+    entry.runtime_data = MagicMock(bridge=CyncLanBridge(hass, "entry1"), groups={})
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert added == []
+
+
+async def test_group_skipped_when_no_members_resolve(hass):
+    """A group whose device_ids don't map to any registered light entity
+    (e.g. all its members are switches/plugs, or were never added) must be
+    silently skipped, not create an empty/broken group entity."""
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        groups={99: {"name": "Ghost Group", "device_ids": [404], "is_subgroup": False}},
+    )
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert not any(isinstance(e, CyncLanLightGroup) for e in added)

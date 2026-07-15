@@ -7,7 +7,7 @@ import struct
 import sys
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 
@@ -273,6 +273,30 @@ async def parse_config(cfg_file: Path):
             )
 
     return nodes
+
+
+async def parse_groups(cfg_file: Path) -> Dict[int, dict]:
+    """Read the "groups" section of the exported Cync config file (written
+    by cloud_api.py's _parse_raw_export), across all homes.
+
+    Kept separate from parse_config() rather than folded into its return
+    value - parse_config is a widely-used, long-standing function (called
+    from the standalone add-on's own startup path as well as the HA
+    integration), and changing its signature would ripple out to every
+    caller for a feature only the HA integration currently uses. Returns
+    {group_id: {"name": str, "device_ids": [int, ...], "is_subgroup": bool}}.
+    """
+    lp = "parse_groups:"
+    raw_config = await asyncio.get_event_loop().run_in_executor(
+        None, yaml.safe_load, cfg_file.read_text(encoding="utf-8")
+    )
+    groups: Dict[int, dict] = {}
+    main_key = "account data" if "account data" in raw_config else "exported_homes"
+    for home_cfg in raw_config.get(main_key, {}).values():
+        for group_id, group in home_cfg.get("groups", {}).items():
+            groups[group_id] = group
+    logger.debug(f"{lp} found {len(groups)} group(s) across all homes")
+    return groups
 
 
 def check_python_version():

@@ -379,3 +379,81 @@ async def test_refresh_swallows_exceptions(hass, tmp_path):
         side_effect=RuntimeError("cloud unreachable"),
     ):
         await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)  # no raise
+
+
+async def test_setup_entry_skips_group_parsing_when_disabled(hass, tmp_path):
+    """Default (enable_light_groups unset/False): must not even attempt to
+    parse groups, and runtime_data.groups stays an empty dict."""
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry()  # enable_light_groups not in options -> default False
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "cync_lan.utils.parse_groups", new=AsyncMock(return_value={1: {}})
+    ) as mock_parse_groups, patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ):
+        from custom_components.cync_lan import async_setup_entry
+
+        await async_setup_entry(hass, entry)
+
+    mock_parse_groups.assert_not_awaited()
+    assert entry.runtime_data.groups == {}
+
+
+async def test_setup_entry_parses_groups_when_enabled(hass, tmp_path):
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry(
+        local_port=23779, export_refresh_interval=0, enable_light_groups=True
+    )
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    fake_groups = {32770: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}}
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "cync_lan.utils.parse_groups", new=AsyncMock(return_value=fake_groups)
+    ), patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ):
+        from custom_components.cync_lan import async_setup_entry
+
+        await async_setup_entry(hass, entry)
+
+    assert entry.runtime_data.groups == fake_groups
+
+
+async def test_setup_entry_group_parse_failure_does_not_block_setup(hass, tmp_path):
+    """Groups are optional - a failure parsing them must not prevent the
+    rest of setup (the TCP listener, platforms, etc.) from succeeding."""
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry(
+        local_port=23779, export_refresh_interval=0, enable_light_groups=True
+    )
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "cync_lan.utils.parse_groups",
+        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+    ), patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ):
+        from custom_components.cync_lan import async_setup_entry
+
+        result = await async_setup_entry(hass, entry)
+
+    assert result is True
+    assert entry.runtime_data.groups == {}

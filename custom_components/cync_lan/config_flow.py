@@ -25,8 +25,10 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
+    CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
+    DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
@@ -237,6 +239,12 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                             DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
                         ),
                     ): int,
+                    vol.Required(
+                        CONF_ENABLE_LIGHT_GROUPS,
+                        default=current.get(
+                            CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS
+                        ),
+                    ): bool,
                 }
             ),
         )

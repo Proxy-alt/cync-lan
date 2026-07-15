@@ -29,8 +29,10 @@ from .bridge import CyncLanBridge
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
+    CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
+    DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
@@ -71,6 +73,7 @@ class CyncLanRuntimeData:
     bridge: CyncLanBridge
     ncync_server: "object"  # cync_lan.server.nCyncServer
     server_task: asyncio.Task
+    groups: dict = None  # {group_id: {"name", "device_ids", "is_subgroup"}}
     unsub_refresh: object = None
     unsub_no_devices_check: object = None
 
@@ -89,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from cync_lan.const import CYNC_CONFIG_FILE_PATH
     from cync_lan.server import nCyncServer
     from cync_lan.structs import GlobalObject
-    from cync_lan.utils import parse_config
+    from cync_lan.utils import parse_config, parse_groups
 
     cfg_file = Path(CYNC_CONFIG_FILE_PATH)
     if not cfg_file.exists():
@@ -107,6 +110,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             translation_key="config_parse_failed",
             translation_placeholders={"error": str(err)},
         ) from err
+
+    groups: dict = {}
+    if entry.options.get(CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS):
+        try:
+            groups = await parse_groups(cfg_file)
+        except Exception:  # noqa: BLE001 - groups are optional, must not block setup
+            _LOGGER.exception("Failed to parse Cync device groups, continuing without them")
 
     async def _on_unknown_device_confirmed() -> None:
         # dynamic-devices (gold): a real new device was seen in a MeshInfo
@@ -153,7 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     runtime_data = CyncLanRuntimeData(
-        bridge=bridge, ncync_server=ncync_server, server_task=server_task
+        bridge=bridge, ncync_server=ncync_server, server_task=server_task, groups=groups
     )
     entry.runtime_data = runtime_data
 
