@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -86,7 +87,22 @@ class CyncLanEntity(Entity):
             )
         )
 
+    @callback
     def _handle_update(self) -> None:
+        """Must be @callback: async_dispatcher_connect's target is run
+        through HA's HassJob classifier, which only recognizes coroutine
+        functions or @callback-decorated ones as safe to run directly on
+        the event loop. An undecorated plain function like this one used
+        to be, HA defaults to running via the executor thread pool -
+        exactly "a thread other than the event loop" - so every dispatch
+        silently failed to call async_write_ha_state() on the loop,
+        meaning entity state was computed correctly internally but never
+        actually reached HA's frontend. Confirmed via a real user's logs:
+        hundreds of "calls async_write_ha_state from a thread other than
+        the event loop" errors, all originating from this exact line,
+        immediately following a burst of real device state updates that
+        were computed correctly (visible in DEBUG logs) but never shown.
+        """
         self.async_write_ha_state()
 
     def _entity_state(self) -> Optional["object"]:

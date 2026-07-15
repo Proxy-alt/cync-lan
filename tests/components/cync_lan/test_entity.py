@@ -93,3 +93,23 @@ async def test_added_to_hass_subscribes_and_triggers_state_write(hass):
     await hass.async_block_till_done()
 
     entity.async_write_ha_state.assert_called()
+
+
+def test_handle_update_is_marked_hass_callback():
+    """Regression test: _handle_update must be decorated with @callback
+    (homeassistant.core) or HA's HassJob classifier can't tell it's safe
+    to run directly on the event loop, and defaults to dispatching it
+    through the executor thread pool instead - i.e. "a thread other than
+    the event loop", exactly the error HA's own thread-safety guard
+    raises on async_write_ha_state(). A real user's logs showed hundreds
+    of these errors, one per dispatched state update, meaning entity
+    state was computed correctly internally but never actually reached
+    HA's frontend.
+
+    test_added_to_hass_subscribes_and_triggers_state_write above doesn't
+    catch this: hass.async_block_till_done() waits for outstanding
+    executor jobs too, so it passes whether _handle_update runs on the
+    loop or on a worker thread - it only proves async_write_ha_state was
+    *eventually* called, not that it ran somewhere HA considers safe.
+    """
+    assert getattr(CyncLanEntity._handle_update, "_hass_callback", False) is True
