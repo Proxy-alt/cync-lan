@@ -12,6 +12,12 @@
         "state": {
           "off": "mdi:cellphone-off"
         }
+      },
+      "app_wifi_active": {
+        "default": "mdi:wifi",
+        "state": {
+          "off": "mdi:wifi-off"
+        }
       }
     }
   }

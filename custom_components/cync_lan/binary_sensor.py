@@ -42,6 +42,7 @@ async def async_setup_entry(
             CyncLanMotionSensor(bridge, entry.entry_id, node, is_secondary)
         )
     entities.append(CyncLanAppMeshActiveSensor(bridge, entry.entry_id))
+    entities.append(CyncLanAppWifiActiveSensor(bridge, entry.entry_id))
     async_add_entities(entities)
 
 
@@ -100,6 +101,49 @@ class CyncLanAppMeshActiveSensor(BinarySensorEntity):
             async_dispatcher_connect(
                 self.hass,
                 signal_entity_update(f"{self._entry_id}_app_mesh_active"),
+                self.async_write_ha_state,
+            )
+        )
+
+
+class CyncLanAppWifiActiveSensor(BinarySensorEntity):
+    """entity-category + entity-disabled-by-default (gold): diagnostic-only,
+    off unless the user opts in. Distinct from CyncLanAppMeshActiveSensor:
+    this fires whenever the Cync app's TCP login handshake reaches this
+    server (i.e. the app is running and on the same WiFi/LAN), regardless of
+    whether the phone is physically near a BTLE-mesh device."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "app_wifi_active"
+    _attr_device_class = "occupancy"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = "app_wifi_active" not in DEFAULT_DISABLED_ENTITIES
+
+    def __init__(self, bridge, entry_id: str) -> None:
+        self._bridge = bridge
+        self._entry_id = entry_id
+        self._attr_unique_id = f"{entry_id}_app_wifi_active"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
+
+    @property
+    def is_on(self) -> bool:
+        from .bridge import BridgeEntityState
+
+        bucket: BridgeEntityState = self._bridge._get(-1)
+        return bucket.app_wifi_active
+
+    async def async_added_to_hass(self) -> None:
+        from .bridge import signal_entity_update
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_entity_update(f"{self._entry_id}_app_wifi_active"),
                 self.async_write_ha_state,
             )
         )

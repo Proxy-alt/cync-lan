@@ -26,8 +26,9 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Optional
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN
 
@@ -56,6 +57,7 @@ class BridgeEntityState:
     online: bool = True
     motion: Optional[bool] = None
     app_mesh_active: bool = False
+    app_wifi_active: bool = False
 
 
 class CyncLanBridge:
@@ -106,6 +108,8 @@ class CyncLanBridge:
         self._on_unknown_device = on_unknown_device
         self._unknown_device_sightings: dict[int, int] = {}
         self._last_unknown_device_trigger: float = 0.0
+        self._app_mesh_active_expiry_unsub: Optional[Callable[[], None]] = None
+        self._app_wifi_active_expiry_unsub: Optional[Callable[[], None]] = None
 
     def _get(self, dev_id: int, sub_id: int = 0) -> BridgeEntityState:
         key = (dev_id, sub_id)
@@ -218,10 +222,45 @@ class CyncLanBridge:
     async def mark_app_mesh_active(self, timeout: float = 60.0) -> None:
         # "Cync App Active" diagnostic entity - disabled by default (see
         # DEFAULT_DISABLED_ENTITIES in const.py), no per-device state to key
-        # on, so it's tracked under a synthetic dev_id.
+        # on, so it's tracked under a synthetic dev_id. Auto-clears after
+        # `timeout` seconds of no further BTLE-mesh-proximity bursts,
+        # mirroring cync_lan.mqtt_client.MQTTClient.mark_app_mesh_active.
         bucket = self._get(-1)
         bucket.app_mesh_active = True
-        async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_app_mesh_active"))
+        signal = signal_entity_update(f"{self.entry_id}_app_mesh_active")
+        async_dispatcher_send(self.hass, signal)
+        if self._app_mesh_active_expiry_unsub is not None:
+            self._app_mesh_active_expiry_unsub()
+
+        @callback
+        def _expire(_now) -> None:
+            bucket.app_mesh_active = False
+            async_dispatcher_send(self.hass, signal)
+            self._app_mesh_active_expiry_unsub = None
+
+        self._app_mesh_active_expiry_unsub = async_call_later(self.hass, timeout, _expire)
+
+    async def mark_app_wifi_active(self, timeout: float = 60.0) -> None:
+        # Distinct from mark_app_mesh_active: this fires whenever the app's
+        # TCP login handshake reaches this server at all (packet header
+        # 0x10/0x13 - see PacketBuilder.APP_REQUEST_HEADERS), regardless of
+        # BTLE proximity to any specific device. The app being on WiFi at
+        # all is a broader, more frequent "app is active" signal than
+        # actually being near a mesh device.
+        bucket = self._get(-1)
+        bucket.app_wifi_active = True
+        signal = signal_entity_update(f"{self.entry_id}_app_wifi_active")
+        async_dispatcher_send(self.hass, signal)
+        if self._app_wifi_active_expiry_unsub is not None:
+            self._app_wifi_active_expiry_unsub()
+
+        @callback
+        def _expire(_now) -> None:
+            bucket.app_wifi_active = False
+            async_dispatcher_send(self.hass, signal)
+            self._app_wifi_active_expiry_unsub = None
+
+        self._app_wifi_active_expiry_unsub = async_call_later(self.hass, timeout, _expire)
 
     # --- command-ack callbacks (bound via functools.partial in devices.py) ---
 

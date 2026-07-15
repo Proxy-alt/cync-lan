@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from custom_components.cync_lan.binary_sensor import (
     CyncLanAppMeshActiveSensor,
+    CyncLanAppWifiActiveSensor,
     CyncLanMotionSensor,
     async_setup_entry,
 )
@@ -46,8 +47,9 @@ async def test_setup_entry_skips_devices_without_motion_sensor(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    # standalone motion sensor + the always-present app-mesh-active diagnostic
-    assert len(added) == 2
+    # standalone motion sensor + the two always-present app-active diagnostics
+    # (app_mesh_active: BTLE proximity, app_wifi_active: TCP login handshake)
+    assert len(added) == 3
     motion_entities = [e for e in added if isinstance(e, CyncLanMotionSensor)]
     assert len(motion_entities) == 1
     assert motion_entities[0]._node is standalone
@@ -99,3 +101,26 @@ async def test_app_mesh_active_sensor_diagnostic_and_disabled_by_default(hass):
 
     await bridge.mark_app_mesh_active()
     assert entity.is_on is True
+
+
+async def test_app_wifi_active_sensor_diagnostic_and_disabled_by_default(hass):
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanAppWifiActiveSensor(bridge, "entry1")
+    assert entity.entity_category == "diagnostic"
+    assert entity.entity_registry_enabled_default is False
+    assert entity.is_on is False
+
+    await bridge.mark_app_wifi_active()
+    assert entity.is_on is True
+
+
+async def test_app_wifi_active_is_independent_of_app_mesh_active(hass):
+    """These track genuinely different signals (TCP login vs. BTLE
+    proximity) - one firing must not flip the other."""
+    bridge = CyncLanBridge(hass, "entry1")
+    mesh_entity = CyncLanAppMeshActiveSensor(bridge, "entry1")
+    wifi_entity = CyncLanAppWifiActiveSensor(bridge, "entry1")
+
+    await bridge.mark_app_wifi_active()
+    assert wifi_entity.is_on is True
+    assert mesh_entity.is_on is False

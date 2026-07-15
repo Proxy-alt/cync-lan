@@ -4,6 +4,7 @@ the dataclass/dispatcher behavior rather than a full HA entity platform."""
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -291,3 +292,65 @@ async def test_report_unknown_device_id_swallows_callback_exceptions(hass, caplo
     await hass.async_block_till_done()  # must not raise / crash the test
 
     assert "Error handling confirmed unknown device" in caplog.text
+
+
+async def test_mark_app_mesh_active_auto_expires(bridge, hass):
+    """Must actually clear after `timeout`, not just latch True forever -
+    that's what makes this an occupancy signal rather than a one-shot flag.
+    Mirrors cync_lan.mqtt_client.MQTTClient.mark_app_mesh_active's behavior."""
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    await bridge.mark_app_mesh_active(timeout=10)
+    assert bridge._get(-1).app_mesh_active is True
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+    await hass.async_block_till_done()
+    assert bridge._get(-1).app_mesh_active is False
+
+
+async def test_mark_app_mesh_active_resets_expiry_timer_on_repeat_calls(bridge, hass):
+    """A second burst before the first timeout fires should push the
+    expiry out, not leave two competing timers."""
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    await bridge.mark_app_mesh_active(timeout=10)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
+    await hass.async_block_till_done()
+    await bridge.mark_app_mesh_active(timeout=10)  # resets the clock
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
+    await hass.async_block_till_done()
+    assert bridge._get(-1).app_mesh_active is True  # still active, not yet 10s since reset
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+    await hass.async_block_till_done()
+    assert bridge._get(-1).app_mesh_active is False
+
+
+async def test_mark_app_wifi_active_auto_expires(bridge, hass):
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    await bridge.mark_app_wifi_active(timeout=10)
+    assert bridge._get(-1).app_wifi_active is True
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+    await hass.async_block_till_done()
+    assert bridge._get(-1).app_wifi_active is False
+
+
+async def test_mark_app_wifi_active_independent_expiry_from_mesh_active(bridge, hass):
+    """Separate timers for separate signals - one expiring must not touch
+    the other's state."""
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    await bridge.mark_app_mesh_active(timeout=5)
+    await bridge.mark_app_wifi_active(timeout=100)
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
+    await hass.async_block_till_done()
+    assert bridge._get(-1).app_mesh_active is False
+    assert bridge._get(-1).app_wifi_active is True

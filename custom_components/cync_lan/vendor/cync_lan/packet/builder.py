@@ -10,7 +10,14 @@ class PacketBuilder:
     APP_AUTH_HEADER = (0x13, 0x00, 0x00, 0x00)
     # app and device both use A3, so dont depend on it for app/device ID
     APP_CONNECT_HEADER = (0xA3, 0x00, 0x00, 0x00)
-    APP_REQUEST_HEADERS = (0x13,)
+    # The header byte is bit-packed (confirmed against the app's own Xlink
+    # SDK: type = (b>>4)&0xF, response = (b>>3)&1, version = b&0x7) rather
+    # than a flat enum - 0x13 (type=1, response=0, version=3) and 0x10
+    # (type=1, response=0, version=0) are the SAME "login" request family at
+    # different protocol versions. Only 0x10 and 0x13 have actually been
+    # observed on the wire; the other in-between version bytes (0x11, 0x12)
+    # are left unrecognized rather than assumed identical.
+    APP_REQUEST_HEADERS = (0x13, 0x10)
     APP_AUTH_RESPONSE = (0x18, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
     APP_RESPONSE_HEADERS = (0x18,)
     APP_HEADERS = APP_REQUEST_HEADERS + APP_RESPONSE_HEADERS

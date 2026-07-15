@@ -46,4 +46,4 @@ CYNC_CLOUD_IP = "34.73.130.191"
 MANUFACTURER = "Savant"
 
 # Diagnostic/noisy entities disabled by default (entity-disabled-by-default, gold)
-DEFAULT_DISABLED_ENTITIES = {"app_mesh_active", "mitm_mode"}
+DEFAULT_DISABLED_ENTITIES = {"app_mesh_active", "app_wifi_active", "mitm_mode"}

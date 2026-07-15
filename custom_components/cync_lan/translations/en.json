@@ -56,6 +56,9 @@
       },
       "app_mesh_active": {
         "name": "Cync App Active"
+      },
+      "app_wifi_active": {
+        "name": "Cync App Active (WiFi)"
       }
     }
   },
