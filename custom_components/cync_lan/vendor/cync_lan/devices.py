@@ -872,12 +872,23 @@ class CyncDevice:
         motion/ambient-light sensor settings write.
 
         Sourced from decompiling the current Cync Android app
-        (MotionSensorSetting.java / SetMotionSensorSettingsCommand.java) - NOT
-        yet confirmed against a real packet capture. The command's `op`/`cmd_`
-        for the actual send_command() call are still unknown (see set_power/
-        set_brightness for the existing op+cmd_ envelope pattern this project
-        uses) - do not wire this into a live send until a real capture
-        confirms them.
+        (MotionSensorSetting.java / SetMotionSensorSettingsCommand.java) - the
+        payload shape below and the `op` byte (0xF7, confirmed via
+        SetMotionSensorSettingsCommand's own opcode array `{-9,17,2,7}`, i.e.
+        `{0xF7,0x11,0x02,0x07}` - the same "opcode + fixed VendorID prefix"
+        pattern as set_power/set_brightness) are confirmed against the
+        decompiled app, cross-checked independently twice.
+
+        `cmd_` (the second envelope argument send_command()/build_control_packet()
+        expects - see set_power/set_brightness/set_rgb for that pattern) is
+        NOT confirmed: it has no equivalent field in any of the decompiled
+        per-command byte arrays (those only cover the *inner* mesh command,
+        not cync-lan's own outer envelope), and existing cmd_ values across
+        set_power (0x0D)/set_brightness+set_temperature+set_rgb (0x10)/
+        set_lightshow (0x0E) don't follow an inferable pattern (e.g. payload
+        length) precise enough to guess this one safely. Do NOT wire this
+        into a live send until a real packet capture pins down cmd_ - op
+        alone isn't enough to build a correct outer packet.
 
         Wire format: VendorID (0x11 0x02) + sub-opcode (0x07, fixed - marks
         "sensor settings" as a command family) + an 8-byte params struct:
@@ -1687,9 +1698,16 @@ class CyncTCPSession:
                         inner_struct, self.queue_id, lp, send_ack=False
                     )
                 elif ctrl_bytes == b"\xfa\xdb":
-                    # Other fa db sub-types (packet_data[7] != 0x13) are seen when the
-                    # Cync phone app connects to a device via BTLE (not TCP). Benign,
-                    # not actionable, but useful as an "app is active" signal.
+                    # Other fa db sub-types (packet_data[7] != 0x13) are DEVICE_STATUS
+                    # ANNOUNCE frames whose payload isn't exactly the 19-byte single-
+                    # device MeshLightStatus struct - packet_data[7] is the low byte of
+                    # the little-endian payload-length field (0x13=19 for the common
+                    # case), not a semantic sub-type tag. A non-0x13 value here most
+                    # likely means a multi-struct bulk status dump (n*19 bytes), not an
+                    # app-BTLE-connect event - confirmed via the app's own Frame/
+                    # XlinkCommandCode wire format; no evidence tying this specifically
+                    # to the app connecting was found in the decompiled app. Still
+                    # benign/not actionable either way.
                     await g.mqtt_client.mark_app_mesh_active()
                     if CYNC_RAW:
                         logger.debug(
@@ -1721,8 +1739,16 @@ class CyncTCPSession:
                     except IndexError as e:
                         return []
                 elif ctrl_bytes == b"\xfa\x8e":
-                    # Seen broadcast to every device at once, in bursts, when HASS (re)connects to MQTT
-                    # and cync-lan re-announces discovery. Benign/expected, not actionable.
+                    # PASSTHROUGH_8E: a generic wrapper the app's own XlinkCommandCode
+                    # table uses to relay ANY Telink BLE-mesh notification over the
+                    # WiFi/hub link - confirmed legitimately fires on WiFi connection/
+                    # RSSI/IP changes, OTA/firmware status pushes, mesh address/group/
+                    # scene changes, and periodic RGB/mesh-status updates from devices
+                    # in the mesh. Not specifically tied to HASS/MQTT reconnecting (no
+                    # evidence found for that in the decompiled app); cync-lan's own
+                    # reconnect/re-announce traffic incidentally triggering some of
+                    # these relays is a more likely explanation for that correlation.
+                    # Benign/expected either way, not actionable.
                     if CYNC_RAW:
                         logger.debug(
                             f"{lp} ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
@@ -1730,11 +1756,23 @@ class CyncTCPSession:
                             f"{packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
                         )
                 elif ctrl_bytes in (b"\xfa\xaf", b"\xfa\xf0"):
-                    # Seen broadcast to many devices at once, in bursts, when the Cync
-                    # phone app (dis)connects to the BTLE mesh. Benign, not actionable,
-                    # but useful as an "app is active" signal.
-                    # (fa af is documented elsewhere in this file; fa f0 is undocumented
-                    # but observed firing on the exact same devices in the same bursts.)
+                    # fa af = MeshStatusProxyHeartbeatCommand's wire encoding (opcode
+                    # 0xAF), a heartbeat toggling whether the phone app is acting as a
+                    # BTLE-mesh-status proxy - confirmed via the app's own command
+                    # class, not just a generic connect/disconnect signal.
+                    # fa f0 = COMBO_CONTROL (opcode 0xF0), the same power/brightness/
+                    # color "combo set" command used elsewhere in this codebase
+                    # (_parse_83_device_state's 0xdb docstring). The app's own
+                    # notification dispatcher has no handler registered for an
+                    # incoming COMBO_CONTROL frame, so it's not something the
+                    # reference client itself interprets as an announce-direction
+                    # echo - most likely just relayed/passed-through mesh traffic that
+                    # happens to co-occur with fa af bursts because both fire while the
+                    # app is actively engaged with the hub, not because they're
+                    # mechanically related.
+                    # Both benign, not actionable; still useful as a coarse "app is
+                    # active" signal even though the specific mechanism above isn't
+                    # what was originally assumed.
                     await g.mqtt_client.mark_app_mesh_active()
                     if CYNC_RAW:
                         logger.debug(
@@ -1920,7 +1958,7 @@ class CyncTCPSession:
                             packet_data[1:-1],
                         )
 
-                elif ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (0xD0, 0xF0, 0xE2):
+                elif ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (0xD0, 0xD2, 0xF0, 0xE2):
                     # Handle Callbacks for control messages
                     ctrl_msg_id = packet_data[1]
                     success = packet_data[7] == 1
@@ -2885,8 +2923,10 @@ class CyncTCPSession:
                                 # if ctrl_bytes == bytes([0xFA, 0xAF]):
                                 #     logger.debug(
                                 #         f"{lp} This ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
-                                #         f"{checksum == calc_chksum}) usually comes through when the cync phone app "
-                                #         f"(dis)connects to the BTLE mesh. Currently unknown what it means.\n\n"
+                                #         f"{checksum == calc_chksum}) is MeshStatusProxyHeartbeatCommand's wire "
+                                #         f"encoding (opcode 0xAF) - a heartbeat toggling whether the phone app is "
+                                #         f"acting as a BTLE-mesh-status proxy, confirmed via the app's own command "
+                                #         f"class.\n\n"
                                 #         f"HEX: {packet_data[1:-1].hex(' ')}\nINT: {bytes2list(packet_data[1:-1])}"
                                 #     ) if CYNC_RAW is True else None
                                 # elif ctrl_bytes == bytes([0xFA, 0xD9]):
@@ -3175,6 +3215,7 @@ class CyncTCPSession:
 
                                 if ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (
                                     0xD0,
+                                    0xD2,
                                     0xF0,
                                     0xE2,
                                 ):
@@ -3182,6 +3223,12 @@ class CyncTCPSession:
                                     # handle callbacks for messages
                                     # byte 8 is success? 0x01 yes // 0x00 no
                                     # 7e 09 00 00 00 f9 d0 01 00 00 d1 7e <-- original ACK
+                                    # 7e 09 00 00 00 f9 d2 01 00 00 d3 7e <-- sol-lamp brightness (set_brightness's
+                                    #   is_sol_lamp op=0xD2, devices.py set_brightness()) - was missing from this
+                                    #   allow-list entirely, so a sol-lamp brightness change's ack fell through to
+                                    #   the UNKNOWN ctrl_bytes branch instead of firing its ControlMessageCallback,
+                                    #   leaving HA's brightness state stale until an unrelated mesh broadcast
+                                    #   happened to correct it later. Confirmed via decompiled-app cross-reference.
                                     # 7e 09 00 00 00 f9 f0 01 00 00 f1 7e <-- newer LED strip controller
                                     # 7e 09 00 00 00 f9 e2 01 00 00 e3 7e <-- Cync default light show / effect
                                     # bytes 7 - 10 SUM --> (f0) + (01) = checksum (f1) byte 11
@@ -3222,10 +3269,19 @@ class CyncTCPSession:
                                             self.protocol_version_str = fw_str
                                     else:
                                         if CYNC_RAW is True:
+                                            # PASSTHROUGH_8E: a generic wrapper the app's own
+                                            # XlinkCommandCode table uses to relay any Telink
+                                            # BLE-mesh notification over the WiFi/hub link -
+                                            # confirmed legitimately fires on WiFi/RSSI/IP
+                                            # changes, OTA/firmware status, mesh address/group/
+                                            # scene changes, and periodic RGB/mesh-status
+                                            # updates - not specifically an app-BTLE-connect
+                                            # event (no evidence found for that in the
+                                            # decompiled app).
                                             logger.debug(
                                                 f"{lp} This ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: "
-                                                f"{checksum == calc_chksum}) usually comes through when the cync "
-                                                f"phone app (dis)connects to the BTLE mesh. Unknown what it means"
+                                                f"{checksum == calc_chksum}) is a generic Telink-mesh-notification "
+                                                f"passthrough (see PASSTHROUGH_8E)"
                                                 f"\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: "
                                                 f"{bytes2list(packet_data[1:-1])}"
                                             )

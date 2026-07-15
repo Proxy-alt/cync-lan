@@ -207,11 +207,18 @@ CYNC_UNSUPPORTED_LOG_PATH = os.environ.get(
 )
 CYNC_CLOUD_IP = os.environ.get("CYNC_CLOUD_IP", "34.73.130.191")
 
+# Second byte of each tuple is a random nonce in the real app (SetLightRunModeCommand.x()
+# writes Random.nextInt(-128,127) there) - the receiving device doesn't validate it, confirmed
+# via the app's own ack parser only reading a separate result-code byte, never this one.
 FACTORY_EFFECTS_BYTES: Dict[str, Tuple[int, int]] = {
     "candle": (int(0x01), int(0xF1)),
     "cyber": (int(0x43), int(0x9F)),
     "rainbow": (int(0x02), int(0x7A)),
-    "fireworks": (int(0x3A), int(0xDA)),
+    # Was 0x3A (58) - not a valid effect ID anywhere in the real app's scheme (named
+    # presets are 1-9/65-67, custom shows are 10-32), so real hardware likely rejected
+    # it outright. The real "Fireworks" ID, confirmed directly against the decompiled
+    # app's LightRunMode.LightShow.Fireworks class, is 3.
+    "fireworks": (int(0x03), int(0xDA)),
     "volcanic": (int(0x04), int(0xF4)),
     "aurora": (int(0x05), int(0x1C)),
     "happy_holidays": (int(0x06), int(0x54)),
