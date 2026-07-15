@@ -79,7 +79,7 @@ class CyncLanRuntimeData:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    configure_environment(
+    await configure_environment(
         hass, entry.data[CONF_ACCOUNT_USERNAME], entry.data[CONF_ACCOUNT_PASSWORD]
     )
     os.environ["CYNC_PORT"] = str(

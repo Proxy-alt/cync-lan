@@ -14,7 +14,7 @@ from custom_components.cync_lan.util import (
 
 async def test_configure_environment_sets_expected_env_vars(hass, tmp_path):
     with patch.object(hass.config, "path", return_value=str(tmp_path / "cync_lan")):
-        configure_environment(hass, "user@example.com", "hunter2")
+        await configure_environment(hass, "user@example.com", "hunter2")
     assert os.environ["CYNC_ACCOUNT_USERNAME"] == "user@example.com"
     assert os.environ["CYNC_ACCOUNT_PASSWORD"] == "hunter2"
     assert os.path.isdir(os.environ["CYNC_CONFIG_DIR"])
@@ -95,7 +95,7 @@ async def test_configure_environment_sizes_max_tcp_conn_from_export(
         )
     )
     with patch.object(hass.config, "path", return_value=str(config_dir)):
-        configure_environment(hass, "user@example.com", "hunter2")
+        await configure_environment(hass, "user@example.com", "hunter2")
     # 10 wifi devices + 4 headroom = 14, above the default-8 floor.
     assert os.environ["CYNC_MAX_TCP_CONN"] == "14"
 
@@ -109,7 +109,7 @@ async def test_configure_environment_max_tcp_conn_floors_at_default(
     monkeypatch.delenv("CYNC_MAX_TCP_CONN", raising=False)
     config_dir = str(tmp_path / "cync_lan")
     with patch.object(hass.config, "path", return_value=config_dir):
-        configure_environment(hass, "user@example.com", "hunter2")
+        await configure_environment(hass, "user@example.com", "hunter2")
     assert os.environ["CYNC_MAX_TCP_CONN"] == "8"
 
 
@@ -129,7 +129,7 @@ async def test_configure_environment_points_base_dir_at_ha_config(
     monkeypatch.delenv("CYNC_BASE_DIR", raising=False)
     config_dir = str(tmp_path / "cync_lan")
     with patch.object(hass.config, "path", return_value=config_dir):
-        configure_environment(hass, "user@example.com", "hunter2")
+        await configure_environment(hass, "user@example.com", "hunter2")
     assert os.environ["CYNC_BASE_DIR"] == config_dir
 
 

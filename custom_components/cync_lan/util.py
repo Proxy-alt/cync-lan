@@ -47,13 +47,19 @@ def _count_wifi_devices(cfg_file: Path) -> int:
     return count
 
 
-def configure_environment(hass: HomeAssistant, username: str, password: str) -> None:
+async def configure_environment(hass: HomeAssistant, username: str, password: str) -> None:
     """Point the upstream package's env-var-driven config at this entry.
 
     Must run before the first `import cync_lan.const` anywhere in the
     process - its module-level constants are read once, at import time.
     async_setup_entry and the config flow both call this before touching
     anything under the `cync_lan` package.
+
+    Async (not sync) solely because sizing CYNC_MAX_TCP_CONN below reads
+    cync_mesh.yaml off disk, and that read must go through the executor -
+    confirmed via a real HA install flagging the earlier synchronous
+    version as a "Detected blocking call to open/read_text ... inside the
+    event loop" warning.
     """
     config_dir = hass.config.path("cync_lan")
     os.makedirs(config_dir, exist_ok=True)
@@ -83,8 +89,8 @@ def configure_environment(hass: HomeAssistant, username: str, password: str) -> 
     # re-read the environment on a config-entry reload within the same
     # running process, a limitation of the underlying env-var-at-import-
     # time design this integration has no control over.
-    wifi_device_count = _count_wifi_devices(
-        Path(config_dir) / "cync_mesh.yaml"
+    wifi_device_count = await hass.async_add_executor_job(
+        _count_wifi_devices, Path(config_dir) / "cync_mesh.yaml"
     )
     os.environ["CYNC_MAX_TCP_CONN"] = str(
         max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)

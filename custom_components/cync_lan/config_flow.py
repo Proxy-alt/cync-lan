@@ -77,7 +77,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(self._username.casefold())
             self._abort_if_unique_id_configured()
 
-            configure_environment(self.hass, self._username, self._password)
+            await configure_environment(self.hass, self._username, self._password)
             try:
                 api = get_cloud_api(self.hass)
                 await api._check_session()
@@ -182,7 +182,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             self._password = user_input[CONF_ACCOUNT_PASSWORD]
-            configure_environment(self.hass, self._username, self._password)
+            await configure_environment(self.hass, self._username, self._password)
             try:
                 api = get_cloud_api(self.hass)
                 requested = await api.request_otp()
