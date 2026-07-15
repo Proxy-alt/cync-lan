@@ -53,13 +53,22 @@ async def async_setup_entry(
     if not groups:
         return
 
-    # Member entity_ids are looked up via the entity registry rather than
-    # predicted from naming - individual lights must already be registered
-    # for this to find anything, which is why this runs as a second
-    # async_add_entities() call after the one above, not merged into it.
-    # async_add_entities() registers entities synchronously as part of
-    # adding them, so this is safe to do immediately afterward in the same
-    # setup call.
+    # Member entity_ids are looked up via the entity registry, which
+    # requires the individual lights above to actually be registered first
+    # - and async_add_entities() is a fire-and-forget callback (its type
+    # signature returns None, not a coroutine): it only *schedules* the
+    # real registration work as a background task
+    # (EntityPlatform._async_schedule_add_entities), it does not complete
+    # it before returning. Calling straight through to the registry lookups
+    # below without waiting found nothing, every time, for every group -
+    # confirmed via a real user report ("groups don't work, it doesn't
+    # group the lights") after this looked correct in tests that only used
+    # a fake, synchronous async_add_entities stand-in and never exercised
+    # this timing gap. async_block_till_done() waits for hass-tracked
+    # background tasks (which the scheduled registration task is one of)
+    # to actually finish before this proceeds.
+    await hass.async_block_till_done()
+
     registry = er.async_get(hass)
     group_entities = []
     for group_id, group in groups.items():

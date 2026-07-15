@@ -321,6 +321,88 @@ async def test_groups_enabled_but_none_exist_creates_nothing(hass):
     assert added == []
 
 
+async def test_groups_created_with_real_entity_platform_add_entities(hass):
+    """Regression test for the real timing bug: async_add_entities is a
+    fire-and-forget callback (its type signature returns None, not a
+    coroutine) - it only *schedules* entity registration as a background
+    task (EntityPlatform._async_schedule_add_entities_for_entry), it does
+    not complete it before returning. Every other group test in this file
+    uses a fake, synchronous "collect into a list" stand-in for
+    async_add_entities, which happens to make registry lookups work
+    immediately regardless of whether the real timing gap is handled -
+    none of them would have caught this bug, which is exactly how it
+    shipped despite full test coverage on the surface. This test drives
+    async_setup_entry with a real EntityPlatform's real scheduling callback
+    to exercise the actual registration path a production HA install has.
+
+    Caveat, confirmed by manually disabling the fix and re-running this
+    test: it still passed. Python's eager task scheduling (3.12+) can let
+    the background registration task run to completion synchronously,
+    with no real yield point, in a lightweight test environment with no
+    real state-machine persistence or disk I/O to force a suspension - so
+    this test cannot deterministically reproduce the exact race a busier
+    real HA instance hits. It's still valuable as end-to-end coverage of
+    the real entity-platform/registry-resolution path (which found and
+    fixed the entity_id-vs-unique_id assumption bug below), just not as
+    airtight proof of the timing fix on its own - the fix itself is
+    correct and necessary regardless of what this specific test can catch.
+    """
+    from datetime import timedelta
+
+    from cync_lan.structs import GlobalObject
+    from homeassistant.const import Platform
+    from homeassistant.helpers.entity_platform import EntityPlatform
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {
+        1: _fake_node(id=1, name="Kitchen Sink Light"),
+        2: _fake_node(id=2, name="Kitchen Island Light"),
+    }
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        groups={
+            32770: {"name": "Kitchen", "device_ids": [1, 2], "is_subgroup": False}
+        },
+    )
+
+    platform = EntityPlatform(
+        hass=hass,
+        logger=MagicMock(),
+        domain=Platform.LIGHT,
+        platform_name=DOMAIN,
+        platform=None,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    platform.config_entry = entry
+
+    # The real callback a config-entry-based platform's async_setup_entry
+    # actually receives in production (see EntityPlatform.async_setup_entry)
+    # - not platform.async_add_entities directly, which is the real
+    # coroutine that callback schedules as a background task, not something
+    # ever handed to platform code itself.
+    await async_setup_entry(
+        hass, entry, platform._async_schedule_add_entities_for_entry
+    )
+
+    from homeassistant.const import Platform as _Platform
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    expected_entity_ids = {
+        registry.async_get_entity_id(_Platform.LIGHT, DOMAIN, "entry1_1"),
+        registry.async_get_entity_id(_Platform.LIGHT, DOMAIN, "entry1_2"),
+    }
+
+    groups = [e for e in platform.entities.values() if isinstance(e, CyncLanLightGroup)]
+    assert len(groups) == 1
+    assert set(groups[0]._entity_ids) == expected_entity_ids
+
+
 async def test_group_skipped_when_no_members_resolve(hass):
     """A group whose device_ids don't map to any registered light entity
     (e.g. all its members are switches/plugs, or were never added) must be
