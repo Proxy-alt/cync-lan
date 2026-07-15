@@ -559,6 +559,26 @@ class CyncCloudAPI:
                         # overwrite the default 0 endpoint with the children
                         new_home["devices"][node_id]["endpoints"] = endpoint_data
 
+            # Cync device groups (e.g. "Living Room" containing several
+            # individually-addressable switches/bulbs) - confirmed real via a
+            # real account export: groupID is a synthetic pseudo-address
+            # (32768 + sequential index, matching the app's own
+            # MeshAddress.GROUP_ADDRESS_RANGE), deviceIDArray entries are the
+            # same short dev_id keys used in new_home["devices"] above, no ID
+            # translation needed. Purely additive - nothing currently reads
+            # this key, existing consumers of the exported config are
+            # unaffected.
+            new_home["groups"] = {}
+            for raw_group in raw_home["properties"].get("groupsArray", []):
+                if "groupID" not in raw_group or "deviceIDArray" not in raw_group:
+                    continue
+                group_id = raw_group["groupID"]
+                new_home["groups"][group_id] = {
+                    "name": raw_group.get("displayName") or f"Group {group_id}",
+                    "device_ids": list(raw_group["deviceIDArray"]),
+                    "is_subgroup": bool(raw_group.get("isSubgroup", False)),
+                }
+
         # END OF HOME PARSING LOOP
         # write raw exported config to file for debugging, only if export source is None
         if CYNC_EXPORT_SOURCE is None:
