@@ -328,7 +328,14 @@ class CyncDevice:
             # routes through light.py instead (see is_light above), so it
             # must not also claim is_switch here - that would create a
             # second, binary-only entity for the same physical device.
-            return not self.is_light
+            # Same reasoning for a fan controller (capabilities.fan) - it
+            # gets its own richer entity on the fan platform (fan.py).
+            # switch.py's own setup filter already excludes
+            # is_fan_controller separately as a defensive check, but
+            # is_switch should mean "plain binary switch, nothing else" on
+            # its own so any other caller can trust it without having to
+            # remember to re-check is_fan_controller too.
+            return not self.is_light and not self.is_fan_controller
         return False
 
     @is_switch.setter
