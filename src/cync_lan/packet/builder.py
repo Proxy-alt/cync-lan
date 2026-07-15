@@ -28,7 +28,24 @@ class PacketBuilder:
     DEVICE_REQUEST_HEADERS = (0x23, 0xC3, 0xD3, 0x83, 0x73, 0x7B, 0x43, 0xA3, 0xAB)
 
     DEVICE_RESPONSE_AUTH_ACK = (0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
-    # todo: how is this built?
+    # This is a server->device response to the device's own 0xC3 "connection
+    # request" - not implemented anywhere in the Cync Android app (it only
+    # speaks the 0x13/0x18 "app" packet family), so there's no app-side class
+    # to read directly. Diffing this constant against two other real captures
+    # of the same ack from different devices 6 seconds apart (see
+    # docs/debugging_sessions/3 devices/Plug - Toggle Power/{Bulb,Plug}.md)
+    # strongly suggests the 11-byte body is a server-pushed current-time
+    # struct: [0]=0x0D fixed tag (meaning unknown) [1:3]=year BE (0x07E8=2024)
+    # [3]=month [4]=day [5]=day-of-week (Sunday=1 convention - this constant's
+    # day/dow bytes, 10/Sun, are internally consistent: 2024-03-10 was a
+    # Sunday) [6]=hour [7]=minute [8]=second (confirmed: this is the one byte
+    # that differed between the two real captures, by exactly their 6-second
+    # capture gap) [9:11]=unconfirmed, identical across all known samples.
+    # Medium-high confidence, not proven - the hour byte was off by one from
+    # the real captures' displayed capture time (plausibly a timezone
+    # artifact), and bytes 9-10 have no independent samples to disambiguate.
+    # Hardcoded and already working for local emulation; no code needs to
+    # build this dynamically today.
     DEVICE_RESPONSE_CONNECTION_ACK = (
         0xC8,
         0x00,
