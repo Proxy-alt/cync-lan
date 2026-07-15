@@ -221,6 +221,27 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
+            if user_input.get(CONF_ENABLE_LIGHT_GROUPS):
+                # Group membership only ever comes from a fresh cloud export -
+                # async_setup_entry's reload (triggered right after this flow
+                # saves) just reparses whatever cync_mesh.yaml already has on
+                # disk, and the periodic refresh timer meant to catch this
+                # could be hours away (or disabled). Confirmed via a real user
+                # enabling light groups against an export written before
+                # groups support existed: the option turned on, but zero
+                # groups ever appeared, because nothing ever re-pulled from
+                # the cloud. Re-exporting here - on every save where light
+                # groups end up enabled, not just the enabling transition -
+                # also gives the user a way to force a refresh by simply
+                # reopening and resaving this form. Best-effort: a failed
+                # refresh must not block saving the rest of the options.
+                try:
+                    await get_cloud_api(self.hass).export_config_file()
+                except Exception:  # noqa: BLE001 - best-effort refresh, not fatal
+                    _LOGGER.exception(
+                        "Failed to refresh Cync cloud export while saving light-group "
+                        "settings; continuing with the existing local config"
+                    )
             return self.async_create_entry(data=user_input)
 
         current = self._config_entry.options

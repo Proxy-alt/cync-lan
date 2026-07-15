@@ -226,4 +226,88 @@ async def test_options_flow(hass, port):
         {"local_port": port, "export_refresh_interval": 24},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"]["local_port"] == port
+
+
+async def test_options_flow_enabling_light_groups_refreshes_export(
+    hass, mock_cloud_api
+):
+    """Regression test: group membership only exists in a fresh cloud
+    export, and nothing else re-pulls it on demand - a real user enabled
+    light groups against a stale export (written before groups support
+    existed) and got none, because async_setup_entry's reload just
+    reparses whatever's already on disk. Saving the options form with
+    light groups enabled must trigger export_config_file() itself.
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "local_port": 23779,
+            "export_refresh_interval": 24,
+            "enable_light_groups": True,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    mock_cloud_api.export_config_file.assert_awaited_once()
+
+
+async def test_options_flow_disabled_light_groups_skips_export(hass, mock_cloud_api):
+    """No point paying the cloud round-trip when the feature being saved
+    is off - only enabling light groups needs fresh group data."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "local_port": 23779,
+            "export_refresh_interval": 24,
+            "enable_light_groups": False,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    mock_cloud_api.export_config_file.assert_not_awaited()
+
+
+async def test_options_flow_export_failure_does_not_block_save(hass, mock_cloud_api):
+    """A cloud hiccup while refreshing groups must not prevent the rest of
+    the options (port, refresh interval) from being saved."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    mock_cloud_api.export_config_file = AsyncMock(side_effect=RuntimeError("boom"))
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "local_port": 23779,
+            "export_refresh_interval": 24,
+            "enable_light_groups": True,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
