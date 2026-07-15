@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import datetime
 import json
@@ -82,8 +83,13 @@ class CyncCloudAPI:
         """
         lp = f"{self.lp}:read_token_cache:"
         try:
-            with open(self.auth_cache_file, "rb") as f:
-                encrypted_data = f.read()
+            # async-dependency: plain open() blocks the event loop - flagged by
+            # HA's own blocking-call detector when this class runs inside a HA
+            # custom_component. run_in_executor works identically for the
+            # standalone add-on's asyncio loop too, unlike a HA-specific helper.
+            encrypted_data = await asyncio.get_running_loop().run_in_executor(
+                None, Path(self.auth_cache_file).read_bytes
+            )
             cipher = self._get_fernet_cipher()
             decrypted_json = cipher.decrypt(encrypted_data)
             token_dict = json.loads(decrypted_json.decode("utf-8"))
@@ -219,9 +225,13 @@ class CyncCloudAPI:
             json_data = tkn.model_dump_json().encode("utf-8")
             cipher = self._get_fernet_cipher()
             encrypted_data = cipher.encrypt(json_data)
-            with open(self.auth_cache_file, "wb") as f:
-                f.write(encrypted_data)
-            os.chmod(self.auth_cache_file, 0o777)
+
+            def _write() -> None:
+                Path(self.auth_cache_file).write_bytes(encrypted_data)
+                os.chmod(self.auth_cache_file, 0o777)
+
+            # async-dependency: same blocking-call fix as read_token_cache above.
+            await asyncio.get_running_loop().run_in_executor(None, _write)
             logger.debug(
                 f"{lp} Token cache encrypted and written successfully to: {self.auth_cache_file}"
             )
