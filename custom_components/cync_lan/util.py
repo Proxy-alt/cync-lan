@@ -25,6 +25,15 @@ def configure_environment(hass: HomeAssistant, username: str, password: str) -> 
     os.environ["CYNC_ACCOUNT_PASSWORD"] = password
     os.environ.setdefault("CYNC_CONFIG_DIR", config_dir)
     os.environ.setdefault("CYNC_SECRET_KEY", stable_secret(hass))
+    # cync_lan.const's CYNC_BASE_DIR defaults to "/root/cync-lan" - a path
+    # that only exists in the standalone add-on's own Docker image (where
+    # its Dockerfile also pre-generates the self-signed TLS cert under
+    # {CYNC_BASE_DIR}/certs/). Neither the directory nor the cert exist in a
+    # HA container, which crashed server.start() with FileNotFoundError on
+    # load_cert_chain before this was set - confirmed via a real install.
+    # Pointing CYNC_BASE_DIR here means the cert/key/static-file paths that
+    # derive from it land inside HA's own writable config dir instead.
+    os.environ.setdefault("CYNC_BASE_DIR", config_dir)
 
 
 def get_cloud_api(hass: HomeAssistant):

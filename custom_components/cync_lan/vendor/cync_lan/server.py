@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import ssl
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Union
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from cync_lan.const import CYNC_LOG_NAME, CYNC_SRV_HOST, CYNC_SRV_PORT
 from cync_lan.devices import CyncDevice, CyncTCPSession
@@ -132,10 +139,64 @@ class nCyncServer:
         )
 
 
+    @staticmethod
+    def _ensure_self_signed_cert(cert_path: str, key_path: str) -> None:
+        """Generate a self-signed cert/key pair if either file is missing.
+
+        The standalone add-on's Dockerfile pre-generates these via an
+        `openssl req -x509 ...` build step, so this was never needed there -
+        but nothing does that for a pip/HACS-installed HA custom_component,
+        which has no build step at all. Confirmed via a real HA install:
+        server.start() crashed with FileNotFoundError on load_cert_chain
+        because the cert/key simply never existed. Matches the Docker
+        build's own parameters (RSA 4096, CN=*.xlink.cn, self-signed,
+        ~3650 days) so behavior is identical either way. Blocking
+        (file + crypto) work - callers must run this off the event loop.
+        """
+        cert_file, key_file = Path(cert_path), Path(key_path)
+        if cert_file.exists() and key_file.exists():
+            return
+        cert_file.parent.mkdir(parents=True, exist_ok=True)
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+        subject = issuer = x509.Name(
+            [x509.NameAttribute(NameOID.COMMON_NAME, "*.xlink.cn")]
+        )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(private_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=3650))
+            .sign(private_key, hashes.SHA256())
+        )
+
+        key_file.write_bytes(
+            private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        cert_file.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
     async def create_ssl_context(self):
+        # async-dependency: cert generation and load_cert_chain are both
+        # blocking (file + crypto) work - keep off the event loop the same
+        # way as cloud_api.py's token-cache read/write.
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, self._ensure_self_signed_cert, self.cert_file, self.key_file
+        )
         # Allow the server to use a self-signed certificate
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        ssl_context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
+        await loop.run_in_executor(
+            None, ssl_context.load_cert_chain, self.cert_file, self.key_file
+        )
         # turn off all the SSL verification
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE

@@ -16,6 +16,26 @@ async def test_configure_environment_sets_expected_env_vars(hass, tmp_path):
     assert os.path.isdir(os.environ["CYNC_CONFIG_DIR"])
 
 
+async def test_configure_environment_points_base_dir_at_ha_config(
+    hass, tmp_path, monkeypatch
+):
+    """CYNC_BASE_DIR must not be left at its "/root/cync-lan" default - that
+    path only exists in the standalone add-on's own Docker image, never in a
+    HA container. A real install crashed server.start() with
+    FileNotFoundError on load_cert_chain because the cert/key paths (which
+    derive from CYNC_BASE_DIR) pointed nowhere writable.
+
+    configure_environment uses setdefault, so a prior test's value would
+    otherwise leak here (env vars are process-global, not test-isolated) -
+    explicitly cleared first.
+    """
+    monkeypatch.delenv("CYNC_BASE_DIR", raising=False)
+    config_dir = str(tmp_path / "cync_lan")
+    with patch.object(hass.config, "path", return_value=config_dir):
+        configure_environment(hass, "user@example.com", "hunter2")
+    assert os.environ["CYNC_BASE_DIR"] == config_dir
+
+
 async def test_get_cloud_api_injects_has_shared_session(hass):
     """inject-websession (platinum): the session actually passed to
     CyncCloudAPI is Home Assistant's own shared aiohttp session, not one
