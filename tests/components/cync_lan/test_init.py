@@ -295,6 +295,7 @@ async def test_refresh_no_mtime_change_does_nothing(hass, tmp_path):
     with patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls, patch(
         "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
     ) as mock_reload:
+        mock_api_cls.return_value.check_token = AsyncMock(return_value=True)
         mock_api_cls.return_value.export_config_file = AsyncMock(return_value=True)
         await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)
 
@@ -327,6 +328,7 @@ async def test_refresh_removed_device_deletes_from_registry_without_reload(
     ), patch(
         "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
     ) as mock_reload:
+        mock_api_cls.return_value.check_token = AsyncMock(return_value=True)
         mock_api_cls.return_value.export_config_file = AsyncMock(
             side_effect=_touch_mtime
         )
@@ -357,6 +359,7 @@ async def test_refresh_added_device_triggers_reload(hass, tmp_path):
     ), patch(
         "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
     ) as mock_reload:
+        mock_api_cls.return_value.check_token = AsyncMock(return_value=True)
         mock_api_cls.return_value.export_config_file = AsyncMock(
             side_effect=_touch_mtime
         )

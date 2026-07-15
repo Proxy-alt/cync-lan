@@ -33,7 +33,7 @@ from .const import (
     DEFAULT_LOCAL_PORT,
     DOMAIN,
 )
-from .util import configure_environment, get_cloud_api
+from .util import configure_environment, get_cloud_api, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -236,7 +236,7 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                 # reopening and resaving this form. Best-effort: a failed
                 # refresh must not block saving the rest of the options.
                 try:
-                    await get_cloud_api(self.hass).export_config_file()
+                    await refresh_cloud_export(self.hass)
                 except Exception:  # noqa: BLE001 - best-effort refresh, not fatal
                     _LOGGER.exception(
                         "Failed to refresh Cync cloud export while saving light-group "

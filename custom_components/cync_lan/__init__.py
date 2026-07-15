@@ -37,7 +37,7 @@ from .const import (
     DEFAULT_LOCAL_PORT,
     DOMAIN,
 )
-from .util import configure_environment, get_cloud_api
+from .util import configure_environment, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -238,8 +238,7 @@ async def _refresh_export_and_reload_if_changed(
 
     try:
         before = cfg_file.stat().st_mtime if cfg_file.exists() else None
-        api = get_cloud_api(hass)
-        await api.export_config_file()
+        await refresh_cloud_export(hass)
         after = cfg_file.stat().st_mtime if cfg_file.exists() else None
         if before == after:
             return

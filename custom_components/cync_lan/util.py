@@ -4,6 +4,7 @@ the upstream cync_lan package's environment-variable-driven configuration.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -11,6 +12,8 @@ import yaml
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 # cync_lan.const's CYNC_MAX_TCP_CONN defaults to 8 - fine for the standalone
 # add-on's own tuning.max_clients default, but far too low for a real
@@ -55,18 +58,19 @@ async def configure_environment(hass: HomeAssistant, username: str, password: st
     async_setup_entry and the config flow both call this before touching
     anything under the `cync_lan` package.
 
-    Async (not sync) solely because sizing CYNC_MAX_TCP_CONN below reads
-    cync_mesh.yaml off disk, and that read must go through the executor -
-    confirmed via a real HA install flagging the earlier synchronous
-    version as a "Detected blocking call to open/read_text ... inside the
-    event loop" warning.
+    Async because two of its steps require it: stable_secret() awaits
+    Home Assistant's own persisted instance-UUID storage, and sizing
+    CYNC_MAX_TCP_CONN below reads cync_mesh.yaml off disk through the
+    executor - confirmed via a real HA install flagging the earlier
+    synchronous file read as a "Detected blocking call to open/read_text
+    ... inside the event loop" warning.
     """
     config_dir = hass.config.path("cync_lan")
     os.makedirs(config_dir, exist_ok=True)
     os.environ["CYNC_ACCOUNT_USERNAME"] = username
     os.environ["CYNC_ACCOUNT_PASSWORD"] = password
     os.environ.setdefault("CYNC_CONFIG_DIR", config_dir)
-    os.environ.setdefault("CYNC_SECRET_KEY", stable_secret(hass))
+    os.environ.setdefault("CYNC_SECRET_KEY", await stable_secret(hass))
     # cync_lan.const's CYNC_BASE_DIR defaults to "/root/cync-lan" - a path
     # that only exists in the standalone add-on's own Docker image (where
     # its Dockerfile also pre-generates the self-signed TLS cert under
@@ -111,16 +115,53 @@ def get_cloud_api(hass: HomeAssistant):
     return CyncCloudAPI(session=async_get_clientsession(hass))
 
 
-def stable_secret(hass: HomeAssistant) -> str:
+async def refresh_cloud_export(hass: HomeAssistant) -> bool:
+    """Best-effort: re-pull the Cync cloud export.
+
+    export_config_file() assumes CyncCloudAPI.token_cache is already
+    populated - that's only ever set as a side effect of check_token()
+    (or the interactive OTP auth flow, which ends by writing it directly).
+    Any caller outside the initial account-setup flow that skips
+    check_token() first hits AttributeError: 'CyncCloudAPI' object has no
+    attribute 'token_cache' - confirmed via a real user triggering it from
+    the options flow's light-groups refresh; the periodic refresh timer in
+    __init__.py had the exact same gap, silently swallowed by its own
+    broad except-and-log.
+
+    Returns False (without raising) if there's no valid/refreshable cached
+    token - an unattended caller has no way to complete an interactive OTP
+    challenge, so recovering from that requires the user to go through the
+    config flow's reauth step themselves.
+    """
+    api = get_cloud_api(hass)
+    if not await api.check_token():
+        _LOGGER.warning(
+            "Cannot refresh Cync cloud export: no valid cached auth token. "
+            "Reauthenticate via the integration's reauth flow to restore it."
+        )
+        return False
+    return await api.export_config_file()
+
+
+async def stable_secret(hass: HomeAssistant) -> str:
     """Derive a stable local secret for the token-cache Fernet cipher.
 
     Not a network secret - only protects the on-disk cached cloud token from
     casual reading, same threat model as the upstream add-on's default.
-    Cached on hass.data so it's generated once per HA process, not once per
-    call (a fresh value every call would make the cached token unreadable
-    the very next time it's read back).
+
+    Must be stable across HA restarts, not just within one process - a
+    prior version generated a fresh random value into hass.data (in-memory
+    only) on first access each process, which happened to be internally
+    consistent within a run but meant the Fernet-encrypted token cache
+    written under one restart's secret could never be decrypted again after
+    the next restart. Confirmed via a real user's log: "Failed to decrypt
+    or parse token cache. It may be corrupt or the secret key changed" -
+    every restart, every time, silently forcing a fallback to OTP
+    re-auth or a failed export depending on the call site. Home Assistant's
+    own persisted instance UUID (homeassistant.helpers.instance_id, backed
+    by .storage/core.uuid) is stable across restarts by design and already
+    used for comparable per-installation identifiers elsewhere in HA core.
     """
-    key = f"{DOMAIN}_secret"
-    if key not in hass.data:
-        hass.data[key] = os.urandom(32).hex()
-    return hass.data[key]
+    from homeassistant.helpers import instance_id
+
+    return await instance_id.async_get(hass)

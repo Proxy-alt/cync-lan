@@ -240,6 +240,7 @@ async def test_options_flow_enabling_light_groups_refreshes_export(
     """
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+    mock_cloud_api.check_token = AsyncMock(return_value=True)
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="user@example.com",
@@ -259,6 +260,35 @@ async def test_options_flow_enabling_light_groups_refreshes_export(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     mock_cloud_api.export_config_file.assert_awaited_once()
+
+
+async def test_options_flow_no_valid_token_skips_export(hass, mock_cloud_api):
+    """refresh_cloud_export() must not attempt export_config_file() (which
+    assumes token_cache is already populated) when there's no valid cached
+    token to populate it with - mock_cloud_api's check_token defaults to
+    False, matching a real account that's never completed the interactive
+    OTP flow in this process."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "local_port": 23779,
+            "export_refresh_interval": 24,
+            "enable_light_groups": True,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    mock_cloud_api.export_config_file.assert_not_awaited()
 
 
 async def test_options_flow_disabled_light_groups_skips_export(hass, mock_cloud_api):
@@ -292,6 +322,7 @@ async def test_options_flow_export_failure_does_not_block_save(hass, mock_cloud_
     the options (port, refresh interval) from being saved."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+    mock_cloud_api.check_token = AsyncMock(return_value=True)
     mock_cloud_api.export_config_file = AsyncMock(side_effect=RuntimeError("boom"))
     entry = MockConfigEntry(
         domain=DOMAIN,
