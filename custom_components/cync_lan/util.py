@@ -5,10 +5,46 @@ the upstream cync_lan package's environment-variable-driven configuration.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+import yaml
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+
+# cync_lan.const's CYNC_MAX_TCP_CONN defaults to 8 - fine for the standalone
+# add-on's own tuning.max_clients default, but far too low for a real
+# household: every WiFi-connected switch/bulb/plug holds its own persistent
+# TCP connection, and confirmed real accounts (see the HA integration's own
+# quality_scale/session notes) commonly have 40-50+ such devices. A hard cap
+# of 8 there means most devices get rejected outright ("server max TCP
+# connections reached") and legitimate reconnects get treated as attackers.
+_DEFAULT_MAX_TCP_CONN = 8
+_MAX_TCP_CONN_HEADROOM = 4
+
+
+def _count_wifi_devices(cfg_file: Path) -> int:
+    """Count devices with a wifi_mac in the exported cync_mesh.yaml.
+
+    Deliberately a standalone, minimal YAML read rather than importing
+    cync_lan.utils.parse_config - this must run before cync_lan is ever
+    imported at all (see configure_environment's docstring), and parsing
+    the full config here would need CyncDevice, which only exists after
+    that same import.
+    """
+    if not cfg_file.exists():
+        return 0
+    try:
+        raw = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - sizing a tuning value, must not block setup
+        return 0
+    main_key = "exported_homes" if "exported_homes" in raw else "account data"
+    count = 0
+    for home in raw.get(main_key, {}).values():
+        for device in home.get("devices", {}).values():
+            if device.get("wifi_mac"):
+                count += 1
+    return count
 
 
 def configure_environment(hass: HomeAssistant, username: str, password: str) -> None:
@@ -34,6 +70,25 @@ def configure_environment(hass: HomeAssistant, username: str, password: str) -> 
     # Pointing CYNC_BASE_DIR here means the cert/key/static-file paths that
     # derive from it land inside HA's own writable config dir instead.
     os.environ.setdefault("CYNC_BASE_DIR", config_dir)
+
+    # Sized from the actual exported device count rather than the package's
+    # hardcoded default of 8 - see _DEFAULT_MAX_TCP_CONN's comment above.
+    # No file yet (very first setup, before the initial export has run) or
+    # a genuinely empty account both fall back to the original default
+    # rather than 0, which would reject every connection outright. Not
+    # setdefault: this is meant to be recomputed on every call (e.g. a
+    # reload after the device count changed via a fresh export), though in
+    # practice it only takes effect on setups where cync_lan.const gets
+    # imported fresh (a full HA restart) - already-imported modules don't
+    # re-read the environment on a config-entry reload within the same
+    # running process, a limitation of the underlying env-var-at-import-
+    # time design this integration has no control over.
+    wifi_device_count = _count_wifi_devices(
+        Path(config_dir) / "cync_mesh.yaml"
+    )
+    os.environ["CYNC_MAX_TCP_CONN"] = str(
+        max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)
+    )
 
 
 def get_cloud_api(hass: HomeAssistant):

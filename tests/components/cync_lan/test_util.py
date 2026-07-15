@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.cync_lan.util import configure_environment, get_cloud_api
+from custom_components.cync_lan.util import (
+    _count_wifi_devices,
+    configure_environment,
+    get_cloud_api,
+)
 
 
 async def test_configure_environment_sets_expected_env_vars(hass, tmp_path):
@@ -14,6 +18,99 @@ async def test_configure_environment_sets_expected_env_vars(hass, tmp_path):
     assert os.environ["CYNC_ACCOUNT_USERNAME"] == "user@example.com"
     assert os.environ["CYNC_ACCOUNT_PASSWORD"] == "hunter2"
     assert os.path.isdir(os.environ["CYNC_CONFIG_DIR"])
+
+
+def test_count_wifi_devices_missing_file_returns_zero(tmp_path):
+    assert _count_wifi_devices(tmp_path / "does_not_exist.yaml") == 0
+
+
+def test_count_wifi_devices_counts_only_devices_with_wifi_mac(tmp_path):
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text(
+        """
+exported_homes:
+  Home:
+    devices:
+      1:
+        name: Kitchen Light
+        wifi_mac: "AA:BB:CC:DD:EE:01"
+      2:
+        name: Kitchen Switch
+        wifi_mac: "AA:BB:CC:DD:EE:02"
+      3:
+        name: Bluetooth-only Bulb
+"""
+    )
+    assert _count_wifi_devices(cfg_file) == 2
+
+
+def test_count_wifi_devices_supports_account_data_key(tmp_path):
+    """The upstream export format used "account data" as the top-level key
+    before exported_homes was introduced - still supported for older
+    exports, mirrors cync_lan.utils.parse_config's own main_key fallback.
+    """
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text(
+        """
+account data:
+  Home:
+    devices:
+      1:
+        name: Plug
+        wifi_mac: "AA:BB:CC:DD:EE:01"
+"""
+    )
+    assert _count_wifi_devices(cfg_file) == 1
+
+
+def test_count_wifi_devices_malformed_yaml_returns_zero(tmp_path):
+    """Sizing a tuning value must never block setup - a corrupt/partial
+    export file falls back to 0 (which configure_environment then clamps
+    up to the original default of 8) rather than raising.
+    """
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text(":\n  - this is not: [valid yaml")
+    assert _count_wifi_devices(cfg_file) == 0
+
+
+async def test_configure_environment_sizes_max_tcp_conn_from_export(
+    hass, tmp_path, monkeypatch
+):
+    """CYNC_MAX_TCP_CONN must reflect the real exported device count (plus
+    headroom) rather than staying at the package's hardcoded default of 8 -
+    confirmed via a real account with 48 wifi-connected devices hitting the
+    old cap ("server max (33/8) TCP connections reached") thousands of
+    times in production logs.
+    """
+    monkeypatch.delenv("CYNC_MAX_TCP_CONN", raising=False)
+    config_dir = tmp_path / "cync_lan"
+    config_dir.mkdir()
+    (config_dir / "cync_mesh.yaml").write_text(
+        "exported_homes:\n"
+        "  Home:\n"
+        "    devices:\n"
+        + "".join(
+            f'      {i}:\n        name: Device {i}\n        wifi_mac: "AA:{i:02X}"\n'
+            for i in range(1, 11)
+        )
+    )
+    with patch.object(hass.config, "path", return_value=str(config_dir)):
+        configure_environment(hass, "user@example.com", "hunter2")
+    # 10 wifi devices + 4 headroom = 14, above the default-8 floor.
+    assert os.environ["CYNC_MAX_TCP_CONN"] == "14"
+
+
+async def test_configure_environment_max_tcp_conn_floors_at_default(
+    hass, tmp_path, monkeypatch
+):
+    """A brand-new setup (no export yet) or a tiny account must not shrink
+    the cap below the original default of 8.
+    """
+    monkeypatch.delenv("CYNC_MAX_TCP_CONN", raising=False)
+    config_dir = str(tmp_path / "cync_lan")
+    with patch.object(hass.config, "path", return_value=config_dir):
+        configure_environment(hass, "user@example.com", "hunter2")
+    assert os.environ["CYNC_MAX_TCP_CONN"] == "8"
 
 
 async def test_configure_environment_points_base_dir_at_ha_config(
