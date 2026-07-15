@@ -131,6 +131,17 @@ class DeviceTypeInfo:
 
 """Maps a device type ID to its corresponding DeviceTypeInfo."""
 device_type_map = {
+    1: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="CLife A19 Standalone Bulb (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        supported=False,
+        notes=[
+            "Confirmed to exist (DeviceType.java CLifeA19Gen1Standalone) but no "
+            "capability data recoverable from the decompiled app for the original "
+            "'CLife'-branded (pre-Cync) product line specifically - not guessed.",
+        ],
+    ),
     5: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Tunable White A19 Bulb",
@@ -174,6 +185,17 @@ device_type_map = {
         model_name="Tunable White Light (Unknown)",
         model_id=None,
         capabilities=LightCapabilities(tunable_white=True),
+    ),
+    13: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="CLife A19 Standalone Bulb (TCO Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        supported=False,
+        notes=[
+            "Confirmed to exist (DeviceType.java CLifeA19TCOGen2Standalone) but no "
+            "capability data recoverable from the decompiled app for the original "
+            "'CLife'-branded (pre-Cync) product line specifically - not guessed.",
+        ],
     ),
     14: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -233,6 +255,18 @@ device_type_map = {
         model_name="Full Color Light (Unknown)",
         capabilities=LightCapabilities(color=True, tunable_white=True),
     ),
+    24: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="CLife A19 Bulb (Gen2, Made for Google)",
+        protocol=DeviceProtocol(TCP=True),
+        supported=False,
+        notes=[
+            "Confirmed to exist (DeviceType.java "
+            "CLifeA19Gen2MadeForGoogleCECTier2) but no capability data recoverable "
+            "from the decompiled app for the original 'CLife'-branded (pre-Cync) "
+            "product line specifically - not guessed.",
+        ],
+    ),
     25: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Tunable White Light (Unknown)",
@@ -247,6 +281,18 @@ device_type_map = {
             lumens=800, min_kelvin=2000, max_kelvin=7000
         ),
         capabilities=LightCapabilities(tunable_white=True),
+    ),
+    27: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="CLife A19 Bulb (TCO Gen2, Made for Google)",
+        protocol=DeviceProtocol(TCP=True),
+        supported=False,
+        notes=[
+            "Confirmed to exist (DeviceType.java CLifeA19TCOGen2MadeForGoogle) but "
+            "no capability data recoverable from the decompiled app for the "
+            "original 'CLife'-branded (pre-Cync) product line specifically - not "
+            "guessed.",
+        ],
     ),
     28: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -323,6 +369,16 @@ device_type_map = {
             "correct, color/tunable_white were not.",
         ],
     ),
+    38: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Circle Switch (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=[
+            "FourWireSwitchCircleGen2 in the real app - same Circle-style family "
+            "as type 53, no Dimming/CctColor/RgbColor capability.",
+        ],
+    ),
     39: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
         model_name="Paddle Switch",
@@ -367,6 +423,18 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(color=True, tunable_white=True),
         characteristics=LightCharacteristics(lumens=1500),
+    ),
+    44: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Under Cabinet Puck Fixture",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    46: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name='Full Color 6" Recessed Can Retrofit Downlight',
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
     ),
     47: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -507,6 +575,27 @@ device_type_map = {
             "Dimming or CctColor/RgbColor capability) - binary on/off only.",
         ],
     ),
+    61: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Paddle Switch (TCO Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=["FourWireSwitchPaddleTCOGen1 - non-dimming, no color capability."],
+    ),
+    62: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Toggle Switch (TCO Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=["FourWireSwitchToggleTCOGen1 - non-dimming, no color capability."],
+    ),
+    63: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Circle Switch (TCO Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=["FourWireSwitchCircleTCOGen1 - non-dimming, no color capability."],
+    ),
     64: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
         model_name="Indoor Plug",
@@ -544,6 +633,12 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         capabilities=SwitchCapabilities(plug=True),
     ),
+    69: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Outdoor Plug (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(plug=True),
+    ),
     71: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Full Color Dynamic Effects Premium Thin Light Strip",
@@ -559,6 +654,25 @@ device_type_map = {
         characteristics=LightCharacteristics(
             lumens=1600, min_kelvin=2000, max_kelvin=7000, cri=80
         ),
+    ),
+    73: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Outdoor Neon Light Strip - 16ft",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    74: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Outdoor Neon Light Strip - 32ft",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    75: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Outdoor Cafe Lights - 24ft (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True, dynamic=True),
+        notes=["Sibling of type 76's Cafe Lights - same dynamic-effects capability."],
     ),
     76: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -611,12 +725,95 @@ device_type_map = {
             "sentinel, same as noted on type 67).",
         ],
     ),
+    97: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Edison ST19 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    98: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Edison G25 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    99: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Soft White Edison ST19 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(),
+    ),
+    100: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Soft White Edison G25 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(),
+    ),
+    101: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Bulb - BC (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    102: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Bulb - BM (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    103: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Reveal Soft White A19 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(),
+        notes=[
+            "SingleChipRevealSoftWhiteBulbA19Gen2 - 'Reveal' is a rendering-quality "
+            "tier, not a color capability; no CctColor/RgbColor, same as the "
+            "already-confirmed Soft White pattern (e.g. type 134).",
+        ],
+    ),
+    104: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Outdoor PAR38 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    105: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color A21 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
     107: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Full Color Reveal HD+ Bulb",
         model_id="CLEDA199CDRV",
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True),
+    ),
+    108: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Reveal Full Color BR30 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    109: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Reveal Full Color A21 Bulb (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    110: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Indoor Value Light Strip - 16ft (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    111: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Outdoor Plug (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(plug=True),
     ),
     112: DeviceTypeInfo(
         type=DeviceClassification.SENSOR,
@@ -653,6 +850,102 @@ device_type_map = {
         model_name="Wire-Free Dimmer with White Temperature Switch (BTLE only)",
         capabilities=SwitchCapabilities(dimmable=True, color=True, tunable_white=True),
         supported=False,
+    ),
+    114: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="Wire-Free Smart Remote Dimmer",
+        supported=False,
+        notes=[
+            "WireFreeSmartRemoteDimmer in the real app, classified ProductType."
+            "WireFreeRemote - a generic scene remote. This is functionally "
+            "different from type 112 (a wire-free dimmer that directly dims its "
+            "own paired light over BTLE), whose own notes explicitly say it is "
+            "NOT a generic scene remote - so 112's behavior/entity model should "
+            "not be assumed here. No capture data available; left unsupported "
+            "rather than guessed.",
+        ],
+    ),
+    115: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="Wire-Free Smart Remote Dimmer Plus Color Controller",
+        supported=False,
+        notes=[
+            "WireFreeSmartRemoteDimmerPlusColorController - sibling of type 114 "
+            "with added color-control buttons, same ProductType.WireFreeRemote "
+            "classification and same caveats. No capture data available.",
+        ],
+    ),
+    116: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Dimmer Switch (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(dimmable=True),
+        notes=["FourWireSwitchDimmerGen3 - no CctColor/RgbColor capability."],
+    ),
+    117: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Dimmer Switch with Motion Sensing (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(dimmable=True, motion_sensor=True),
+        notes=[
+            "FourWireSwitchMotionSensingDimmerGen3 - same motion-switch family as "
+            "37/49/56, no CctColor/RgbColor capability.",
+        ],
+    ),
+    118: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Circle Switch (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=["FourWireSwitchCircleGen3 - non-dimming, no color capability."],
+    ),
+    119: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Paddle Switch (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=["FourWireSwitchPaddleGen3 - non-dimming, no color capability."],
+    ),
+    120: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Toggle Switch (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+        notes=["FourWireSwitchToggleGen3 - non-dimming, no color capability."],
+    ),
+    121: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Fan Controller (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(fan=True),
+        notes=["FanSpeedSwitchGen2, sibling of the existing type 81 entry."],
+    ),
+    122: DeviceTypeInfo(
+        type=DeviceClassification.THERMOSTAT,
+        model_name="Thermostat (Gen2)",
+        protocol=DeviceProtocol(TCP=True),
+        notes=[
+            "ThermostatGen2. cync-lan's own devices.py explicitly skips HVAC "
+            "devices during config export parsing today (logged as 'currently "
+            "unsupported, work is in progress') regardless of this entry.",
+        ],
+    ),
+    123: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Indoor Value Light Strip - 32ft (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    124: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Keypad Dimmer Switch (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(dimmable=True),
+        notes=[
+            "FourWireSwitchKeypadDimmerGen1 - has a CustomizableButtons capability "
+            "in the real app not represented anywhere in this data model yet; no "
+            "CctColor/RgbColor capability.",
+        ],
     ),
     125: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
@@ -708,6 +1001,18 @@ device_type_map = {
         model_name="Full Color LED Light Strip Controller",
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True),
+    ),
+    134: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Soft White A19 Bulb",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(),
+        notes=[
+            "SingleChipSoftWhiteA19 - directly confirmed against the real app's "
+            "capability data (no CctColor/RgbColor), used as one of the sanity-"
+            "check anchors for the naming-convention-based capability inference "
+            "used throughout this block of newly-added entries.",
+        ],
     ),
     135: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -804,6 +1109,18 @@ device_type_map = {
         characteristics=LightCharacteristics(min_kelvin=2700),
         capabilities=LightCapabilities(),
     ),
+    149: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Soft White Edison G25 Bulb (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(),
+    ),
+    150: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Soft White Bulb - BC (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(),
+    ),
     151: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         model_name="Soft White Decorative Candle Light",
@@ -843,6 +1160,12 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         model_name="Full Color Light (Unknown)",
         capabilities=LightCapabilities(tunable_white=True, color=True),
+    ),
+    157: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Dynamic Effects BR30 Bulb",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True, dynamic=True),
     ),
     158: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -892,6 +1215,24 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
+    166: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Dynamic Effects Neon Light Strip - 10ft (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True, dynamic=True),
+    ),
+    167: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Dynamic Effects Neon Light Strip - 16ft (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True, dynamic=True),
+    ),
+    168: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color Dynamic Effects Hexagon Light Tile (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True, dynamic=True),
+    ),
     169: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
         characteristics=LightCharacteristics(lumens=760),
@@ -906,9 +1247,88 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         capabilities=LightCapabilities(dimmable=True, color=True, tunable_white=True),
     ),
+    171: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color A19 Bulb (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    172: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Plug (TCO Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(plug=True),
+    ),
+    173: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color BR30 Bulb (Gen3)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    174: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name='Reveal Full Color 4 Inch Wafer Downlight (Gen2)',
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    175: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name='Reveal Full Color 6 Inch Wafer Downlight (Gen2)',
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    177: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name='Reveal Full Color 2 Inch Wafer Downlight (Gen2)',
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    180: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name='Reveal Full Color High Lumen 4 Inch Wafer Downlight (Gen2)',
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    181: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name='Reveal Full Color High Lumen 6 Inch Wafer Downlight (Gen2)',
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
+    182: DeviceTypeInfo(
+        type=DeviceClassification.LIGHT,
+        model_name="Full Color A19 Clear Spiral Bulb (Gen1)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=LightCapabilities(color=True, tunable_white=True),
+    ),
     224: DeviceTypeInfo(
         type=DeviceClassification.THERMOSTAT,
         model_name="Thermostat",
         protocol=DeviceProtocol(TCP=True),
+    ),
+    240: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="Indoor Camera (Gen1)",
+        supported=False,
+        notes=[
+            "CameraIndoorGen1. Cameras are a real, distinct Cync product family "
+            "(ProductType.Camera) that almost certainly uses a different (cloud "
+            "video streaming) protocol entirely, not the lighting/switch BLE-mesh "
+            "protocol cync-lan implements - out of scope, not modeled beyond this "
+            "placeholder so the deviceType is at least recognized instead of "
+            "logged as fully unknown if one ever appears in an export.",
+        ],
+    ),
+    241: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="Outdoor Wired Camera (Gen1)",
+        supported=False,
+        notes=["CameraOutdoorWiredGen1 - see type 240's notes."],
+    ),
+    242: DeviceTypeInfo(
+        type=DeviceClassification.UNKNOWN,
+        model_name="Outdoor Battery Camera (Gen1)",
+        supported=False,
+        notes=["CameraOutdoorBatteryGen1 - see type 240's notes."],
     ),
 }
