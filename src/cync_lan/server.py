@@ -341,7 +341,21 @@ class nCyncServer:
         try:
             if existing_device is not None:
                 if existing_device.allowed_to_connect is False:
-                    can_connect = existing_device.can_connect()
+                    # Was missing `await` - can_connect() is async, so this
+                    # always compared a coroutine object to False (always
+                    # False) and the rejection branch below never ran. A
+                    # previously-disallowed device (e.g. rejected for
+                    # exceeding CYNC_MAX_TCP_CONN) would silently get
+                    # "resurrected" and re-added on every reconnect attempt
+                    # instead of being re-evaluated, which the coroutine
+                    # itself was never even awaited to run in the first
+                    # place - contributing to real-world connection-count
+                    # exhaustion and "writer is None" errors from stale
+                    # sessions never being cleared. Confirmed via a real
+                    # user's logs: repeated "coroutine 'can_connect' was
+                    # never awaited" RuntimeWarning plus persistent "server
+                    # max TCP connections reached" churn.
+                    can_connect = await existing_device.can_connect()
                     if can_connect is False:
                         del existing_device
                         existing_device = None
