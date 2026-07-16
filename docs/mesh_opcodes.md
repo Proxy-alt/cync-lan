@@ -435,6 +435,12 @@ needed here unless a newer app build adds types.
 4. A real packet capture (MITM of a device's TCP session, which cync-lan's DNS-redirect setup
    already positions for) remains the way to fully confirm the length-field formula, resolve group
    control, and cover Scenes'/Schedules' write path (not yet analyzed - see docs/cync_automations.md).
+5. **Whether the official app's cloud dependency (and, further out, new-device provisioning) could
+   ever be fully replaced by a self-hosted server** - see docs/cloud_independence_research.md. The
+   app's own device-control channel turns out to be just as unauthenticated as device firmware, and
+   BLE-provisioned device identity is confirmed client-side, not cloud-assigned - but the actual BLE
+   pairing/encryption handshake itself is unresearched and is the one real remaining blocker. Needs
+   a live BLE capture, not more decompilation, to resolve.
 
 ## BTLE mesh provisioning & MeshInfo details
 
@@ -475,7 +481,15 @@ home's WiFi SSID/password, it's the device firmware that joins the WiFi/mesh, no
 Bluetooth-SIG mesh provisioning exchange. **Not found**: no `NetworkKeyCommand`/`PairingCommand`/
 `MeshProvisioner` equivalent exists under `com/gelighting/cbygekit/` — those class names only exist
 under `com/thingclips/sdk/{bluetooth,sigmesh}` (Tuya/ThingClips SDK bundled for unrelated product
-lines, not reachable from GE/Cync's `GECommissioningDataSource`). `CommissionBuilder.java` (179
-lines, fully read) only manages cloud-side Location/Group/Subgroup placement — no mesh-address
-allocation logic found in the app; address assignment for a newly joined device appears to happen
-in bridge/device firmware, outside anything the decompiled app source can confirm.
+lines, not reachable from GE/Cync's `GECommissioningDataSource`).
+
+**CORRECTION, later session**: `CommissionBuilder.java` alone only manages cloud-side
+Location/Group/Subgroup placement, as noted above - but a more thorough pass found the actual
+per-device mesh-address allocation this doc previously said wasn't in the app. It's local, not
+device/bridge-side. See `docs/cloud_independence_research.md`'s "BLE provisioning" section for the
+full writeup - short version: `BaseNonHubDeviceCommissionService.y()` (`setMeshAddressOperation`,
+step 6 of a 20-step BLE commissioning pipeline) constructs each device's `MeshAddress` locally in
+the app, and `DeviceId.Companion.b(macAddress)` derives `deviceID` as `"{MAC}.{index}"` - also
+local, from the MAC read directly off the device over BLE. Neither requires a cloud round trip. The
+single cloud call in the pipeline (`writeChangesToCloudOperation`, step 12) comes after both of
+these and reads as a "sync what I already decided" write, not an identity-issuing call.
