@@ -29,10 +29,8 @@ from .bridge import CyncLanBridge
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
-    CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
-    DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
@@ -145,12 +143,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             translation_placeholders={"error": str(err)},
         ) from err
 
+    # Not gated behind CONF_ENABLE_LIGHT_GROUPS - that option only controls
+    # whether light.py creates group *entities* (dashboard clutter is the
+    # concern it exists for). Group data itself is also the source for
+    # motion-sensor schedule attributes on binary_sensor.py's entities,
+    # which have nothing to do with that option - see
+    # docs/cync_automations.md. light.py independently re-checks the option
+    # before creating any group entities, so this doesn't change when those
+    # appear.
     groups: dict = {}
-    if entry.options.get(CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS):
-        try:
-            groups = await parse_groups(cfg_file)
-        except Exception:  # noqa: BLE001 - groups are optional, must not block setup
-            _LOGGER.exception("Failed to parse Cync device groups, continuing without them")
+    try:
+        groups = await parse_groups(cfg_file)
+    except Exception:  # noqa: BLE001 - groups are optional, must not block setup
+        _LOGGER.exception("Failed to parse Cync device groups, continuing without them")
 
     async def _on_unknown_device_confirmed() -> None:
         # dynamic-devices (gold): a real new device was seen in a MeshInfo

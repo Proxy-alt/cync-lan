@@ -143,6 +143,46 @@ async def refresh_cloud_export(hass: HomeAssistant) -> bool:
     return await api.export_config_file()
 
 
+def build_device_group_map(groups: dict) -> dict[int, list[int]]:
+    """Invert group_id -> {"device_ids": [...]} into device_id -> [group_id, ...].
+
+    One-to-many: a device can belong to more than one group - a subgroup
+    and its parent group each carry an independent sensor_schedules list
+    (confirmed, see docs/cync_automations.md's "isSubgroup" section), so a
+    device inside a subgroup needs both group_ids resolved to find all of
+    its schedule data.
+    """
+    device_to_groups: dict[int, list[int]] = {}
+    for group_id, group in (groups or {}).items():
+        for dev_id in group.get("device_ids", []):
+            device_to_groups.setdefault(dev_id, []).append(group_id)
+    return device_to_groups
+
+
+def group_sensor_schedules_for_device(
+    groups: dict, device_group_map: dict[int, list[int]], device_id: int
+) -> list[dict]:
+    """[{"group_id", "group_name", "sensor_schedules"}] for every group
+    `device_id` belongs to that has at least one decoded motion-sensor
+    schedule slot. [] if the device isn't in any group, or none of its
+    groups have schedule data.
+    """
+    result = []
+    for group_id in device_group_map.get(device_id, []):
+        group = groups.get(group_id) or {}
+        schedules = group.get("sensor_schedules") or {}
+        if not schedules:
+            continue
+        result.append(
+            {
+                "group_id": group_id,
+                "group_name": group.get("name") or f"Group {group_id}",
+                "sensor_schedules": schedules,
+            }
+        )
+    return result
+
+
 async def stable_secret(hass: HomeAssistant) -> str:
     """Derive a stable local secret for the token-cache Fernet cipher.
 

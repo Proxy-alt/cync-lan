@@ -44,6 +44,70 @@ def _write_yaml_and_chmod(path: Path, data: dict) -> None:
     os.chmod(path, 0o777)
 
 
+# Cync's own 4-slot motion-sensor schedule model (confirmed via the decompiled
+# Android app's ScheduleTimeSlot.java - see docs/cync_automations.md for the
+# full research). Each device GROUP (not individual device) can carry up to
+# one of these per slot.
+SENSOR_SCHEDULE_SLOT_NAMES = {0: "morning", 1: "daytime", 2: "evening", 3: "sleep"}
+
+
+def _decode_sensor_schedule_slot(raw_slot: dict) -> Optional[dict]:
+    """Decode one raw groupsArray[].sensorSchedules[] entry.
+
+    Returns None (caller skips it) for anything malformed - id outside
+    0-3, missing start/end time - rather than raising. Real accounts have
+    been observed with malformed data (e.g. a duplicate slot id and a
+    missing one), see docs/cync_automations.md's data-quality caveat.
+    """
+    slot_id = raw_slot.get("id")
+    if slot_id not in SENSOR_SCHEDULE_SLOT_NAMES:
+        return None
+    start, end = raw_slot.get("startTime"), raw_slot.get("endTime")
+    if not start or not end:
+        return None
+    is_enabled = bool(raw_slot.get("isEnabled", False))
+    simple_mode = bool(raw_slot.get("simpleMode", True))
+    # MotionSensorResponseMode, confirmed via SensorSchedule2Mapper.java -
+    # see docs/cync_automations.md.
+    mode = "disabled" if not is_enabled else ("simple" if simple_mode else "occupancy")
+    return {
+        "slot_id": slot_id,
+        "enabled": is_enabled,
+        "mode": mode,
+        # startTime/endTime are "YYYY-MM-DD HH:MM" with a placeholder date
+        # (confirmed, docs/cync_automations.md) - keep only HH:MM.
+        "start_time": start.split(" ")[-1],
+        "end_time": end.split(" ")[-1],
+        "brightness": raw_slot.get("brightness"),  # 0-100, passthrough
+        # Raw 0-100 warm(0)->cool(100) percentage (confirmed, CctColor.java)
+        # - NOT an index into anything, despite the name's resemblance to
+        # a color-temp lookup.
+        "cct": raw_slot.get("cct"),
+        "display_name": raw_slot.get("displayName") or "",
+    }
+
+
+def _decode_sensor_schedules(raw_schedules) -> dict:
+    """{slot_name: slot_dict} for every valid slot in a group's raw
+    sensorSchedules list.
+
+    Duplicate slot ids: last-write-wins, matching the real Cync app's own
+    SensorSchedule2Mapper.b() (confirmed) - so what this shows matches
+    what the Cync app itself would show for the same account. Tolerant by
+    design: never raises on malformed input, worst case returns fewer
+    than 4 slots (or {}).
+    """
+    decoded: dict = {}
+    for raw_slot in raw_schedules or []:
+        if not isinstance(raw_slot, dict):
+            continue
+        slot = _decode_sensor_schedule_slot(raw_slot)
+        if slot is None:
+            continue
+        decoded[SENSOR_SCHEDULE_SLOT_NAMES[slot["slot_id"]]] = slot
+    return decoded
+
+
 class CyncCloudAPI:
     api_timeout: int = 8
     lp: str = "CyncCloudAPI"
@@ -614,6 +678,11 @@ class CyncCloudAPI:
                     "name": raw_group.get("displayName") or f"Group {group_id}",
                     "device_ids": list(raw_group["deviceIDArray"]),
                     "is_subgroup": bool(raw_group.get("isSubgroup", False)),
+                    # {} when the group has no native motion-sensor schedule
+                    # data (most groups) - see docs/cync_automations.md.
+                    "sensor_schedules": _decode_sensor_schedules(
+                        raw_group.get("sensorSchedules")
+                    ),
                 }
 
         # END OF HOME PARSING LOOP

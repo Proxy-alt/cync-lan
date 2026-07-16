@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.cync_lan.util import (
     _count_wifi_devices,
+    build_device_group_map,
     configure_environment,
     get_cloud_api,
+    group_sensor_schedules_for_device,
 )
 
 
@@ -184,3 +186,47 @@ async def test_cloud_api_close_does_close_self_created_session():
 
     mock_session.close.assert_awaited_once()
     assert api.http_session is None
+
+
+def test_build_device_group_map_single_and_multi_group_membership():
+    groups = {
+        1: {"name": "Kitchen", "device_ids": [10, 11]},
+        2: {"name": "Kitchen Subgroup", "device_ids": [10]},
+        3: {"name": "Garage", "device_ids": [20]},
+    }
+    device_map = build_device_group_map(groups)
+    assert sorted(device_map[10]) == [1, 2]
+    assert device_map[11] == [1]
+    assert device_map[20] == [3]
+    assert 99 not in device_map
+
+
+def test_build_device_group_map_empty_groups():
+    assert build_device_group_map({}) == {}
+    assert build_device_group_map(None) == {}
+
+
+def test_group_sensor_schedules_for_device_filters_empty_schedules():
+    groups = {
+        1: {
+            "name": "Utility Room",
+            "device_ids": [5],
+            "sensor_schedules": {"daytime": {"slot_id": 1}},
+        },
+        2: {"name": "Empty Group", "device_ids": [5], "sensor_schedules": {}},
+    }
+    device_map = build_device_group_map(groups)
+    result = group_sensor_schedules_for_device(groups, device_map, 5)
+    assert result == [
+        {
+            "group_id": 1,
+            "group_name": "Utility Room",
+            "sensor_schedules": {"daytime": {"slot_id": 1}},
+        }
+    ]
+
+
+def test_group_sensor_schedules_for_device_no_membership():
+    groups = {1: {"name": "Utility Room", "device_ids": [5], "sensor_schedules": {}}}
+    device_map = build_device_group_map(groups)
+    assert group_sensor_schedules_for_device(groups, device_map, 999) == []
