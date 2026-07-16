@@ -31,6 +31,7 @@ def build_device_info(entry_id: str, node: "CyncDevice") -> DeviceInfo:
         manufacturer=MANUFACTURER,
         name=node.name,
         model=model,
+        sw_version=node.version_str,
         via_device=(DOMAIN, entry_id),
     )
 

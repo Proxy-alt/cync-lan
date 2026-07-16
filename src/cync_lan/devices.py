@@ -396,6 +396,7 @@ class CyncDevice:
         self._mac = mac
         self.wifi_mac = wifi_mac
         self._version: Optional[str] = None
+        self._version_str: Optional[str] = None
         self.version = fw_version
         if name is None:
             name = f"device_{dev_id}"
@@ -462,6 +463,16 @@ class CyncDevice:
                     )
                 else:
                     self._version = _x
+                    self._version_str = value.strip()
+
+    @property
+    def version_str(self) -> Optional[str]:
+        """Human-readable firmware version (e.g. "1.2.3"), as reported by the
+        Cync cloud export. `version` collapses this to a bare int for legacy
+        callers, discarding the dotted formatting."""
+        if self._version_str:
+            return self._version_str
+        return str(self._version) if self._version is not None else None
 
     @property
     def mac(self) -> str:

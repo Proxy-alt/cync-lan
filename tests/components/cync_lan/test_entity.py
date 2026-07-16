@@ -18,6 +18,7 @@ def _fake_node(**overrides):
     node.bt_only = False
     node.metadata = MagicMock()
     node.metadata.model_string = "Some Model"
+    node.version_str = "1.2.3"
     for key, value in overrides.items():
         setattr(node, key, value)
     return node
@@ -30,6 +31,7 @@ def test_build_device_info_includes_both_connections():
     assert ("mac", "11:22:33:44:55:66") in info["connections"]
     assert info["name"] == "Test Light"
     assert info["model"] == "Some Model"
+    assert info["sw_version"] == "1.2.3"
 
 
 def test_build_device_info_bt_only_skips_wifi_connection():

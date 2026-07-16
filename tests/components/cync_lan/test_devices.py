@@ -249,6 +249,35 @@ async def test_execute_scene_rejects_out_of_range_id():
     g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
 
 
+def test_version_str_preserves_dotted_cloud_string():
+    """entity.py's build_device_info reads node.version_str for HA's
+    sw_version - it must stay a proper "1.2.3" string, not collapse to
+    the lossy int `version` uses internally for wire-protocol comparisons."""
+    node = CyncDevice(dev_id=5, fw_version="1.2.3")
+    assert node.version == 123
+    assert node.version_str == "1.2.3"
+
+
+def test_version_str_falls_back_to_str_version_when_never_set_as_string():
+    node = CyncDevice(dev_id=5)
+    node.version = 42  # e.g. set directly as an int somewhere
+    assert node.version_str == "42"
+
+
+def test_version_str_none_when_no_firmware_known():
+    node = CyncDevice(dev_id=5)
+    assert node.version is None
+    assert node.version_str is None
+
+
+def test_version_str_unaffected_by_empty_or_unknown_firmware():
+    node = CyncDevice(dev_id=5, fw_version="")
+    assert node.version_str is None
+
+    node2 = CyncDevice(dev_id=5, fw_version="Unknown")
+    assert node2.version_str is None
+
+
 def test_warn_experimental_cmd_code_fires_once_per_name():
     _EXPERIMENTAL_CMDS_WARNED.discard("test_cmd_unique_name")
     import cync_lan.devices as devices_module

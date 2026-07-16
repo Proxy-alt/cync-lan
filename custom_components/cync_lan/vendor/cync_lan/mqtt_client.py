@@ -1174,16 +1174,7 @@ class MQTTClient:
         device_uuid = node.hass_id
         unique_id = f"{node.home_id}_{node.id}"
         obj_id = f"cync_lan_{unique_id}"
-        dev_fw_version = str(node.version)
-        ver_str = "Unknown"
-        fw_len = len(dev_fw_version)
-        if fw_len == 5:
-            if dev_fw_version != 00000:
-                ver_str = (
-                    f"{dev_fw_version[0]}.{dev_fw_version[1]}.{dev_fw_version[2:]}"
-                )
-        elif fw_len == 2:
-            ver_str = f"{dev_fw_version[0]}.{dev_fw_version[1]}"
+        ver_str = node.version_str or "Unknown"
         model_str = "Unknown"
         if node.type in device_type_map:
             model_str = device_type_map[node.type].model_string
@@ -1227,14 +1218,7 @@ class MQTTClient:
 
                     unique_id = f"{node_repr.home_id}_{node_repr.id}"
                     obj_id = f"cync_lan_{unique_id}"
-                    dev_fw_version = str(node_repr.version)
-                    ver_str = "Unknown"
-                    fw_len = len(dev_fw_version)
-                    if fw_len == 5:
-                        if dev_fw_version != 00000:
-                            ver_str = f"{dev_fw_version[0]}.{dev_fw_version[1]}.{dev_fw_version[2:]}"
-                    elif fw_len == 2:
-                        ver_str = f"{dev_fw_version[0]}.{dev_fw_version[1]}"
+                    ver_str = node_repr.version_str or "Unknown"
                     model_str = "Unknown"
                     if node_repr.type in device_type_map:
                         model_str = device_type_map[node_repr.type].model_string
