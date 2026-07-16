@@ -208,9 +208,23 @@ class PacketBuilder:
             sub_id: int,
             op_code: int,
             cmd_code: int,
-            command_payload: bytes
+            command_payload: bytes,
+            repeat_op_code: bool = True,
     ) -> bytes:
-        """Builds the inner 0x7E bound packet structure."""
+        """Builds the inner 0x7E bound packet structure.
+
+        repeat_op_code: every op family confirmed against real hardware so
+        far (0xD0/0xF0/0xE2/...) repeats op_code as a standalone byte right
+        before command_payload - keep that as the default. The 0x8E
+        "mesh-relay" op family (real command classes route through it via a
+        hardcoded dispatch, see set_indicator_led/set_motion_sensor_settings/
+        execute_scene) does NOT: verified against a real captured packet
+        (docs/debugging_sessions/3 devices/Plug - Toggle Power/Plug.md) whose
+        checksum only balances when no extra byte is inserted there - for
+        that family the payload's own leading byte (not a repeat of op_code)
+        follows routing directly. Pass repeat_op_code=False for 0x8E-family
+        callers.
+        """
         PacketBuilder._require_u8("msg_id", msg_id)
         PacketBuilder._require_u8("target_id", target_id)
         PacketBuilder._require_u8("sub_id", sub_id)
@@ -226,7 +240,8 @@ class PacketBuilder:
         # Routing: msg_id (1 byte), 4 null padding bytes, target_id, sub_id
         # Format >BxxxxBB = 1 + 4 + 1 + 1 = 7 bytes total
         routing = struct.pack(">B xxxx B B", msg_id, target_id, sub_id)
-        inner_data = header + routing + struct.pack(">B", op_code) + command_payload
+        op_prefix = struct.pack(">B", op_code) if repeat_op_code else b""
+        inner_data = header + routing + op_prefix + command_payload
         checksum = sum(inner_data[5:]) % 256
         return (struct.pack(">B",PacketBuilder.DATA_BOUNDARY) + inner_data +
                 struct.pack(">BB", checksum, PacketBuilder.DATA_BOUNDARY))
