@@ -189,10 +189,11 @@ async def test_set_indicator_led_payload_shape():
 
     await node.set_indicator_led(mode=2, color=1, brightness=80, wifi_disconnect_blink=True)
 
-    args = node.send_command.call_args.args
-    assert args[0] == 0xF7  # op
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E  # op - real mesh-relay op, not the misread 0xF7
     assert args[1] == 0x0E  # predicted cmd_
-    assert args[3] == struct.pack(">BBBBBB", 0x11, 0x02, 0x06, (2 << 4) | 1, 80, 1)
+    assert args[3] == struct.pack(">BBBBBBB", 0xF7, 0x11, 0x02, 0x06, (2 << 4) | 1, 80, 1)
+    assert kwargs["repeat_op_code"] is False
 
 
 async def test_set_indicator_led_rejects_invalid_inputs():
@@ -215,10 +216,13 @@ async def test_set_motion_sensor_settings_wires_into_send_command():
 
     await node.set_motion_sensor_settings(setting_type=1, enabled=True)
 
-    args = node.send_command.call_args.args
-    assert args[0] == 0xF7  # op
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E  # op - real mesh-relay op, not the misread 0xF7
     assert args[1] == 0x13  # predicted cmd_ (corrected from an earlier miscount)
-    assert args[3] == CyncDevice._build_motion_sensor_settings_payload(1, enabled=True)
+    assert args[3] == struct.pack(">B", 0xF7) + CyncDevice._build_motion_sensor_settings_payload(
+        1, enabled=True
+    )
+    assert kwargs["repeat_op_code"] is False
 
 
 async def test_execute_scene_payload_shape():
@@ -230,15 +234,32 @@ async def test_execute_scene_payload_shape():
     await execute_scene(5)
 
     assert len(fake_bridge.written) == 1
-    inner_payload = struct.pack(">BBBB", 0x11, 0x02, 5, 0x01)
+    inner_payload = struct.pack(">BBBBB", 0xEF, 0x11, 0x02, 5, 0x01)
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0, op_code=0xEF, cmd_code=0x0C,
-        command_payload=inner_payload,
+        msg_id=1, target_id=0x00, sub_id=0, op_code=0x8E, cmd_code=0x0C,
+        command_payload=inner_payload, repeat_op_code=False,
     )
     expected_outer = PacketBuilder.build_outer_packet(
         packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
     )
     assert fake_bridge.written[0] == expected_outer
+
+
+async def test_build_control_packet_matches_real_captured_packet():
+    """Byte-for-byte regression against a genuine captured packet
+    (docs/debugging_sessions/3 devices/Plug - Toggle Power/Plug.md), not
+    just self-consistency with our own PacketBuilder - this is the
+    evidence that op=0x8E and repeat_op_code=False are correct for the
+    mesh-relay command family (indicator LED / motion sensor settings /
+    scenes), after set_indicator_led silently did nothing on real
+    hardware with the previous op=0xF7 guess."""
+    packet = PacketBuilder.build_control_packet(
+        msg_id=0x20, target_id=0xFF, sub_id=0xFF, op_code=0x8E, cmd_code=0x0B,
+        command_payload=bytes([0xF7, 0x11, 0x02, 0x21]), repeat_op_code=False,
+    )
+    assert packet == bytes.fromhex(
+        "7e 20 00 00 00 f8 8e 0b 00 20 00 00 00 00 ff ff f7 11 02 21 e2 7e".replace(" ", "")
+    )
 
 
 async def test_execute_scene_rejects_out_of_range_id():

@@ -244,6 +244,7 @@ async def broadcast_control_command(
     payload: bytes,
     m_cb: ControlMessageCallback,
     lp: str,
+    repeat_op_code: bool = True,
 ) -> None:
     """Build and broadcast a control packet to the TCP pool, targeting an
     arbitrary `target_id`.
@@ -255,6 +256,9 @@ async def broadcast_control_command(
     path. Pure extraction: byte-for-byte identical behavior to the
     pre-refactor send_command for any caller that does pass a real
     device's id.
+
+    repeat_op_code: forwarded to PacketBuilder.build_control_packet - see
+    its docstring. False for the 0x8E "mesh-relay" op family.
     """
     tasks = []
     tcp_pool = await g.ncync_server.get_dev_tcp_pool()
@@ -276,7 +280,8 @@ async def broadcast_control_command(
                 sub_id=sub_id,
                 op_code=op,
                 cmd_code=cmd_,
-                command_payload=payload
+                command_payload=payload,
+                repeat_op_code=repeat_op_code,
             )
 
             full_packet = PacketBuilder.build_outer_packet(
@@ -317,16 +322,30 @@ async def broadcast_control_command(
 
 async def execute_scene(scene_id: int) -> None:
     """EXPERIMENTAL: activates a saved Cync Scene (a named multi-device
-    state snapshot, see docs/cync_automations.md) via 0xEF
-    (ExecuteSceneCommand, confirmed payload shape).
+    state snapshot, see docs/cync_automations.md).
+
+    Corrected after a real-hardware test of the sibling command
+    set_indicator_led (same op family) came back a total no-op: tracing
+    ExecuteSceneCommand's actual send path in the decompiled app
+    (XlinkDeviceManager.CommandDelegate.h(), same as
+    SetStatusIndicatorSettingsCommand/SetMotionSensorSettingsCommand) shows
+    the real outer op is a hardcoded 0x8E "mesh-relay" op, not the
+    0xEF/0xF7-family bytes those command classes' own opcode arrays
+    (misleadingly close to a real op_code field) start with - those bytes
+    are actually the payload's own leading byte. Independently confirmed
+    against a real captured packet (docs/debugging_sessions/3 devices/
+    Plug - Toggle Power/Plug.md) whose checksum only balances with op=0x8E
+    and no repeated op_code byte before the payload - see
+    PacketBuilder.build_control_packet's repeat_op_code param.
 
     Scenes are home-wide, not tied to any specific device - there's no
     CyncDevice to be `self` here, unlike every other command in this
     module, so this goes straight through broadcast_control_command()
     with target_id=0x00 (MeshAddress's documented "none/self/unassigned"
-    sentinel, see docs/mesh_opcodes.md - itself an additional, separate
-    guess on top of cmd_, compounding the risk here beyond the other
-    experimental commands in this file).
+    sentinel, see docs/mesh_opcodes.md - the real capture used a
+    target_id/sub_id of 0xFF/0xFF instead for its own broadcast-style
+    command, so this is still an additional, separate, unconfirmed guess
+    on top of the now-corrected op/cmd_/payload).
 
     cmd_ (0x0C) is PREDICTED, not confirmed - see
     _warn_experimental_cmd_code and docs/mesh_opcodes.md.
@@ -336,12 +355,15 @@ async def execute_scene(scene_id: int) -> None:
     if not (0 <= scene_id <= 255):
         logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-255")
         return
-    op = 0xEF
+    op = 0x8E
     cmd_ = 0x0C
-    # Payload: 0x11, 0x02, scene_id, 0x01 - 4 bytes.
-    payload = struct.pack(">BBBB", 0x11, 0x02, scene_id, 0x01)
+    # Payload: 0xEF (leading discriminator byte, previously mistaken for the
+    # outer op) + 0x11, 0x02, scene_id, 0x01 - 5 bytes.
+    payload = struct.pack(">BBBBB", 0xEF, 0x11, 0x02, scene_id, 0x01)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, repeat_op_code=False
+    )
 
 
 class CyncDevice:
@@ -875,14 +897,25 @@ class CyncDevice:
         # logger.debug(f"{lp} new data: ctrl_byte={id_byte} rollover_byte={rollover_byte} // {self.control_bytes=}")
         return self.control_bytes
 
-    async def send_command(self, op: int, cmd_: int, sub_id: int, payload: bytes, m_cb: ControlMessageCallback, lp: str):
+    async def send_command(
+        self,
+        op: int,
+        cmd_: int,
+        sub_id: int,
+        payload: bytes,
+        m_cb: ControlMessageCallback,
+        lp: str,
+        repeat_op_code: bool = True,
+    ):
         """Thin wrapper around the module-level broadcast_control_command(),
         always targeting this device's own id. See that function for the
         real implementation - factored out so commands with no specific
         device target (e.g. a home-wide scene activation) can use the same
         broadcast path without needing a CyncDevice instance to be `self`.
         """
-        await broadcast_control_command(op, cmd_, self.id, sub_id, payload, m_cb, lp)
+        await broadcast_control_command(
+            op, cmd_, self.id, sub_id, payload, m_cb, lp, repeat_op_code=repeat_op_code
+        )
 
     async def set_fan_percentage(self, perc: int) -> bool:
         """
@@ -1132,16 +1165,21 @@ class CyncDevice:
         delay_seconds: int = 0,
         deactivation_seconds: int = 0,
     ) -> bytes:
-        """Build the full payload (VendorID + sub-opcode + params) for a
-        motion/ambient-light sensor settings write.
+        """Build the payload's mesh-command portion (VendorID + sub-opcode +
+        params) for a motion/ambient-light sensor settings write - NOT the
+        full wire payload; set_motion_sensor_settings() prepends the 0xF7
+        discriminator byte this originally-misread-as-op-code value turned
+        out to actually be (see that method's docstring).
 
         Sourced from decompiling the current Cync Android app
-        (MotionSensorSetting.java / SetMotionSensorSettingsCommand.java) - the
-        payload shape below and the `op` byte (0xF7, confirmed via
-        SetMotionSensorSettingsCommand's own opcode array `{-9,17,2,7}`, i.e.
-        `{0xF7,0x11,0x02,0x07}` - the same "opcode + fixed VendorID prefix"
-        pattern as set_power/set_brightness) are confirmed against the
-        decompiled app, cross-checked independently twice.
+        (MotionSensorSetting.java / SetMotionSensorSettingsCommand.java) -
+        the shape below (SetMotionSensorSettingsCommand's own opcode array
+        `{-9,17,2,7}`, i.e. `{0xF7,0x11,0x02,0x07}`) is confirmed against
+        the decompiled app, cross-checked independently twice. What was
+        NOT initially confirmed: that first 0xF7 byte was assumed to be
+        cync-lan's own outer `op` argument (the "opcode + fixed VendorID
+        prefix" pattern set_power/set_brightness use) - a real-hardware
+        test proved that wrong (see set_motion_sensor_settings()).
 
         `cmd_` (the second envelope argument send_command()/build_control_packet()
         expects - see set_power/set_brightness/set_rgb for that pattern) was
@@ -1196,24 +1234,35 @@ class CyncDevice:
         sub_id: Optional[int] = None,
     ) -> None:
         """EXPERIMENTAL: writes motion/ambient-light sensor tuning via
-        0xF7 sub-command 0x07 - see _build_motion_sensor_settings_payload()
-        for the confirmed payload shape and the cmd_ prediction's
+        sub-command 0x07 - see _build_motion_sensor_settings_payload() for
+        the confirmed inner-payload shape and the cmd_ prediction's
         provenance. See _warn_experimental_cmd_code.
+
+        Corrected after a real-hardware test of this command's sibling
+        set_indicator_led (same command family) came back a total no-op:
+        the outer op is actually the hardcoded 0x8E "mesh-relay" op (traced
+        in the decompiled app's XlinkDeviceManager.CommandDelegate.h()),
+        not 0xF7 - that byte is the payload's own leading discriminator
+        byte, not cync-lan's outer envelope op. Independently confirmed
+        against a real captured packet (docs/debugging_sessions/3 devices/
+        Plug - Toggle Power/Plug.md) - see
+        PacketBuilder.build_control_packet's repeat_op_code param.
         """
         lp = f"{self.lp}set_motion_sensor_settings:"
         _warn_experimental_cmd_code(lp, "set_motion_sensor_settings")
         try:
-            payload = self._build_motion_sensor_settings_payload(
+            inner_payload = self._build_motion_sensor_settings_payload(
                 setting_type, enabled, sensitivity, delay_seconds, deactivation_seconds
             )
         except ValueError as e:
             logger.error(f"{lp} {e}")
             return
-        op = 0xF7
+        op = 0x8E
         cmd_ = 0x13
+        payload = struct.pack(">B", 0xF7) + inner_payload
         _sub_id = sub_id if sub_id is not None else 0x00
         m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
 
     async def set_indicator_led(
         self,
@@ -1224,7 +1273,7 @@ class CyncDevice:
         sub_id: Optional[int] = None,
     ) -> None:
         """EXPERIMENTAL: sets the device's small status/indicator LED
-        (mode/color/brightness) via 0xF7 sub-command 0x06
+        (mode/color/brightness) via sub-command 0x06
         (SetStatusIndicatorSettingsCommand, confirmed payload shape) -
         distinct from the device's main light output.
 
@@ -1234,7 +1283,23 @@ class CyncDevice:
         brightness: 1-100. wifi_disconnect_blink: blink the indicator when
         WiFi is disconnected.
 
-        cmd_ (0x0E) is PREDICTED, not confirmed - see
+        A real-hardware test of this exact command came back a total
+        no-op (device did nothing, no error - fire-and-forget, no ACK
+        checked). Root cause: SetStatusIndicatorSettingsCommand's own
+        "opcode array" `{0xF7,0x11,0x02,0x06}` was misread as cync-lan's
+        outer `op` (0xF7) + a payload starting `0x11,0x02,0x06,...`.
+        Tracing the actual send path in the decompiled app
+        (XlinkDeviceManager.CommandDelegate.h()) shows the real outer op
+        is a hardcoded 0x8E "mesh-relay" op used across several command
+        types (indicator LED, motion sensor settings, scenes) - the 0xF7
+        is just that array's own leading byte, i.e. part of the payload,
+        not cync-lan's envelope op. Independently confirmed against a
+        real captured packet (docs/debugging_sessions/3 devices/
+        Plug - Toggle Power/Plug.md): its checksum only balances with
+        op=0x8E and no repeated op_code byte before the payload - see
+        PacketBuilder.build_control_packet's repeat_op_code param.
+
+        cmd_ (0x0E) is still PREDICTED, not confirmed - see
         _warn_experimental_cmd_code and docs/mesh_opcodes.md.
         """
         lp = f"{self.lp}set_indicator_led:"
@@ -1249,12 +1314,15 @@ class CyncDevice:
             logger.error(f"{lp} Invalid brightness: {brightness} must be 1-100")
             return
 
-        op = 0xF7
+        op = 0x8E
         cmd_ = 0x0E
         _sub_id = sub_id if sub_id is not None else 0x00
-        # Payload: 0x11, 0x02, 0x06, (mode<<4)|color, brightness, wifi_disconnect_flag - 6 bytes.
+        # Payload: 0xF7 (leading discriminator byte, previously mistaken
+        # for the outer op) + 0x11, 0x02, 0x06, (mode<<4)|color,
+        # brightness, wifi_disconnect_flag - 7 bytes.
         payload = struct.pack(
-            ">BBBBBB",
+            ">BBBBBBB",
+            0xF7,
             0x11,
             0x02,
             0x06,
@@ -1263,7 +1331,7 @@ class CyncDevice:
             1 if wifi_disconnect_blink else 0,
         )
         m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
 
 
 class CyncTCPSession:

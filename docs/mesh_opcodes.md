@@ -138,9 +138,13 @@ predicted `cmd_code = 0x13` (corrected from an earlier miscounted 9-byte/lower-v
 real payload is 11 bytes, `">BBBHHB"` is 8 bytes not 6). Exposed as the
 `cync_lan.experimental_set_motion_sensor_settings` HA service.
 
+**UPDATE 2, this session**: the `0xF7` below is **not** cync-lan's outer `op_code` - see the
+"CORRECTION" section further down. The real outer op is `0x8E`; `0xF7` is the payload's own
+leading discriminator byte. Fixed in `devices.py`; `cmd_code` is unchanged (`0x13`).
+
 | Command | `op_code` (confirmed) | `cmd_code` | Payload shape (confirmed) | Source |
 |---|---|---|---|---|
-| Motion/ambient-light sensor settings | `0xF7` | `0x13` (**predicted**, not confirmed against a live capture) | `[type_discriminator(1=motion,2=ambient), enabled, sensitivity, delay_s, deactivation_s, ...]` (8B params after opcode) | `devices.py`'s `_build_motion_sensor_settings_payload`/`set_motion_sensor_settings`, decompiled: `SetMotionSensorSettingsCommand.java` opcode array `{-9,17,2,7}`, cross-checked twice |
+| Motion/ambient-light sensor settings | `0x8E` (payload leads with `0xF7`, see CORRECTION below) | `0x13` (**predicted**, not confirmed against a live capture) | `[0xF7, 0x11, 0x02, 0x07, type_discriminator(1=motion,2=ambient), enabled, sensitivity, delay_s, deactivation_s, ...]` (12B total, incl. the leading `0xF7` discriminator now sent as payload) | `devices.py`'s `_build_motion_sensor_settings_payload`/`set_motion_sensor_settings`, decompiled: `SetMotionSensorSettingsCommand.java` opcode array `{-9,17,2,7}`, cross-checked twice |
 
 ## Protocol commands beyond the original confirmed set
 
@@ -152,6 +156,50 @@ capture. Each is exposed as a `cync_lan.experimental_*` HA service (see
 `custom_components/cync_lan/services.py`), named and documented as experimental so a wrong
 prediction is easy to diagnose and doesn't look like a normal confirmed feature. Light-run-mode
 (below) needed no such caveat - it reuses `set_lightshow`'s already-confirmed `cmd_code`.
+
+### CORRECTION (real-hardware test, this session): the `0xF7`/`0xEF` "op_code" for 3 commands was never a real outer op
+
+A real-hardware test of `set_indicator_led` (the "ring light" feature) came back a total no-op -
+no error, device did nothing (fire-and-forget, no ACK checked, so a wrong guess just silently
+vanishes). Root cause, traced by a background research agent digging into the decompiled app's
+actual send path: `SetStatusIndicatorSettingsCommand`, `SetMotionSensorSettingsCommand`, and
+`ExecuteSceneCommand` **do not pass their "opcode array"'s first byte as an outer op_code at all**.
+Their `N()`/send method calls `XlinkCommandDelegate.DefaultImpls.c(...)` with the *entire* opcode
+array as one opaque `commandBody` (no separate op argument) → `XlinkDeviceManager.CommandDelegate.h()`
+(`XlinkDeviceManager.java:1050-1051`) hardcodes the real outer op: `f((byte) -114, bArr, ...)` =
+**`op_code = 0x8E`**, a generic "mesh-relay" op shared across all three commands (and likely others -
+`SetMotionSensorScheduleCommand.java:129-130` routes through the identical path). What we'd been
+reading as "`op_code = 0xF7`/`0xEF`, payload starts `0x11 0x02 ...`" is actually "`op_code = 0x8E`,
+payload starts `0xF7`/`0xEF` (the array's real first byte) `0x11 0x02 ...`" - the array's first byte
+was never our envelope's op, it's the payload's own leading discriminator byte.
+
+**Independently confirmed**, not just from static decompiled-source tracing: a genuine captured
+packet, `docs/debugging_sessions/3 devices/Plug - Toggle Power/Plug.md:226`
+(`f8 8e 0b 00 20 00 00 00 00 ff ff f7 11 02 21 e2`), decodes byte-for-byte against
+`PacketBuilder.build_control_packet(msg_id=0x20, target_id=0xFF, sub_id=0xFF, op_code=0x8E,
+cmd_code=0x0B, command_payload=[0xF7,0x11,0x02,0x21], repeat_op_code=False)` - checksum included
+(verified: `sum(0x8e,0x0b,0x00,0x20,0x00,0x00,0x00,0x00,0xff,0xff,0xf7,0x11,0x02,0x21) % 256 ==
+0xe2`, matching the captured checksum exactly). This is a genuine, different real command (a plug
+power toggle, not indicator LED) that happens to share the same `0x8E` op family with a
+`0xF7 0x11 0x02`-prefixed payload - strong evidence `0x8E` is real, shared infrastructure, not
+specific to one feature.
+
+**A second, structural bug this exposed**: `PacketBuilder.build_control_packet()` unconditionally
+inserted a repeated standalone `op_code` byte between the routing section and the payload - true
+for every op family confirmed so far (`0xD0`/`0xF0`/`0xE2`), but the real capture above only
+balances its checksum with **no** such byte for the `0x8E` family. Added a `repeat_op_code: bool =
+True` parameter (default preserves all existing confirmed commands unchanged) - `False` for `0x8E`.
+
+**Net effect on the numbers already in this doc**: `cmd_code` predictions are *unchanged* -
+prepending the real discriminator byte into the payload (rather than "spending" it as a fake op)
+and dropping the phantom repeated-op-byte cancel out exactly in the length formula (e.g. indicator
+LED: old `7+1+6B=0x0E` vs new `7+7B=0x0E`, same value). Only `op_code` (now `0x8E` for all three)
+and the payload's leading byte (now literally present as data - `0xF7` for indicator LED/motion
+settings, `0xEF` for scenes) changed. Fixed in `devices.py`'s `set_indicator_led()`,
+`set_motion_sensor_settings()`, and `execute_scene()`; **motion-sensor schedule write (`0x0B`,
+documented further below) was NOT yet updated** - it's still only documented, not wired into a
+real send, but almost certainly has the exact same bug (same `SetMotionSensorScheduleCommand`
+class, same `DefaultImpls.c`→`h()` path) and needs the identical correction whenever it's built.
 
 ### Fine/fade brightness — `op_code = 0xE2`, sub-command `0x08`
 
@@ -247,37 +295,53 @@ a wider target field elsewhere (a different routing field, or a different packet
 group commands) is still an open question - **dropped from this round**, needs dedicated protocol
 research before it's buildable, not a quick follow-up.
 
-### Scenes control — `op_code = 0xEF`
+### Scenes control — real `op_code = 0x8E` (was wrongly `0xEF`, see CORRECTION above)
 
-**WIRED IN, EXPERIMENTAL — the riskiest of the 4 wired-in commands.** `devices.py`'s
+**WIRED IN, EXPERIMENTAL — the riskiest of the wired-in commands.** `devices.py`'s
 `execute_scene()`, exposed via the `cync_lan.experimental_execute_scene` HA service, targeting the
 "Cync LAN Bridge" device (identifiers=(DOMAIN, entry_id), no per-device target - Scenes are
-home-wide) rather than an individual device. Two independent guesses compound here: `cmd_code =
-0x0C` (predicted via the length formula) *and* `target_id = 0x00` (guessed as `MeshAddress`'s
-documented "none/self/unassigned" sentinel - there's no real device to target for a home-wide
-command). Flagged most prominently of the 4 in its service description for this reason.
+home-wide) rather than an individual device. **Not yet real-hardware tested after the `0x8E`
+correction** (only `set_indicator_led`, its sibling in the same command family, has been tested and
+confirmed broken/now-fixed - see CORRECTION above). Two independent guesses still compound here:
+`cmd_code = 0x0C` (predicted via the length formula) *and* `target_id = 0x00` (guessed as
+`MeshAddress`'s documented "none/self/unassigned" sentinel - the real captured packet that
+confirmed `0x8E` used a `target_id`/`sub_id` of `0xFF`/`0xFF` instead, for its own broadcast-style
+command, so this specific guess is still unconfirmed either way). Flagged most prominently in its
+service description for this reason.
 
-- Confirmed: `ExecuteSceneCommand.java` line 54, `f20351p = {-17,17,2}` = `{0xEF,0x11,0x02}`.
-  Payload (`x()` lines 198-207): `[sceneId(1 byte, 0-255), 0x01]`. Scenes are scoped **per-home**
-  (`Location`), not per-group (`SceneModel.java` line 96: `SceneId(id, locationId)`).
+- Confirmed: `ExecuteSceneCommand.java` line 54, `f20351p = {-17,17,2}` = `{0xEF,0x11,0x02}` - this
+  array is the payload's own leading bytes, not cync-lan's outer `op_code` (see CORRECTION above).
+  Payload (`x()` lines 198-207): `[sceneId(1 byte, 0-255), 0x01]`, now prefixed with `0xEF` as
+  `devices.py`'s `execute_scene()` sends it: `[0xEF, 0x11, 0x02, sceneId, 0x01]` (5 bytes),
+  `repeat_op_code=False`. Scenes are scoped **per-home** (`Location`), not per-group
+  (`SceneModel.java` line 96: `SceneId(id, locationId)`).
 - The `0x1E` byte from the original ask is real but belongs to a **separate legacy dispatch path**
   for non-mesh device types (`ExecuteSceneCommand.g()` line 179,
   `xlinkCommandDelegate.g((byte) 30, ...)`) — a distinct xlink call, not confirmed to be cync-lan's
   `cmd_code`. Treat as a separate legacy opcode, not part of the mesh-command family above.
 - `cmd_code = 0x0C` is **predicted**, not confirmed against a live capture.
 
-### Indicator LED ring — `op_code = 0xF7`, sub-command `0x06`
+### Indicator LED ring — real `op_code = 0x8E` (was wrongly `0xF7`, see CORRECTION above)
 
-**WIRED IN, EXPERIMENTAL**: `devices.py`'s `set_indicator_led()`, `cmd_code = 0x0E` (predicted).
-Exposed via the `cync_lan.experimental_set_indicator_led` HA service.
+**WIRED IN, EXPERIMENTAL, corrected after a real-hardware no-op test**: `devices.py`'s
+`set_indicator_led()`, `cmd_code = 0x0E` (still predicted, but `op_code`/payload shape now
+corrected and independently confirmed via a real packet capture - see CORRECTION above). Exposed
+via the `cync_lan.experimental_set_indicator_led` HA service. **Re-test on real hardware still
+needed** to confirm the `0x8E` fix actually works (only proven so far: the envelope now matches a
+real captured packet byte-for-byte for a *different* command in the same op family - not yet
+proven for indicator LED specifically, since its own `cmd_code` is still a prediction).
 
-Same opcode family as motion-sensor settings (`0xF7 0x11 0x02`), sibling sub-command.
+Same underlying payload-prefix family as motion-sensor settings (`0xF7 0x11 0x02`), sibling
+sub-command - both now correctly sent under the shared `0x8E` outer op.
 
-- Confirmed: `SetStatusIndicatorSettingsCommand.java` (`OPCODE_BYTES = {-9,17,2,6}`),
+- Confirmed: `SetStatusIndicatorSettingsCommand.java` (`OPCODE_BYTES = {-9,17,2,6}` - this array is
+  the payload's own leading bytes, not cync-lan's outer `op_code`, see CORRECTION above),
   `StatusIndicatorSettings.java`, `LEDIndicatorMode.java`/`LEDIndicatorColor.java`. Payload builder
-  `Q()`: `[(mode<<4)|color, brightness(1-100), wifi_disconnect_flag(0/1)]` after the 4-byte opcode.
-  `LEDIndicatorMode`: ALWAYS_ON=0, ALWAYS_OFF=1, NORMAL=2. `LEDIndicatorColor`: WHITE=0, RED=1,
-  GREEN=2, BLUE=3 (a 4-value enum, not full RGB).
+  `Q()`: `[(mode<<4)|color, brightness(1-100), wifi_disconnect_flag(0/1)]` after the 4-byte opcode
+  array - `devices.py` now sends the full array (`0xF7,0x11,0x02,0x06`) + these 3 bytes as one
+  7-byte payload under `op_code=0x8E`, `repeat_op_code=False`. `LEDIndicatorMode`: ALWAYS_ON=0,
+  ALWAYS_OFF=1, NORMAL=2. `LEDIndicatorColor`: WHITE=0, RED=1, GREEN=2, BLUE=3 (a 4-value enum, not
+  full RGB).
 - "WiFi-disconnect toggle" is **not a separate feature** — it's byte index 3 of this same payload
   (blink-on-disconnect flag for the indicator LED), not a device behavior setting for what happens
   functionally when WiFi drops. No evidence anywhere in the decompile of an actual
@@ -287,13 +351,15 @@ Same opcode family as motion-sensor settings (`0xF7 0x11 0x02`), sibling sub-com
   delegate interface (`XlinkCommandDelegate.java`, `h(byte[] payload, MeshAddress, msgId, msgId2,
   Continuation)`) — confirmed that layer carries no field resembling `cmd_code` either. Reinforces
   the "TCP relay-specific, not mesh-layer" theory above, but see the "not yet checked" note in that
-  section — this was the BTLE GATT delegate specifically, not any TCP/cloud-relay equivalent.
+  section — this was the BTLE GATT delegate specifically, not any TCP/cloud-relay equivalent. This
+  same delegate interface is also what routes both commands (and `ExecuteSceneCommand`) into the
+  hardcoded `0x8E` op via `XlinkDeviceManager.CommandDelegate.h()` - see CORRECTION above.
 - Worth a follow-up read: `com/savantsystems/oneapp/domain/devices/model/Component.java:2845`
   (`LightRingIndicator`) — a second, UI-level mode/brightness/color enum
   (`LightRingIndicatorMode`) distinct from `LEDIndicatorMode`, translated via
   `LightRingIndicatorModeToLEDIndicatorModeMapper` — unclear if it maps 1:1 or adds states.
 
-### Motion-sensor schedule write — `op_code = 0xF7`, sub-command `0x0B`
+### Motion-sensor schedule write — payload leads with `0xF7`, sub-command `0x0B` — **NOT YET WIRED IN, needs the `0x8E` correction applied before it is**
 
 Third sibling in the `0xF7 0x11 0x02` family (alongside motion/ambient settings at `0x07` and
 indicator LED at `0x06`). Writes one of a group's 4 fixed motion-sensor schedule slots — see
@@ -304,9 +370,18 @@ model this command writes.
   Payload after the 4-byte opcode: a flags byte (slot id 0-3 packed with mode bits and an
   RGB-vs-CCT flag), start hour, start minute, end hour, end minute, brightness, then either a CCT
   byte or 3 RGB bytes depending on the flag.
+- **Same op-family bug as indicator LED/motion sensor settings/scenes applies here too** (see the
+  "CORRECTION" section above) - `SetMotionSensorScheduleCommand.java:129-130` routes through the
+  identical `XlinkCommandDelegate.DefaultImpls.c`→`h()`→hardcoded-`0x8E` path. The `0xF7` above is
+  the payload's own leading byte, not a real outer `op_code` - if/when this gets wired into a real
+  send, it must use `op_code=0x8E`, `repeat_op_code=False`, and prepend `0xF7` to the payload
+  (`devices.py`'s `set_indicator_led()`/`set_motion_sensor_settings()` are the reference
+  implementation for this pattern). Not corrected here only because it was never wired into a real
+  send in the first place - purely documented until now.
 - Blocked: `cmd_code` — apply the length formula from "TCP relay envelope research" above the same
   as any other command here (payload length is confirmed, so this one's actually computable, not
-  just theoretically so).
+  just theoretically so) - remember the formula's payload-length input must now include the leading
+  `0xF7` byte, per the correction above.
 - **This is the one write-side finding in this doc that doesn't need a cloud API at all** — it's a
   local mesh command, architecturally identical to every other opcode cync-lan already speaks. See
   the automations doc for why that matters for a HA-automation-to-Cync-device sync feature.
