@@ -133,15 +133,31 @@ credits a further-upstream fork chain (`iburistu/cync-lan`, `juanboro/cync2mqtt`
 capture sessions likely predate this repo entirely, but the evidence already in-tree above is
 sufficient on its own.
 
-Scaffolded but **not wired to a live send** (blocked on `cmd_code`):
+**UPDATE**: wired into a real, EXPERIMENTAL send as of this session's later work (see below) - the
+predicted `cmd_code = 0x13` (corrected from an earlier miscounted 9-byte/lower-value estimate; the
+real payload is 11 bytes, `">BBBHHB"` is 8 bytes not 6). Exposed as the
+`cync_lan.experimental_set_motion_sensor_settings` HA service.
 
 | Command | `op_code` (confirmed) | `cmd_code` | Payload shape (confirmed) | Source |
 |---|---|---|---|---|
-| Motion/ambient-light sensor settings | `0xF7` | **unconfirmed** | `[type_discriminator(1=motion,2=ambient), enabled, sensitivity, delay_s, deactivation_s, ...]` (8B params after opcode) | `devices.py:895`, decompiled: `SetMotionSensorSettingsCommand.java` opcode array `{-9,17,2,7}`, cross-checked twice |
+| Motion/ambient-light sensor settings | `0xF7` | `0x13` (**predicted**, not confirmed against a live capture) | `[type_discriminator(1=motion,2=ambient), enabled, sensitivity, delay_s, deactivation_s, ...]` (8B params after opcode) | `devices.py`'s `_build_motion_sensor_settings_payload`/`set_motion_sensor_settings`, decompiled: `SetMotionSensorSettingsCommand.java` opcode array `{-9,17,2,7}`, cross-checked twice |
 
-## New findings, not yet in cync-lan (all blocked on `cmd_code` unless noted)
+## Protocol commands beyond the original confirmed set
+
+**UPDATE**: the "TCP relay envelope research" section above resolved the `cmd_code` mystery with a
+length formula, validated 3/3 against production commands. Fine/fade brightness, indicator LED,
+scenes, and motion/ambient sensor settings (below) are now wired into real, EXPERIMENTAL sends
+using `cmd_code` values *predicted* by that formula - not independently confirmed against a live
+capture. Each is exposed as a `cync_lan.experimental_*` HA service (see
+`custom_components/cync_lan/services.py`), named and documented as experimental so a wrong
+prediction is easy to diagnose and doesn't look like a normal confirmed feature. Light-run-mode
+(below) needed no such caveat - it reuses `set_lightshow`'s already-confirmed `cmd_code`.
 
 ### Fine/fade brightness — `op_code = 0xE2`, sub-command `0x08`
+
+**WIRED IN, EXPERIMENTAL**: `devices.py`'s `set_fine_brightness()`, `cmd_code = 0x0F` (predicted).
+Exposed via HA's standard `light.turn_on(transition=...)` (no custom service needed - `ATTR_TRANSITION`
+was unused anywhere in this integration before, so this can't regress any existing automation).
 
 Extends the same command family `set_lightshow` already uses (`0xE2` outer, `0x11 0x02` prefix).
 
@@ -150,15 +166,21 @@ Extends the same command family `set_lightshow` already uses (`0xE2` outer, `0x1
 - HA's `light.turn_on(transition=...)` (seconds) maps directly: `fade_ms = round(transition * 1000)`.
 - Confirmed: `SetFineBrightnessCommand.java` line 49 (`f20525r = {-30,17,2,8}`), payload builder
   `x()` lines 120-129, `writeShort` calls read directly (no decompiler ambiguity on byte layout).
-- Blocked: `cmd_code`, same as everything else.
+- `cmd_code = 0x0F` is **predicted**, not confirmed against a live capture - via the length formula
+  in "TCP relay envelope research" above.
 - Adjacent, unrelated: `SetBrightnessCommand.java` (`{-46,17,2}` = `0xD2 0x11 0x02`, plain 0-100
   int, no fade) — a *different*, coarser opcode family, not needed since cync-lan's existing
   `set_brightness` already works.
 
 ### Full light-run-mode incl. MultiColor/MusicShow — `op_code = 0xE2`, sub-command `0x07`
 
-**This is the one item in this doc that's actually buildable today without any capture** — it's a
-small parameterization of `set_lightshow`, which already has a confirmed-working `cmd_code`.
+**WIRED IN, not experimental** — no `cmd_code` risk here, it reuses `set_lightshow`'s
+already-confirmed `cmd_code = 0x0E`. `devices.py`'s `set_light_effect()` + `const.py`'s
+`LIGHT_RUN_MODE_EFFECTS` cover all 5 modes; exposed via the light entity's normal `effect`
+attribute/`effect_list`, same as the original LightShow-only presets. The third payload byte
+("randomNonce") is confirmed genuinely random and unvalidated by the receiving device
+(`SetLightRunModeCommand.java:124`: `Random.nextInt()` on every real send) - a constant `0x00` is
+safe for every new preset, no captured value needed.
 
 Payload after `[0x11, 0x02, 0x07]` is `[modeCode, index, randomNonce]` — cync-lan's current
 `set_lightshow` hardcodes `modeCode = 0x01` (`LIGHT_SHOW`). Confirmed mode values
@@ -216,13 +238,24 @@ group's synthetic `MeshAddress` (32768+groupId) rather than a device address. Th
 resolution call site was abstracted through `Result<Flow<T>>` in the decompiled source and
 couldn't be traced to full confirmation.
 
-**If this holds, group control needs zero new opcodes and no `cmd_code` capture at all** — just a
-lightweight target object with `.id = 32768 + group_id` passed through the *already-working*
-`set_power`/`set_brightness`/etc. `send_command()` already takes `target_id=self.id` as a plain
-int field (`devices.py:678`), so this is a cheap, low-risk thing to test live against a real
-group before investing in anything else here.
+**CORRECTION, this session's later work**: this turned out not to be the cheap win it looked like.
+`PacketBuilder.build_control_packet()`'s routing struct packs `target_id` as a single byte
+(`_require_u8`, `src/cync_lan/packet/builder.py:215`) - group synthetic addresses (32768+) cannot
+be passed as `target_id` as-is, they'd fail validation outright. No code anywhere in cync-lan
+sends to anything but a single-byte device address today. Whether the real wire protocol supports
+a wider target field elsewhere (a different routing field, or a different packet type entirely for
+group commands) is still an open question - **dropped from this round**, needs dedicated protocol
+research before it's buildable, not a quick follow-up.
 
 ### Scenes control — `op_code = 0xEF`
+
+**WIRED IN, EXPERIMENTAL — the riskiest of the 4 wired-in commands.** `devices.py`'s
+`execute_scene()`, exposed via the `cync_lan.experimental_execute_scene` HA service, targeting the
+"Cync LAN Bridge" device (identifiers=(DOMAIN, entry_id), no per-device target - Scenes are
+home-wide) rather than an individual device. Two independent guesses compound here: `cmd_code =
+0x0C` (predicted via the length formula) *and* `target_id = 0x00` (guessed as `MeshAddress`'s
+documented "none/self/unassigned" sentinel - there's no real device to target for a home-wide
+command). Flagged most prominently of the 4 in its service description for this reason.
 
 - Confirmed: `ExecuteSceneCommand.java` line 54, `f20351p = {-17,17,2}` = `{0xEF,0x11,0x02}`.
   Payload (`x()` lines 198-207): `[sceneId(1 byte, 0-255), 0x01]`. Scenes are scoped **per-home**
@@ -231,9 +264,12 @@ group before investing in anything else here.
   for non-mesh device types (`ExecuteSceneCommand.g()` line 179,
   `xlinkCommandDelegate.g((byte) 30, ...)`) — a distinct xlink call, not confirmed to be cync-lan's
   `cmd_code`. Treat as a separate legacy opcode, not part of the mesh-command family above.
-- Blocked: `cmd_code` for the mesh-family version.
+- `cmd_code = 0x0C` is **predicted**, not confirmed against a live capture.
 
 ### Indicator LED ring — `op_code = 0xF7`, sub-command `0x06`
+
+**WIRED IN, EXPERIMENTAL**: `devices.py`'s `set_indicator_led()`, `cmd_code = 0x0E` (predicted).
+Exposed via the `cync_lan.experimental_set_indicator_led` HA service.
 
 Same opcode family as motion-sensor settings (`0xF7 0x11 0x02`), sibling sub-command.
 
@@ -246,7 +282,7 @@ Same opcode family as motion-sensor settings (`0xF7 0x11 0x02`), sibling sub-com
   (blink-on-disconnect flag for the indicator LED), not a device behavior setting for what happens
   functionally when WiFi drops. No evidence anywhere in the decompile of an actual
   network-loss-behavior command.
-- Blocked: `cmd_code`.
+- `cmd_code = 0x0E` is **predicted**, not confirmed against a live capture.
 - Both this command and motion-sensor settings were traced down into the app's shared BTLE
   delegate interface (`XlinkCommandDelegate.java`, `h(byte[] payload, MeshAddress, msgId, msgId2,
   Continuation)`) — confirmed that layer carries no field resembling `cmd_code` either. Reinforces
@@ -301,20 +337,20 @@ needed here unless a newer app build adds types.
 
 1. ~~Find the app's TCP/cloud-relay outer-envelope builder~~ — **done**, see "TCP relay envelope
    research" above: `cmd_code = 7 + len(op_code_byte + full_payload)`, verified 3/3 against
-   already-confirmed production values. Not yet independently verified against a live capture
-   (the source class is `@Deprecated` in the app, flagged plausible not confirmed) — that's now
-   the highest-value remaining step, since it would validate every "blocked" command in this doc
-   at once rather than one at a time.
-2. **Wire up every "blocked: `cmd_code`" command above using the formula from step 1**, then
-   confirm against a live device (motion/ambient sensor tuning, indicator LED, scenes, fine/fade
-   brightness, groups-if-the-address-targeting-theory-doesn't-pan-out). This is now a
-   plug-in-the-numbers task, not a research task.
-3. **Test the group-address-targeting hypothesis live** — cheapest, highest-value next step,
-   no `cmd_code` involved at all either way (see Groups section above).
+   already-confirmed production values.
+2. ~~Wire up every "blocked: `cmd_code`" command using the formula from step 1~~ — **done**: fine/fade
+   brightness, indicator LED, scenes, and motion/ambient sensor settings are all wired into real
+   sends now, exposed as `cync_lan.experimental_*` HA services (`custom_components/cync_lan/
+   services.py`). None of these are independently confirmed against a live capture (the formula's
+   source class is `@Deprecated` in the app) - **the highest-value remaining step is real-world
+   testing/reporting from users**, not further research, now that the plumbing exists.
+3. **Group control needs real protocol research, not just address-targeting** - dropped from this
+   round after finding `target_id` is hard-capped to a single byte in cync-lan's own packet builder
+   (see the Groups section above's correction). Whether the real wire protocol has a wider target
+   field elsewhere is unknown.
 4. A real packet capture (MITM of a device's TCP session, which cync-lan's DNS-redirect setup
-   already positions for) remains the way to fully confirm the length-field formula above, and
-   the only path for anything that formula's `@Deprecated`-flagged source class turns out not to
-   predict correctly.
+   already positions for) remains the way to fully confirm the length-field formula, resolve group
+   control, and cover Scenes'/Schedules' write path (not yet analyzed - see docs/cync_automations.md).
 
 ## BTLE mesh provisioning & MeshInfo details
 
