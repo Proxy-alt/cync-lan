@@ -257,6 +257,24 @@ Same opcode family as motion-sensor settings (`0xF7 0x11 0x02`), sibling sub-com
   (`LightRingIndicatorMode`) distinct from `LEDIndicatorMode`, translated via
   `LightRingIndicatorModeToLEDIndicatorModeMapper` — unclear if it maps 1:1 or adds states.
 
+### Motion-sensor schedule write — `op_code = 0xF7`, sub-command `0x0B`
+
+Third sibling in the `0xF7 0x11 0x02` family (alongside motion/ambient settings at `0x07` and
+indicator LED at `0x06`). Writes one of a group's 4 fixed motion-sensor schedule slots — see
+"Cync-native automations (scenes, schedules, motion-sensor schedules)" below for the full data
+model this command writes.
+
+- Confirmed: `SetMotionSensorScheduleCommand.java` lines 85-193, `OPCODE_BYTES = {0xF7,0x11,0x02,0x0B}`.
+  Payload after the 4-byte opcode: a flags byte (slot id 0-3 packed with mode bits and an
+  RGB-vs-CCT flag), start hour, start minute, end hour, end minute, brightness, then either a CCT
+  byte or 3 RGB bytes depending on the flag.
+- Blocked: `cmd_code` — apply the length formula from "TCP relay envelope research" above the same
+  as any other command here (payload length is confirmed, so this one's actually computable, not
+  just theoretically so).
+- **This is the one write-side finding in this doc that doesn't need a cloud API at all** — it's a
+  local mesh command, architecturally identical to every other opcode cync-lan already speaks. See
+  the automations doc for why that matters for a HA-automation-to-Cync-device sync feature.
+
 ### Multi-way-mode diagnostic — no wire opcode exists
 
 Not a protocol command at all. `MultiWayMode.java` is a plain boolean
