@@ -1283,27 +1283,28 @@ class CyncDevice:
         brightness: 1-100. wifi_disconnect_blink: blink the indicator when
         WiFi is disconnected.
 
-        A real-hardware test of this exact command came back a total
-        no-op (device did nothing, no error - fire-and-forget, no ACK
-        checked). Root cause: SetStatusIndicatorSettingsCommand's own
-        "opcode array" `{0xF7,0x11,0x02,0x06}` was misread as cync-lan's
+        A real-hardware test of this exact command with the original guess
+        (`op=0xF7`) came back a total no-op (device did nothing, no error -
+        fire-and-forget, no ACK checked). Root cause: SetStatusIndicatorSettingsCommand's
+        own "opcode array" `{0xF7,0x11,0x02,0x06}` was misread as cync-lan's
         outer `op` (0xF7) + a payload starting `0x11,0x02,0x06,...`.
         Tracing the actual send path in the decompiled app
-        (XlinkDeviceManager.CommandDelegate.h()) shows the real outer op
+        (XlinkDeviceManager.CommandDelegate.h()) showed the real outer op
         is a hardcoded 0x8E "mesh-relay" op used across several command
         types (indicator LED, motion sensor settings, scenes) - the 0xF7
         is just that array's own leading byte, i.e. part of the payload,
-        not cync-lan's envelope op. Independently confirmed against a
+        not cync-lan's envelope op. Independently corroborated against a
         real captured packet (docs/debugging_sessions/3 devices/
         Plug - Toggle Power/Plug.md): its checksum only balances with
         op=0x8E and no repeated op_code byte before the payload - see
         PacketBuilder.build_control_packet's repeat_op_code param.
 
-        cmd_ (0x0E) is still PREDICTED, not confirmed - see
-        _warn_experimental_cmd_code and docs/mesh_opcodes.md.
+        CONFIRMED WORKING on real hardware with the corrected op/payload
+        shape below (op=0x8E, cmd_=0x0E, repeat_op_code=False) - no longer
+        flagged via _warn_experimental_cmd_code, since both op_code and
+        cmd_code are now proven, not predicted. See docs/mesh_opcodes.md.
         """
         lp = f"{self.lp}set_indicator_led:"
-        _warn_experimental_cmd_code(lp, "set_indicator_led")
         if mode not in (0, 1, 2):
             logger.error(f"{lp} Invalid mode: {mode} must be 0 (always on), 1 (always off), or 2 (normal)")
             return

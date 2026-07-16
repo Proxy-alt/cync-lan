@@ -117,7 +117,7 @@
   "services": {
     "experimental_set_indicator_led": {
       "name": "Set indicator LED (experimental)",
-      "description": "Experimental — the outer command byte is predicted, not confirmed against a real packet capture. Sets a device's small status/indicator LED mode, color, and brightness. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "description": "Confirmed working on real hardware (see docs/mesh_opcodes.md). Kept under the experimental_ service name since it's still a recently-corrected command. Sets a device's small status/indicator LED mode, color, and brightness.",
       "fields": {
         "device_id": {
           "name": "Device",

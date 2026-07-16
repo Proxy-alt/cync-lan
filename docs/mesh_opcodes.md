@@ -159,6 +159,9 @@ prediction is easy to diagnose and doesn't look like a normal confirmed feature.
 
 ### CORRECTION (real-hardware test, this session): the `0xF7`/`0xEF` "op_code" for 3 commands was never a real outer op
 
+**Update: the fix below is confirmed working** - the user re-tested `set_indicator_led` after this
+correction and it now works on real hardware. See the "Indicator LED ring" section further down.
+
 A real-hardware test of `set_indicator_led` (the "ring light" feature) came back a total no-op -
 no error, device did nothing (fire-and-forget, no ACK checked, so a wrong guess just silently
 vanishes). Root cause, traced by a background research agent digging into the decompiled app's
@@ -321,15 +324,21 @@ service description for this reason.
   `cmd_code`. Treat as a separate legacy opcode, not part of the mesh-command family above.
 - `cmd_code = 0x0C` is **predicted**, not confirmed against a live capture.
 
-### Indicator LED ring — real `op_code = 0x8E` (was wrongly `0xF7`, see CORRECTION above)
+### Indicator LED ring — `op_code = 0x8E`, `cmd_code = 0x0E` — **CONFIRMED WORKING on real hardware**
 
-**WIRED IN, EXPERIMENTAL, corrected after a real-hardware no-op test**: `devices.py`'s
-`set_indicator_led()`, `cmd_code = 0x0E` (still predicted, but `op_code`/payload shape now
-corrected and independently confirmed via a real packet capture - see CORRECTION above). Exposed
-via the `cync_lan.experimental_set_indicator_led` HA service. **Re-test on real hardware still
-needed** to confirm the `0x8E` fix actually works (only proven so far: the envelope now matches a
-real captured packet byte-for-byte for a *different* command in the same op family - not yet
-proven for indicator LED specifically, since its own `cmd_code` is still a prediction).
+**WIRED IN, CONFIRMED**: `devices.py`'s `set_indicator_led()` was tested against real hardware with
+the original `op=0xF7` guess and came back a total no-op; re-tested after the `0x8E`
+correction (see CORRECTION above) and **the user confirmed it works**. Both `op_code` (`0x8E`) and
+`cmd_code` (`0x0E`) are now proven for this command, not just predicted -
+`_warn_experimental_cmd_code` was removed from `set_indicator_led()` accordingly. Exposed via the
+`cync_lan.experimental_set_indicator_led` HA service (service name kept as-is - renaming would
+break any automation already built against it - but its description text now says "confirmed
+working" instead of "predicted, not confirmed").
+
+This confirmation is also indirect evidence *for* the sibling commands below (motion sensor
+settings, scenes): it proves the `0x8E` op, the `repeat_op_code=False` envelope shape, and the
+length-formula `cmd_code` prediction methodology all hold for at least one real command in this
+family - but their own specific `cmd_code` values are still unconfirmed until tested individually.
 
 Same underlying payload-prefix family as motion-sensor settings (`0xF7 0x11 0x02`), sibling
 sub-command - both now correctly sent under the shared `0x8E` outer op.
