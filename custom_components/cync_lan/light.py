@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from homeassistant.components.group.light import LightGroup
@@ -30,6 +31,46 @@ _LOGGER = logging.getLogger(__name__)
 # don't need to be limited to N-at-a-time from HA's side.
 PARALLEL_UPDATES = 0
 
+_ENTITY_REGISTRATION_POLL_INTERVAL = 0.1
+_ENTITY_REGISTRATION_TIMEOUT = 5.0
+
+
+async def _wait_for_light_entities(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    entry_id: str,
+    dev_ids: list[int],
+) -> None:
+    """Poll the entity registry until every light entity just scheduled by
+    async_add_entities() above has actually been registered, or a short
+    timeout elapses.
+
+    async_add_entities() only *schedules* registration as a background
+    task (EntityPlatform._async_schedule_add_entities_for_entry) - it does
+    not complete before returning. A previous version of this function
+    waited on hass.async_block_till_done() instead, which waits for every
+    hass-tracked background task process-wide, not just this platform's
+    own scheduled work - on a real HA install with many integrations
+    still settling during startup, that took over 60 seconds and tripped
+    HA's own "Setup of platform cync_lan is taking longer than 60
+    seconds" warning. Polling just for these specific entities resolves
+    as soon as they're actually ready without waiting on anything
+    unrelated, and the timeout keeps this from hanging indefinitely if
+    one somehow never registers - the caller's own registry lookups
+    already tolerate a missing entity by skipping that group member.
+    """
+    if not dev_ids:
+        return
+    deadline = hass.loop.time() + _ENTITY_REGISTRATION_TIMEOUT
+    while hass.loop.time() < deadline:
+        if all(
+            registry.async_get_entity_id(Platform.LIGHT, DOMAIN, f"{entry_id}_{dev_id}")
+            is not None
+            for dev_id in dev_ids
+        ):
+            return
+        await asyncio.sleep(_ENTITY_REGISTRATION_POLL_INTERVAL)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -39,12 +80,14 @@ async def async_setup_entry(
     g = GlobalObject()
     bridge = entry.runtime_data.bridge
     entities = []
+    light_dev_ids = []
     for node in g.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         if not node.is_light:
             continue
         entities.append(CyncLanLight(bridge, entry.entry_id, node))
+        light_dev_ids.append(node.id)
     async_add_entities(entities)
 
     if not entry.options.get(CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS):
@@ -55,21 +98,14 @@ async def async_setup_entry(
 
     # Member entity_ids are looked up via the entity registry, which
     # requires the individual lights above to actually be registered first
-    # - and async_add_entities() is a fire-and-forget callback (its type
-    # signature returns None, not a coroutine): it only *schedules* the
-    # real registration work as a background task
-    # (EntityPlatform._async_schedule_add_entities), it does not complete
-    # it before returning. Calling straight through to the registry lookups
-    # below without waiting found nothing, every time, for every group -
-    # confirmed via a real user report ("groups don't work, it doesn't
-    # group the lights") after this looked correct in tests that only used
-    # a fake, synchronous async_add_entities stand-in and never exercised
-    # this timing gap. async_block_till_done() waits for hass-tracked
-    # background tasks (which the scheduled registration task is one of)
-    # to actually finish before this proceeds.
-    await hass.async_block_till_done()
-
+    # - and async_add_entities() only *schedules* that registration as a
+    # background task, it does not complete it before returning. See
+    # _wait_for_light_entities' docstring for why this polls instead of
+    # using hass.async_block_till_done() (the original fix, which caused
+    # its own real-world regression: platform setup taking 60+ seconds).
     registry = er.async_get(hass)
+    await _wait_for_light_entities(hass, registry, entry.entry_id, light_dev_ids)
+
     group_entities = []
     for group_id, group in groups.items():
         member_entity_ids = []

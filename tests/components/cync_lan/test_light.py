@@ -335,17 +335,17 @@ async def test_groups_created_with_real_entity_platform_add_entities(hass):
     async_setup_entry with a real EntityPlatform's real scheduling callback
     to exercise the actual registration path a production HA install has.
 
-    Caveat, confirmed by manually disabling the fix and re-running this
-    test: it still passed. Python's eager task scheduling (3.12+) can let
-    the background registration task run to completion synchronously,
-    with no real yield point, in a lightweight test environment with no
-    real state-machine persistence or disk I/O to force a suspension - so
-    this test cannot deterministically reproduce the exact race a busier
-    real HA instance hits. It's still valuable as end-to-end coverage of
-    the real entity-platform/registry-resolution path (which found and
-    fixed the entity_id-vs-unique_id assumption bug below), just not as
-    airtight proof of the timing fix on its own - the fix itself is
-    correct and necessary regardless of what this specific test can catch.
+    async_setup_entry originally waited out this gap with
+    hass.async_block_till_done(), which waits for every hass-tracked
+    background task process-wide, not just this platform's own scheduled
+    work - fine in this lightweight test environment, but on a real HA
+    install with many integrations still settling during startup it took
+    over 60 seconds and tripped HA's own "platform setup is taking too
+    long" warning. Replaced with _wait_for_light_entities(), a bounded
+    poll for just these specific entities. This test is still valuable as
+    end-to-end coverage of the real entity-platform/registry-resolution
+    path (which found and fixed the entity_id-vs-unique_id assumption bug
+    below), independent of which waiting strategy is used above it.
     """
     from datetime import timedelta
 
