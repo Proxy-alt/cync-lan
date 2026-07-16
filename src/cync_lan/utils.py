@@ -168,6 +168,12 @@ def parse_unbound_firmware_version(
     return firmware_type, firmware_version_int, firmware_str
 
 
+def _read_and_parse_yaml(cfg_file: Path):
+    """Read and parse a YAML config file - meant to run inside an
+    executor, not called directly from the event loop."""
+    return yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+
+
 async def parse_config(cfg_file: Path):
     """Parse the exported Cync device config file and create devices from it."""
     from cync_lan.devices import CyncDevice
@@ -175,11 +181,18 @@ async def parse_config(cfg_file: Path):
     lp = "parse_config:"
     logger.debug(f"{lp} reading devices from Cync config file: {cfg_file.as_posix()}")
     try:
-        # wrap synchronous yaml reading in an async function to avoid blocking the event loop
-        # raw_config = yaml.safe_load(cfg_file.read_text())
-        # get an executor
+        # cfg_file.read_text(...) was previously passed as an argument to
+        # run_in_executor() directly - but Python evaluates arguments
+        # eagerly, so that call still ran synchronously on the event loop
+        # before run_in_executor ever got invoked; only yaml.safe_load()
+        # was actually offloaded. Confirmed via a real HA install still
+        # flagging this exact line as a "Detected blocking call to
+        # read_text ... inside the event loop" warning despite the
+        # executor wrapping already being there. Reading the file inside
+        # the executor job itself (not as an eagerly-evaluated argument to
+        # it) actually moves the disk I/O off the loop.
         raw_config = await asyncio.get_event_loop().run_in_executor(
-            None, yaml.safe_load, cfg_file.read_text(encoding="utf-8")
+            None, _read_and_parse_yaml, cfg_file
         )
     except Exception as e:
         logger.error(f"{lp} Error reading config file: {e}", exc_info=True)
@@ -287,8 +300,10 @@ async def parse_groups(cfg_file: Path) -> Dict[int, dict]:
     {group_id: {"name": str, "device_ids": [int, ...], "is_subgroup": bool}}.
     """
     lp = "parse_groups:"
+    # Same eager-argument-evaluation bug as parse_config() above - see its
+    # comment for why the read has to happen inside the executor job.
     raw_config = await asyncio.get_event_loop().run_in_executor(
-        None, yaml.safe_load, cfg_file.read_text(encoding="utf-8")
+        None, _read_and_parse_yaml, cfg_file
     )
     groups: Dict[int, dict] = {}
     main_key = "account data" if "account data" in raw_config else "exported_homes"
