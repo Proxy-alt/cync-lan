@@ -90,10 +90,15 @@ async def async_setup_entry(
         light_dev_ids.append(node.id)
     async_add_entities(entities)
 
+    # Stashed so groups can be (re)applied later - e.g. from the options
+    # flow when the user enables/refreshes them - without a full entry
+    # reload. See async_add_light_groups() below.
+    entry.runtime_data.light_add_entities = async_add_entities
+    entry.runtime_data.created_light_group_ids = set()
+
     if not entry.options.get(CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS):
         return
-    groups = entry.runtime_data.groups or {}
-    if not groups:
+    if not entry.runtime_data.groups:
         return
 
     # Member entity_ids are looked up via the entity registry, which
@@ -106,8 +111,39 @@ async def async_setup_entry(
     registry = er.async_get(hass)
     await _wait_for_light_entities(hass, registry, entry.entry_id, light_dev_ids)
 
+    await async_add_light_groups(hass, entry)
+
+
+async def async_add_light_groups(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Create and add any light-group entities that don't exist yet.
+
+    Callable both from this platform's own async_setup_entry (initial
+    setup/reload) and directly from the options flow when the user
+    enables or refreshes light groups - the latter needs this to apply
+    without forcing a full entry reload, which would drop every device's
+    TCP connection just to add a handful of group entities.
+
+    Callers are responsible for checking CONF_ENABLE_LIGHT_GROUPS
+    themselves before calling this - the options flow calls it before its
+    own entry.options update actually lands, so entry.options here could
+    read stale for that caller.
+    """
+    runtime_data = entry.runtime_data
+    add_entities = runtime_data.light_add_entities
+    if add_entities is None:
+        # This platform hasn't finished its own initial setup yet -
+        # nothing running to add group entities to.
+        return
+    groups = runtime_data.groups or {}
+    if not groups:
+        return
+
+    registry = er.async_get(hass)
+    already_created = runtime_data.created_light_group_ids
     group_entities = []
     for group_id, group in groups.items():
+        if group_id in already_created:
+            continue
         member_entity_ids = []
         for dev_id in group.get("device_ids", []):
             unique_id = f"{entry.entry_id}_{dev_id}"
@@ -126,8 +162,9 @@ async def async_setup_entry(
                 entity_ids=member_entity_ids,
             )
         )
+        already_created.add(group_id)
     if group_entities:
-        async_add_entities(group_entities)
+        add_entities(group_entities)
 
 
 class CyncLanLight(CyncLanEntity, LightEntity):

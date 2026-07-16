@@ -76,6 +76,13 @@ class CyncLanRuntimeData:
     groups: dict = None  # {group_id: {"name", "device_ids", "is_subgroup"}}
     unsub_refresh: object = None
     unsub_no_devices_check: object = None
+    # Stashed by light.py's async_setup_entry so light groups can be added
+    # later - e.g. from the options flow when the user enables/refreshes
+    # them - without forcing a full entry reload, which would drop every
+    # device's TCP connection just to add a handful of group entities. See
+    # light.async_add_light_groups().
+    light_add_entities: object = None  # AddEntitiesCallback
+    created_light_group_ids: set = None  # group_ids already added as entities
 
 
 def _import_cync_lan_symbols():

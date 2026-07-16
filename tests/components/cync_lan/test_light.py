@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.cync_lan.bridge import CyncLanBridge
@@ -9,6 +10,7 @@ from custom_components.cync_lan.const import DOMAIN
 from custom_components.cync_lan.light import (
     CyncLanLight,
     CyncLanLightGroup,
+    async_add_light_groups,
     async_setup_entry,
 )
 
@@ -424,3 +426,90 @@ async def test_group_skipped_when_no_members_resolve(hass):
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
     assert not any(isinstance(e, CyncLanLightGroup) for e in added)
+
+
+async def test_add_light_groups_noop_when_platform_not_set_up(hass):
+    """async_add_light_groups() must be a safe no-op if this platform's own
+    async_setup_entry hasn't stashed an async_add_entities callback yet -
+    e.g. called from the options flow before the entry has ever finished
+    its own initial setup."""
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=None,
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry)  # must not raise
+
+
+async def test_add_light_groups_noop_when_no_groups(hass):
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+    added = []
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: added.extend(entities),
+        groups={},
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry)
+
+    assert added == []
+
+
+async def test_add_light_groups_creates_group_and_tracks_it(hass):
+    """Direct call path (as used by the options flow to apply groups
+    without a full entry reload), independent of async_setup_entry -
+    individual lights are already registered, as they would be from an
+    earlier, already-completed platform setup."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry)
+    registry.async_get_or_create(Platform.LIGHT, DOMAIN, "entry1_2", config_entry=entry)
+
+    added = []
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: added.extend(entities),
+        groups={
+            32770: {"name": "Kitchen", "device_ids": [1, 2], "is_subgroup": False}
+        },
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry)
+
+    assert len(added) == 1
+    assert isinstance(added[0], CyncLanLightGroup)
+    assert entry.runtime_data.created_light_group_ids == {32770}
+
+
+async def test_add_light_groups_skips_groups_already_created(hass):
+    """A second call (e.g. resaving the options form twice) must not
+    re-add a group entity that's already been created - async_add_entities
+    isn't safe to call twice with different objects sharing a unique_id."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry)
+
+    added = []
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: added.extend(entities),
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+        created_light_group_ids={1},
+    )
+
+    await async_add_light_groups(hass, entry)
+
+    assert added == []

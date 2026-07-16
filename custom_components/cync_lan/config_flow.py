@@ -217,31 +217,58 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
 
+    async def _refresh_and_apply_light_groups(self) -> None:
+        """Best-effort: refresh the cloud export, reparse groups from it,
+        and add any newly-available light-group entities to the
+        already-running light platform - all without forcing a full entry
+        reload, which would drop every device's TCP connection just to
+        add a handful of group entities. Confirmed via a real user
+        enabling light groups against a stale export and getting none
+        until a full restart; this makes it apply immediately instead.
+
+        A failure at any step here logs and falls back to whatever group
+        data/entities already exist, rather than blocking the rest of the
+        options from saving.
+        """
+        entry = self._config_entry
+        try:
+            exported = await refresh_cloud_export(self.hass)
+        except Exception:  # noqa: BLE001 - best-effort refresh, not fatal
+            _LOGGER.exception(
+                "Failed to refresh Cync cloud export while saving light-group "
+                "settings; continuing with the existing local config"
+            )
+            exported = False
+
+        # None until the entry finishes its own initial async_setup_entry -
+        # e.g. options can be opened for an entry that failed setup. Nothing
+        # running yet to add group entities to; the next setup will parse
+        # whatever the export above just wrote.
+        runtime_data = getattr(entry, "runtime_data", None)
+        if runtime_data is None:
+            return
+
+        if exported:
+            from pathlib import Path
+
+            from cync_lan.const import CYNC_CONFIG_FILE_PATH
+            from cync_lan.utils import parse_groups
+
+            try:
+                runtime_data.groups = await parse_groups(Path(CYNC_CONFIG_FILE_PATH))
+            except Exception:  # noqa: BLE001 - groups are optional, must not block setup
+                _LOGGER.exception("Failed to parse refreshed Cync device groups")
+
+        from .light import async_add_light_groups
+
+        await async_add_light_groups(self.hass, entry)
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
             if user_input.get(CONF_ENABLE_LIGHT_GROUPS):
-                # Group membership only ever comes from a fresh cloud export -
-                # async_setup_entry's reload (triggered right after this flow
-                # saves) just reparses whatever cync_mesh.yaml already has on
-                # disk, and the periodic refresh timer meant to catch this
-                # could be hours away (or disabled). Confirmed via a real user
-                # enabling light groups against an export written before
-                # groups support existed: the option turned on, but zero
-                # groups ever appeared, because nothing ever re-pulled from
-                # the cloud. Re-exporting here - on every save where light
-                # groups end up enabled, not just the enabling transition -
-                # also gives the user a way to force a refresh by simply
-                # reopening and resaving this form. Best-effort: a failed
-                # refresh must not block saving the rest of the options.
-                try:
-                    await refresh_cloud_export(self.hass)
-                except Exception:  # noqa: BLE001 - best-effort refresh, not fatal
-                    _LOGGER.exception(
-                        "Failed to refresh Cync cloud export while saving light-group "
-                        "settings; continuing with the existing local config"
-                    )
+                await self._refresh_and_apply_light_groups()
             return self.async_create_entry(data=user_input)
 
         current = self._config_entry.options

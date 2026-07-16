@@ -342,3 +342,173 @@ async def test_options_flow_export_failure_does_not_block_save(hass, mock_cloud_
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_options_flow_applies_groups_without_reload(hass, mock_cloud_api):
+    """Enabling light groups must apply immediately - reparsing the freshly
+    exported groups and adding any new group entities directly to the
+    already-running light platform - rather than requiring the user to
+    reload or restart before they show up."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    mock_cloud_api.check_token = AsyncMock(return_value=True)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = SimpleNamespace(groups=None)
+
+    fresh_groups = {1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}}
+    with patch(
+        "cync_lan.utils.parse_groups", new=AsyncMock(return_value=fresh_groups)
+    ), patch(
+        "custom_components.cync_lan.light.async_add_light_groups",
+        new=AsyncMock(),
+    ) as mock_add_groups:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "local_port": 23779,
+                "export_refresh_interval": 24,
+                "enable_light_groups": True,
+            },
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.runtime_data.groups == fresh_groups
+    mock_add_groups.assert_awaited_once_with(hass, entry)
+
+
+async def test_options_flow_light_groups_noop_before_initial_setup(
+    hass, mock_cloud_api
+):
+    """Opening options for an entry that hasn't finished its own initial
+    setup yet (e.g. it failed setup) has no runtime_data to apply groups
+    to - must not crash."""
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    mock_cloud_api.check_token = AsyncMock(return_value=True)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+    # No entry.runtime_data assignment - matches an entry that never
+    # finished async_setup_entry.
+
+    with patch(
+        "custom_components.cync_lan.light.async_add_light_groups",
+        new=AsyncMock(),
+    ) as mock_add_groups:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "local_port": 23779,
+                "export_refresh_interval": 24,
+                "enable_light_groups": True,
+            },
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    mock_add_groups.assert_not_awaited()
+
+
+async def test_options_flow_applies_stale_groups_when_export_fails(hass, mock_cloud_api):
+    """If the cloud refresh fails (e.g. no valid token), groups must not be
+    reparsed from a possibly-stale file, but light groups should still be
+    (re)applied from whatever group data is already cached on
+    runtime_data - covers the case where a user just wants to turn the
+    feature on using data that's already there."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    mock_cloud_api.check_token = AsyncMock(return_value=False)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+    cached_groups = {2: {"name": "Old", "device_ids": [2], "is_subgroup": False}}
+    entry.runtime_data = SimpleNamespace(groups=cached_groups)
+
+    with patch(
+        "cync_lan.utils.parse_groups", new=AsyncMock()
+    ) as mock_parse_groups, patch(
+        "custom_components.cync_lan.light.async_add_light_groups",
+        new=AsyncMock(),
+    ) as mock_add_groups:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "local_port": 23779,
+                "export_refresh_interval": 24,
+                "enable_light_groups": True,
+            },
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    mock_parse_groups.assert_not_awaited()
+    assert entry.runtime_data.groups == cached_groups
+    mock_add_groups.assert_awaited_once_with(hass, entry)
+
+
+async def test_options_flow_parse_groups_failure_does_not_block_save(
+    hass, mock_cloud_api
+):
+    """A corrupt/unreadable freshly-exported file must not prevent the
+    rest of the options from saving - falls back to whatever group data
+    was already cached rather than crashing the flow."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    mock_cloud_api.check_token = AsyncMock(return_value=True)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+    cached_groups = {3: {"name": "Cached", "device_ids": [3], "is_subgroup": False}}
+    entry.runtime_data = SimpleNamespace(groups=cached_groups)
+
+    with patch(
+        "cync_lan.utils.parse_groups",
+        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+    ), patch(
+        "custom_components.cync_lan.light.async_add_light_groups",
+        new=AsyncMock(),
+    ) as mock_add_groups:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "local_port": 23779,
+                "export_refresh_interval": 24,
+                "enable_light_groups": True,
+            },
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    # groups left untouched at the cached value since the reparse failed
+    assert entry.runtime_data.groups == cached_groups
+    mock_add_groups.assert_awaited_once_with(hass, entry)
