@@ -383,7 +383,7 @@ async def test_options_flow_applies_groups_without_reload(hass, mock_cloud_api):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.runtime_data.groups == fresh_groups
-    mock_add_groups.assert_awaited_once_with(hass, entry)
+    mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)
 
 
 async def test_options_flow_light_groups_noop_before_initial_setup(
@@ -466,7 +466,7 @@ async def test_options_flow_applies_stale_groups_when_export_fails(hass, mock_cl
     assert result["type"] is FlowResultType.CREATE_ENTRY
     mock_parse_groups.assert_not_awaited()
     assert entry.runtime_data.groups == cached_groups
-    mock_add_groups.assert_awaited_once_with(hass, entry)
+    mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)
 
 
 async def test_options_flow_parse_groups_failure_does_not_block_save(
@@ -511,4 +511,4 @@ async def test_options_flow_parse_groups_failure_does_not_block_save(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     # groups left untouched at the cached value since the reparse failed
     assert entry.runtime_data.groups == cached_groups
-    mock_add_groups.assert_awaited_once_with(hass, entry)
+    mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)

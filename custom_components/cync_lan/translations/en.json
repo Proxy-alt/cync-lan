@@ -45,7 +45,8 @@
         "data": {
           "local_port": "Local TCP port (devices must be redirected here via DNS)",
           "export_refresh_interval": "Hours between automatic device-list refreshes (0 to disable)",
-          "enable_light_groups": "Create light group entities for Cync device groups (requires a reload to take effect)"
+          "enable_light_groups": "Create light group entities for Cync device groups",
+          "hide_group_members": "Hide each group's individual member lights from dashboards"
         }
       }
     }

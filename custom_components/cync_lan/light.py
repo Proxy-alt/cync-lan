@@ -20,7 +20,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS, DOMAIN
+from .const import (
+    CONF_ENABLE_LIGHT_GROUPS,
+    CONF_HIDE_GROUP_MEMBERS,
+    DEFAULT_ENABLE_LIGHT_GROUPS,
+    DEFAULT_HIDE_GROUP_MEMBERS,
+    DOMAIN,
+)
 from .entity import CyncLanEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,8 +120,11 @@ async def async_setup_entry(
     await async_add_light_groups(hass, entry)
 
 
-async def async_add_light_groups(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Create and add any light-group entities that don't exist yet.
+async def async_add_light_groups(
+    hass: HomeAssistant, entry: ConfigEntry, hide_members: bool | None = None
+) -> None:
+    """Create and add any light-group entities that don't exist yet, and
+    apply each group's member-visibility state.
 
     Callable both from this platform's own async_setup_entry (initial
     setup/reload) and directly from the options flow when the user
@@ -126,7 +135,10 @@ async def async_add_light_groups(hass: HomeAssistant, entry: ConfigEntry) -> Non
     Callers are responsible for checking CONF_ENABLE_LIGHT_GROUPS
     themselves before calling this - the options flow calls it before its
     own entry.options update actually lands, so entry.options here could
-    read stale for that caller.
+    read stale for that caller. hide_members has the same staleness
+    problem: pass it explicitly (from the just-submitted form data) when
+    calling from there; left as None it falls back to entry.options,
+    correct for the async_setup_entry caller where options are current.
     """
     runtime_data = entry.runtime_data
     add_entities = runtime_data.light_add_entities
@@ -165,6 +177,43 @@ async def async_add_light_groups(hass: HomeAssistant, entry: ConfigEntry) -> Non
         already_created.add(group_id)
     if group_entities:
         add_entities(group_entities)
+
+    if hide_members is None:
+        hide_members = entry.options.get(
+            CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
+        )
+    _apply_group_member_visibility(registry, entry.entry_id, groups, hide_members)
+
+
+def _apply_group_member_visibility(
+    registry: er.EntityRegistry, entry_id: str, groups: dict, hide: bool
+) -> None:
+    """Hide or reveal each light group's member entities, without
+    touching entities the user hid themselves.
+
+    The entity registry tracks *why* an entity is hidden via hidden_by
+    (None, RegistryEntryHider.USER, or RegistryEntryHider.INTEGRATION) -
+    only ever touches entities this integration hid itself
+    (hidden_by == INTEGRATION), so a user who explicitly hid a member
+    light for their own reasons keeps that choice regardless of this
+    option, in either direction.
+    """
+    for group in groups.values():
+        for dev_id in group.get("device_ids", []):
+            unique_id = f"{entry_id}_{dev_id}"
+            entity_id = registry.async_get_entity_id(Platform.LIGHT, DOMAIN, unique_id)
+            if entity_id is None:
+                continue
+            reg_entry = registry.async_get(entity_id)
+            if reg_entry is None:
+                continue
+            if hide:
+                if reg_entry.hidden_by is None:
+                    registry.async_update_entity(
+                        entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION
+                    )
+            elif reg_entry.hidden_by is er.RegistryEntryHider.INTEGRATION:
+                registry.async_update_entity(entity_id, hidden_by=None)
 
 
 class CyncLanLight(CyncLanEntity, LightEntity):

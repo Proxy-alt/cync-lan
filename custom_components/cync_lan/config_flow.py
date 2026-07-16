@@ -27,9 +27,11 @@ from .const import (
     CONF_ACCOUNT_USERNAME,
     CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
+    CONF_HIDE_GROUP_MEMBERS,
     CONF_LOCAL_PORT,
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
+    DEFAULT_HIDE_GROUP_MEMBERS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
 )
@@ -217,12 +219,13 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
 
-    async def _refresh_and_apply_light_groups(self) -> None:
+    async def _refresh_and_apply_light_groups(self, hide_members: bool) -> None:
         """Best-effort: refresh the cloud export, reparse groups from it,
-        and add any newly-available light-group entities to the
-        already-running light platform - all without forcing a full entry
-        reload, which would drop every device's TCP connection just to
-        add a handful of group entities. Confirmed via a real user
+        and add any newly-available light-group entities - plus apply the
+        current hide_members setting to every known group's members - to
+        the already-running light platform. All without forcing a full
+        entry reload, which would drop every device's TCP connection just
+        to add or hide a handful of entities. Confirmed via a real user
         enabling light groups against a stale export and getting none
         until a full restart; this makes it apply immediately instead.
 
@@ -261,14 +264,18 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
 
         from .light import async_add_light_groups
 
-        await async_add_light_groups(self.hass, entry)
+        await async_add_light_groups(self.hass, entry, hide_members=hide_members)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
             if user_input.get(CONF_ENABLE_LIGHT_GROUPS):
-                await self._refresh_and_apply_light_groups()
+                await self._refresh_and_apply_light_groups(
+                    hide_members=user_input.get(
+                        CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
+                    )
+                )
             return self.async_create_entry(data=user_input)
 
         current = self._config_entry.options
@@ -291,6 +298,12 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         CONF_ENABLE_LIGHT_GROUPS,
                         default=current.get(
                             CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_HIDE_GROUP_MEMBERS,
+                        default=current.get(
+                            CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
                         ),
                     ): bool,
                 }

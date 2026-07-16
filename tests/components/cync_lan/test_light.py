@@ -513,3 +513,119 @@ async def test_add_light_groups_skips_groups_already_created(hass):
     await async_add_light_groups(hass, entry)
 
     assert added == []
+
+
+async def test_add_light_groups_hides_members_when_enabled(hass):
+    """hide_members=True must hide each group member's entity (via
+    hidden_by=INTEGRATION) so they disappear from default dashboards
+    while the group entity represents them instead."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry)
+
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: None,
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry, hide_members=True)
+
+    entry_id = "entry1"
+    reg_entry = registry.async_get(
+        registry.async_get_entity_id(Platform.LIGHT, DOMAIN, f"{entry_id}_1")
+    )
+    assert reg_entry.hidden_by is er.RegistryEntryHider.INTEGRATION
+
+
+async def test_add_light_groups_reveals_members_when_disabled(hass):
+    """hide_members=False must reveal a member entity this integration
+    previously hid - toggling the option back off restores visibility."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    entity_entry = registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry
+    )
+    registry.async_update_entity(
+        entity_entry.entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION
+    )
+
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: None,
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry, hide_members=False)
+
+    reg_entry = registry.async_get(entity_entry.entity_id)
+    assert reg_entry.hidden_by is None
+
+
+async def test_add_light_groups_never_touches_user_hidden_members(hass):
+    """A member the user hid themselves (hidden_by=USER) must be left
+    alone regardless of the hide_members option, in either direction."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    entity_entry = registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry
+    )
+    registry.async_update_entity(
+        entity_entry.entity_id, hidden_by=er.RegistryEntryHider.USER
+    )
+
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: None,
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry, hide_members=True)
+    assert registry.async_get(entity_entry.entity_id).hidden_by is er.RegistryEntryHider.USER
+
+    await async_add_light_groups(hass, entry, hide_members=False)
+    assert registry.async_get(entity_entry.entity_id).hidden_by is er.RegistryEntryHider.USER
+
+
+async def test_add_light_groups_hide_members_defaults_from_entry_options(hass):
+    """When hide_members isn't passed explicitly (the async_setup_entry
+    call path, where entry.options is always current), it must fall back
+    to reading CONF_HIDE_GROUP_MEMBERS from entry.options."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry(
+        "entry1", enable_light_groups=True, hide_group_members=True
+    )
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.LIGHT, DOMAIN, "entry1_1", config_entry=entry)
+
+    entry.runtime_data = SimpleNamespace(
+        light_add_entities=lambda entities: None,
+        groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
+        created_light_group_ids=set(),
+    )
+
+    await async_add_light_groups(hass, entry)  # hide_members omitted
+
+    reg_entry = registry.async_get(
+        registry.async_get_entity_id(Platform.LIGHT, DOMAIN, "entry1_1")
+    )
+    assert reg_entry.hidden_by is er.RegistryEntryHider.INTEGRATION
