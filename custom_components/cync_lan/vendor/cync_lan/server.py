@@ -74,7 +74,26 @@ class nCyncServer:
 
     def __init__(self, node_map: Dict[int, "CyncDevice"]):
         self.node_devices: Dict[int, "CyncDevice"] = node_map
+        # nCyncServer is a singleton (__new__ above always returns the same
+        # instance), but __init__ still runs on every construction - these
+        # were left as class-level defaults instead of being reset here, so
+        # a second construction within the same process (an entry reload,
+        # or unload+re-add without a full HA restart) inherited whatever
+        # state stop() left behind on the same instance. shutting_down in
+        # particular: stop() sets it True and nothing ever set it back to
+        # False, so every connection after a reload got permanently
+        # rejected by can_connect() with "CyncLAN server is shutting down,
+        # rejecting new connection..." - confirmed via a real user's log
+        # showing that message continuously for 5+ hours after a reload,
+        # alongside 100k+ "writer is None" messages from the dead sessions
+        # that could never be replaced because nothing new could connect.
+        self.tcp_connections: Dict[str, Optional[CyncTCPSession]] = {}
+        self.app_tcp_connections: Dict[str, Optional[CyncTCPSession]] = {}
         self.tcp_conn_attempts: dict = {}
+        self.shutting_down = False
+        self.running = False
+        self._server = None
+        self.start_task = None
         self.ssl_context: Optional[ssl.SSLContext] = None
         self.host: str = CYNC_SRV_HOST
         self.port: str = CYNC_SRV_PORT
