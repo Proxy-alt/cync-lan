@@ -36,6 +36,14 @@ logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
 
+def _write_yaml_and_chmod(path: Path, data: dict) -> None:
+    """Write a dict as YAML and chmod it - meant to run inside an
+    executor, not called directly from the event loop."""
+    with open(path, "w") as f:
+        f.write(yaml.dump(data))
+    os.chmod(path, 0o777)
+
+
 class CyncCloudAPI:
     api_timeout: int = 8
     lp: str = "CyncCloudAPI"
@@ -416,9 +424,13 @@ class CyncCloudAPI:
                 )
                 counter += 1
         try:
-            with raw_cfg_file_out.open("w") as f:
-                f.write(yaml.dump(cync_lan_cfg))
-            os.chmod(raw_cfg_file_out, 0o777)
+            # async-dependency: same blocking-call fix as read_token_cache -
+            # write_yaml_and_chmod runs the open()/write()/chmod() sequence
+            # inside the executor rather than on the event loop. Confirmed
+            # via a real HA install flagging this exact line.
+            await asyncio.get_running_loop().run_in_executor(
+                None, _write_yaml_and_chmod, raw_cfg_file_out, cync_lan_cfg
+            )
         except Exception as file_exc:
             logger.error(
                 f"{self.lp} Failed to write cync-lan config to file: {CYNC_CONFIG_FILE_PATH} -> {file_exc}"
@@ -616,9 +628,9 @@ class CyncCloudAPI:
                     )
                     counter += 1
             try:
-                with open(raw_file_out, "w") as _f:
-                    _f.write(yaml.dump(exported_home_data))
-                os.chmod(raw_file_out, 0o777)
+                await asyncio.get_running_loop().run_in_executor(
+                    None, _write_yaml_and_chmod, raw_file_out, exported_home_data
+                )
             except Exception as file_exc:
                 logger.error(
                     f"{lp} Failed to write RAW config to '{raw_file_out}': {file_exc}"

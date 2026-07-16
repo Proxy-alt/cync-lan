@@ -78,6 +78,30 @@ class CyncLanRuntimeData:
     unsub_no_devices_check: object = None
 
 
+def _import_cync_lan_symbols():
+    """Import the upstream cync_lan package's heavy modules - meant to run
+    inside an executor, not called directly from the event loop.
+
+    This import chain pulls in pydantic (cync_lan.structs) and, via
+    cync_lan.devices -> cync_lan.metadata.model_info, pydantic's dataclass
+    decorator, which does its own blocking file read (package metadata
+    discovery) the first time it's used. Both showed up as real "Detected
+    blocking call ... inside the event loop" warnings on a real HA
+    install, pointing at otherwise-unremarkable lines (an import
+    statement, a bare @dataclass decorator) - the actual blocking I/O is
+    inside Python's import machinery and pydantic's own internals, not
+    anything this integration's code controls the timing of directly, so
+    the whole import has to move off the loop rather than being chased
+    call by call.
+    """
+    from cync_lan.const import CYNC_CONFIG_FILE_PATH
+    from cync_lan.server import nCyncServer
+    from cync_lan.structs import GlobalObject
+    from cync_lan.utils import parse_config, parse_groups
+
+    return CYNC_CONFIG_FILE_PATH, nCyncServer, GlobalObject, parse_config, parse_groups
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await configure_environment(
         hass, entry.data[CONF_ACCOUNT_USERNAME], entry.data[CONF_ACCOUNT_PASSWORD]
@@ -89,10 +113,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Imported after configure_environment() runs - cync_lan.const reads its
     # env-var-backed constants at import time, so environment must be set
     # first (see util.configure_environment's docstring).
-    from cync_lan.const import CYNC_CONFIG_FILE_PATH
-    from cync_lan.server import nCyncServer
-    from cync_lan.structs import GlobalObject
-    from cync_lan.utils import parse_config, parse_groups
+    (
+        CYNC_CONFIG_FILE_PATH,
+        nCyncServer,
+        GlobalObject,
+        parse_config,
+        parse_groups,
+    ) = await hass.async_add_executor_job(_import_cync_lan_symbols)
 
     cfg_file = Path(CYNC_CONFIG_FILE_PATH)
     if not cfg_file.exists():
