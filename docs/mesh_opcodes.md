@@ -17,7 +17,7 @@ Research credited to background agents run 2026-07-16 against
 `/Users/proxy-alt/Downloads/cync_decompiled/`, cross-referenced with this repo's own
 `src/cync_lan/devices.py`.
 
-## The `cmd_code` mystery
+## The `cmd_code` mystery — resolved, see "TCP relay envelope research" below
 
 Every *new* command researched below hit the same wall: the decompiled Android app's BTLE-mesh
 command classes (`com/gelighting/cbygekit/services/devices/command/*.java`) only ever expose a
@@ -39,20 +39,48 @@ directly to a device; cync-lan (and, presumably, the real WiFi-bridge firmware) 
 mesh commands over TCP, and `cmd_code` is very likely specific to *that* relay/tunneling layer,
 not the mesh command payload.
 
-**Not yet checked**: the decompiled app's own TCP/cloud-relay code path (as opposed to its BTLE
-GATT command-builder package, which is what's been searched so far) — if the phone app also
-relays commands to WiFi-bridge devices via a TCP tunnel (rather than always going BTLE-direct),
-there should be an equivalent outer-envelope builder somewhere outside
-`services/devices/command/`. Worth a dedicated search before concluding this needs a live packet
-capture.
+**Resolved** — see "TCP relay envelope research" immediately below: `cmd_code` is a payload-length
+field, not a semantic command code. The `set_brightness`/`set_temperature`/`set_rgb` overlap at
+`cmd_code = 0x10` isn't a "response category" as originally hypothesized here — it's simply that
+all three happen to share the same 8-byte payload length. Left the original hypothesis text out of
+this doc entirely rather than keeping a disproven guess around; see the section below for the
+actual mechanism and formula.
 
-**Working hypothesis** (untested): `cmd_code` may correlate with a broader "response-handling
-category" rather than the specific `op_code`. Evidence: `set_brightness`, `set_temperature`, and
-`set_rgb` all use `cmd_code = 0x10` despite different `op_code`s (`0xD2`/`0xE2` for sol-lamp
-variants, `0xF0` otherwise) — see the confirmed table below. If real, this would mean a new
-command's `cmd_code` might be predictable from which *existing* confirmed command it's most
-similar to in shape/response, rather than needing a fresh capture per opcode. Flagged here for a
-future agent/capture session to test, not relied on for anything below.
+## TCP relay envelope research
+
+Found the app's TCP-relay outer-envelope builder the earlier BTLE-only search missed: it lives
+under `com/gelighting/cbygekit/services/devices/xlink/` (the "xlink" IoT-relay SDK layer, not the
+`services/devices/command/` BTLE package). `XlinkDeviceManager.CommandDelegate` implements
+`XlinkCommandDelegate` (`XlinkCommandDelegate.java:49-61`, methods `f`/`g`/`h`) and is what every
+command class ultimately calls (`ControlDeviceGroupCommand.java:159`,
+`SetComboCommand.java:130`, etc., via `xlinkCommandDelegate.f((byte) op_code, commandBody,
+meshAddress, ...)` — the `byte` argument here is confirmed to literally be `op_code`: `-41`=`0xD7`
+for groups, `-16`=`0xF0` for `SetComboCommand`, matching the doc's confirmed table exactly).
+
+`CommandDelegate.f()` (`XlinkDeviceManager.java:1010-1026`) prepends a 7-byte routing prefix
+(3-byte msgId LE + 2 zero bytes + 2-byte destination `MeshAddress` LE) to `commandBody`
+(op_code byte + sub-opcode/payload — the same array already documented above), then calls
+`g()` → `Xlink.a(byte op_code, byte[] data, int msgId)` (`Xlink.java:23-70`), which builds:
+`[msgId(4B LE)][0xF8][op_code(1B)][length(2B LE)][data][checksum]`, then 0x7E-delimits and
+byte-stuffs it (0x7D/0x7E escaping) — an HDLC-style framing, **confirmed** distinct from
+cync-lan's own captured 5-byte-header wire format in `packet_structure.md` (no delimiters/
+escaping there). The `0xF8` marker is a real constant (`com.thingclips.sdk.bluetooth.pdqbbbp.
+dpdqppp = 248`), and this whole `io.xlink.wifi.sdk`/`xlink.legacy` pathway carries a `@Deprecated`
+tag on its writer thread (`TcpPacketWriter.java:13`) — so this is very likely the phone-app's
+older command channel, not necessarily byte-identical to the device-facing protocol cync-lan
+replicates. Flagging as **plausible**, not confirmed, for that reason.
+
+**The payoff**: the 2 bytes right after `op_code` in this header are not a semantic field at all —
+they're `WriteBuffer.d(length)` (`xlink/legacy/WriteBuffer.java:41-44`), the little-endian **byte
+length of `data`** (7-byte routing prefix + `commandBody`). Testing `cmd_code = 7 + len(commandBody)`
+against all three already-confirmed production values below reproduces them exactly:
+`set_power`: 7 + (1 op_code + 5B payload) = 13 = `0x0D` ✓. `set_brightness`/`set_rgb`: 7 + (1 + 8B)
+= 16 = `0x10` ✓. `set_lightshow`: 7 + (1 + 6B) = 14 = `0x0E` ✓. The doc's fixed trailing `0x00` byte
+is simply the length field's high byte, zero because no mesh payload is anywhere near 256 bytes.
+This gives a directly testable formula for every "blocked" command above (e.g. scenes `0xEF`:
+7+(1+4B `[0x11,0x02,sceneId,0x01]`)=`0x0C`; fine-brightness `0xE2`: 7+(1+7B)=`0x0F`) — cheap to
+verify against a live capture, much stronger than a blind guess. Apply this formula to every
+command flagged "blocked: `cmd_code`" below before assuming a capture is required.
 
 ## Confirmed, already shipping in production
 
@@ -68,7 +96,8 @@ work against real hardware).
 | `set_lightshow` (factory presets only) | `0xE2` | `0x0E` | `[0x11,0x02,0x07,0x01,byte1,byte2]` (6B) — `0x07` = light-run-mode sub-cmd, `0x01` = hardcoded `MODE_LIGHT_SHOW` | `devices.py:870` |
 
 Note the `cmd_code = 0x10` overlap across brightness/temperature/rgb despite three different
-`op_code`s — this is the evidence behind the "response-handling category" hypothesis above.
+`op_code`s — explained by the length-field formula in "TCP relay envelope research" above
+(all three share the same 8-byte payload length), not a semantic coincidence.
 
 ## Provenance of already-confirmed cmd_code values
 
@@ -252,16 +281,22 @@ needed here unless a newer app build adds types.
 
 ## Open threads for future research
 
-1. **Find the app's TCP/cloud-relay outer-envelope builder** (if one exists), as opposed to its
-   BTLE GATT command-builder package already searched — the most promising lead for actually
-   resolving `cmd_code` without a live packet capture.
-2. **Test the group-address-targeting hypothesis live** — cheapest, highest-value next step,
-   no capture needed (see Groups section above).
-3. **Test the `cmd_code`-correlates-with-response-category hypothesis** against a real capture,
-   using the brightness/temperature/rgb `cmd_code=0x10` overlap as the starting pattern.
+1. ~~Find the app's TCP/cloud-relay outer-envelope builder~~ — **done**, see "TCP relay envelope
+   research" above: `cmd_code = 7 + len(op_code_byte + full_payload)`, verified 3/3 against
+   already-confirmed production values. Not yet independently verified against a live capture
+   (the source class is `@Deprecated` in the app, flagged plausible not confirmed) — that's now
+   the highest-value remaining step, since it would validate every "blocked" command in this doc
+   at once rather than one at a time.
+2. **Wire up every "blocked: `cmd_code`" command above using the formula from step 1**, then
+   confirm against a live device (motion/ambient sensor tuning, indicator LED, scenes, fine/fade
+   brightness, groups-if-the-address-targeting-theory-doesn't-pan-out). This is now a
+   plug-in-the-numbers task, not a research task.
+3. **Test the group-address-targeting hypothesis live** — cheapest, highest-value next step,
+   no `cmd_code` involved at all either way (see Groups section above).
 4. A real packet capture (MITM of a device's TCP session, which cync-lan's DNS-redirect setup
-   already positions for) remains the only fully reliable path for the outer `cmd_code` byte for
-   any command that doesn't turn out to piggyback on an already-confirmed one.
+   already positions for) remains the way to fully confirm the length-field formula above, and
+   the only path for anything that formula's `@Deprecated`-flagged source class turns out not to
+   predict correctly.
 
 ## BTLE mesh provisioning & MeshInfo details
 
