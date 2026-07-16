@@ -44,12 +44,21 @@ PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.FAN,
     Platform.LIGHT,
-    # No Platform.NUMBER/SELECT: motion-sensor tuning and indicator-LED
-    # settings are exposed via services.py's experimental_* services
-    # instead - their cmd_code is predicted, not confirmed against a real
-    # capture (see docs/mesh_opcodes.md), so a service call (an explicit,
-    # deliberate action) is a more honest fit than an always-on entity.
+    Platform.NUMBER,
+    Platform.SELECT,
+    # Platform.SENSOR: read-only diagnostic entities only (motion-sensor
+    # native schedule slots, sensor.py) - not a general-purpose sensor
+    # platform yet.
+    Platform.SENSOR,
     Platform.SWITCH,
+    # Platform.NUMBER/SELECT above, plus the wifi-blink switch in
+    # switch.py, cover indicator-LED settings as real config entities -
+    # that command is confirmed working on real hardware (see
+    # docs/mesh_opcodes.md), so the original "cmd_code is predicted, a
+    # service is more honest than an entity" reasoning no longer applies to
+    # it specifically. Motion-sensor tuning stays service-only
+    # (services.py's experimental_set_motion_sensor_settings) since *that*
+    # cmd_code is still unconfirmed on real hardware.
 ]
 
 # How long to wait for the TCP listener to either bind or fail before

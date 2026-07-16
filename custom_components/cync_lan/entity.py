@@ -9,7 +9,12 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
-from .bridge import CyncLanBridge, signal_device_online, signal_entity_update
+from .bridge import (
+    CyncLanBridge,
+    signal_device_online,
+    signal_entity_update,
+    signal_indicator_led_update,
+)
 from .const import DOMAIN, MANUFACTURER
 
 if TYPE_CHECKING:
@@ -108,3 +113,34 @@ class CyncLanEntity(Entity):
 
     def _entity_state(self) -> Optional["object"]:
         return self._bridge.get_state(self._node.id, self._sub_id)
+
+
+class CyncLanIndicatorLedEntity(CyncLanEntity):
+    """Shared plumbing for the 4 indicator-LED entities (select x2, number,
+    switch) - they all read/write the same per-device IndicatorLedState
+    cache (see bridge.py), so all 4 must re-render whenever any one of them
+    changes, via a shared dispatcher signal distinct from the normal
+    per-unique_id one CyncLanEntity itself listens for.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_indicator_led_update(self._entry_id, self._node.id),
+                self._handle_update,
+            )
+        )
+
+    async def _restore_led_field(self, field: str, parser) -> None:
+        """Seed the shared cache from this entity's own last HA-known state
+        on startup (RestoreEntity) - `parser` maps the restored state string
+        back to the field's real value, returning None to skip restoring
+        (e.g. an unrecognized/stale option value)."""
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+        value = parser(last_state.state)
+        if value is not None:
+            self._bridge.seed_indicator_led_field(self._node, **{field: value})

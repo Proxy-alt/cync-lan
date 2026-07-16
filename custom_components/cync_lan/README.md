@@ -119,12 +119,20 @@ Supported entity types in this integration specifically:
 - **Binary sensor** - standalone motion/occupancy sensor accessories, and a
   secondary motion entity on light/switch models with a built-in occupancy
   sensor.
+- **Select, Number, Switch (config)** - indicator-LED mode, color,
+  brightness, and blink-on-WiFi-disconnect, one config entity per device.
+  Confirmed working on real hardware. These are write-only (the device
+  never reports its indicator LED back), so they're `assumed_state`
+  entities that restore their last-known value across HA restarts rather
+  than reading live device state.
+- **Sensor (diagnostic)** - one entity per native Cync motion-sensor
+  schedule slot (morning/daytime/evening/sleep), for devices that belong to
+  a Cync app group with schedules configured. Read-only.
 
 Not yet supported in this integration (present in some form in the
-underlying package, not yet exposed as HA entities here): per-device
-settings like motion sensor sensitivity/timeout, status LED ring
-color/brightness, and OTA firmware update triggering - see
-[Known limitations](#known-limitations).
+underlying package, not yet exposed as HA entities here): motion/ambient
+sensor sensitivity and timing tuning, and OTA firmware update triggering -
+see [Known limitations](#known-limitations).
 
 ## Use cases
 
@@ -202,11 +210,15 @@ automation:
   doesn't validate). It depends on that firmware behavior continuing to
   work; a firmware update from Cync could break it. See the parent
   project's README for more detail on this tradeoff.
-- **No dynamic per-device settings yet.** Motion sensor sensitivity/timeout,
-  status LED configuration, and similar device settings are not yet
-  exposed as HA entities - the protocol bytes for these were reverse
-  engineered but not yet confirmed against a live capture (see the parent
-  project's `devices.py` for the specific TODO).
+- **Motion/ambient sensor tuning isn't exposed as entities yet.** Sensitivity,
+  delay, and deactivation timing are only available via the
+  `cync_lan.experimental_set_motion_sensor_settings` service - the mesh
+  command's outer envelope byte is a predicted value, not yet confirmed
+  against a real hardware test (see the parent project's `devices.py` and
+  `docs/mesh_opcodes.md`). Indicator-LED settings had the same status until
+  this was fixed and confirmed working on real hardware - see
+  `docs/mesh_opcodes.md`'s "Indicator LED ring" section - and are now real
+  `select`/`number`/`switch` config entities.
 - **OTA firmware updates are entirely out of scope.** Firmware delivery
   happens over a direct BLE connection or the device's own internet
   connection (depending on device type), not through this integration's

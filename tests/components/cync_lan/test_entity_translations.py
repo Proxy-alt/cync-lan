@@ -86,3 +86,51 @@ async def test_secondary_motion_sensor_translated_name_resolves(hass, tmp_path):
         f"{[s.entity_id for s in hass.states.async_all('binary_sensor')]}"
     )
     assert state.attributes["friendly_name"] == "Hallway Switch Motion"
+
+
+async def test_grouped_schedule_sensor_placeholder_name_resolves(hass, tmp_path):
+    """translation_placeholders is a new mechanism for this codebase
+    (sensor.py's disambiguated case, when a device belongs to 2+ groups
+    with schedule data) - worth verifying against real loaded strings.json
+    content, not just asserting _attr_translation_placeholders is set (see
+    test_sensor.py's unit tests for that)."""
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={CONF_ACCOUNT_PASSWORD: "x", CONF_ACCOUNT_USERNAME: "user@example.com"},
+        options={"local_port": 23779, "export_refresh_interval": 0},
+    )
+    entry.add_to_hass(hass)
+
+    node = _fake_secondary_motion_node()
+    server = _mock_server({5: node})
+
+    daytime_slot = {
+        "slot_id": 1, "enabled": True, "mode": "simple",
+        "start_time": "06:00", "end_time": "08:59",
+        "brightness": 100, "cct": 50, "display_name": "Daytime",
+    }
+    groups = {
+        1: {"name": "Parent", "device_ids": [5], "sensor_schedules": {"daytime": daytime_slot}},
+        2: {"name": "Subgroup", "device_ids": [5], "sensor_schedules": {"daytime": daytime_slot}},
+    }
+
+    with patch("custom_components.cync_lan._BIND_POLL_INTERVAL", 0.001), patch(
+        "custom_components.cync_lan._BIND_TIMEOUT", 0.5
+    ), patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={5: node})), patch(
+        "cync_lan.utils.parse_groups", new=AsyncMock(return_value=groups)
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # unique_id is entry_id_dev_id_schedule_groupid_slotname - group_id=1 (Parent)
+    entity_id = f"sensor.hallway_switch_parent_daytime_schedule"
+    state = hass.states.get(entity_id)
+    assert state is not None, (
+        f"actual sensor entities: {[s.entity_id for s in hass.states.async_all('sensor')]}"
+    )
+    assert state.attributes["friendly_name"] == "Hallway Switch Parent Daytime schedule"

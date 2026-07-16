@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.cync_lan.bridge import CyncLanBridge
-from custom_components.cync_lan.switch import CyncLanSwitch, async_setup_entry
+from custom_components.cync_lan.switch import (
+    CyncLanIndicatorLedWifiBlinkSwitch,
+    CyncLanSwitch,
+    async_setup_entry,
+)
 
 
 def _fake_node(**overrides):
@@ -30,6 +34,9 @@ def _fake_node(**overrides):
 
 
 async def test_setup_entry_skips_unsupported_and_fan_controllers(hass):
+    """CyncLanSwitch is gated on is_switch/not-fan-controller, but every
+    supported node (regardless of is_switch) also gets an indicator-LED
+    wifi-blink config switch - see test_setup_entry_creates_wifi_blink_switch_for_every_supported_node."""
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
@@ -52,8 +59,32 @@ async def test_setup_entry_skips_unsupported_and_fan_controllers(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert len(added) == 1
-    assert added[0]._node is plain
+    primary_switches = [e for e in added if isinstance(e, CyncLanSwitch)]
+    assert len(primary_switches) == 1
+    assert primary_switches[0]._node is plain
+
+
+async def test_setup_entry_creates_wifi_blink_switch_for_every_supported_node(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    unsupported = _fake_node(metadata=None)
+    fan = _fake_node(is_fan_controller=True)
+    not_switch = _fake_node(is_switch=False)
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {1: unsupported, 2: fan, 3: not_switch}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    blink_switches = [e for e in added if isinstance(e, CyncLanIndicatorLedWifiBlinkSwitch)]
+    # unsupported (metadata=None) is skipped entirely; fan and not_switch
+    # both still get the config switch despite failing CyncLanSwitch's gate.
+    assert len(blink_switches) == 2
 
 
 async def test_setup_entry_creates_one_entity_per_sub_id(hass):
@@ -74,7 +105,11 @@ async def test_setup_entry_creates_one_entity_per_sub_id(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert {e.unique_id for e in added} == {"entry1_5_1", "entry1_5_2"}
+    primary_switches = {e.unique_id for e in added if isinstance(e, CyncLanSwitch)}
+    assert primary_switches == {"entry1_5_1", "entry1_5_2"}
+    blink_switches = [e for e in added if isinstance(e, CyncLanIndicatorLedWifiBlinkSwitch)]
+    assert len(blink_switches) == 1
+    assert blink_switches[0].unique_id == "entry1_5_indicator_led_wifi_blink"
 
 
 async def test_device_class_outlet_for_plug():
@@ -122,3 +157,66 @@ async def test_turn_on_passes_sub_id_for_multi_entity():
 
     await entity.async_turn_on()
     node.set_power.assert_awaited_with(1, sub_id=2)
+
+
+async def test_indicator_led_wifi_blink_reflects_bridge_cache(hass):
+    node = _fake_node()
+    node.set_indicator_led = AsyncMock()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanIndicatorLedWifiBlinkSwitch(bridge, "entry1", node)
+
+    assert entity.is_on is False  # cache default
+
+    await entity.async_turn_on()
+    assert entity.is_on is True
+    node.set_indicator_led.assert_awaited_once_with(
+        mode=2, color=0, brightness=100, wifi_disconnect_blink=True
+    )
+
+    await entity.async_turn_off()
+    assert entity.is_on is False
+
+
+async def test_indicator_led_wifi_blink_restores_without_commanding_hardware(hass):
+    node = _fake_node()
+    node.set_indicator_led = AsyncMock()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanIndicatorLedWifiBlinkSwitch(bridge, "entry1", node)
+
+    last_state = MagicMock(state="on")
+    with patch.object(entity, "async_get_last_state", AsyncMock(return_value=last_state)):
+        await entity._restore_led_field(
+            "wifi_disconnect_blink",
+            lambda s: True if s == "on" else False if s == "off" else None,
+        )
+
+    assert entity.is_on is True
+    node.set_indicator_led.assert_not_awaited()
+
+
+async def test_indicator_led_wifi_blink_full_restore_lifecycle(hass):
+    """Exercises the real async_added_to_hass path (including its inline
+    on/off/unrecognized state parser), not just _restore_led_field called
+    directly with a test-supplied lambda."""
+    node = _fake_node()
+    node.set_indicator_led = AsyncMock()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanIndicatorLedWifiBlinkSwitch(bridge, "entry1", node)
+    entity.hass = hass
+    entity.entity_id = "switch.test"
+
+    last_state = MagicMock(state="on")
+    with patch.object(entity, "async_get_last_state", AsyncMock(return_value=last_state)):
+        await entity.async_added_to_hass()
+    assert entity.is_on is True
+
+    last_state = MagicMock(state="off")
+    with patch.object(entity, "async_get_last_state", AsyncMock(return_value=last_state)):
+        await entity.async_added_to_hass()
+    assert entity.is_on is False
+
+    last_state = MagicMock(state="unavailable")
+    with patch.object(entity, "async_get_last_state", AsyncMock(return_value=last_state)):
+        await entity.async_added_to_hass()
+    assert entity.is_on is False  # unrecognized - cache unchanged from prior "off"
+    node.set_indicator_led.assert_not_awaited()

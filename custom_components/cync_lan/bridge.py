@@ -49,6 +49,34 @@ def signal_device_online(dev_id: int) -> str:
     return f"{DOMAIN}_online_{dev_id}"
 
 
+def signal_indicator_led_update(entry_id: str, dev_id: int) -> str:
+    """Dispatcher signal shared by all 4 indicator-LED entities for one
+    device - they all read the same merged IndicatorLedState, so all 4 must
+    re-render whenever any one of them changes, not just the one written to."""
+    return f"{DOMAIN}_indicator_led_{entry_id}_{dev_id}"
+
+
+# CyncDevice.set_indicator_led()'s int enums, confirmed working on real
+# hardware this session - see src/cync_lan/devices.py and
+# docs/mesh_opcodes.md's "Indicator LED ring" section.
+LED_MODE_TO_INT = {"always_on": 0, "always_off": 1, "normal": 2}
+LED_COLOR_TO_INT = {"white": 0, "red": 1, "green": 2, "blue": 3}
+
+
+@dataclass
+class IndicatorLedState:
+    """Assumed state for a device's indicator LED - devices never report
+    this back over the mesh, so these defaults are reasonable-looking
+    placeholders, not confirmed factory defaults. Real values only exist
+    once a user sets one of the 4 entities (or a restart restores the last
+    HA-known value via RestoreEntity/RestoreNumber)."""
+
+    mode: str = "normal"
+    color: str = "white"
+    brightness: int = 100
+    wifi_disconnect_blink: bool = False
+
+
 @dataclass
 class BridgeEntityState:
     """Latest known state for one (dev_id, sub_id) entity, plus availability."""
@@ -58,6 +86,7 @@ class BridgeEntityState:
     motion: Optional[bool] = None
     app_mesh_active: bool = False
     app_wifi_active: bool = False
+    indicator_led: IndicatorLedState = field(default_factory=IndicatorLedState)
 
 
 class CyncLanBridge:
@@ -122,6 +151,39 @@ class CyncLanBridge:
 
     def get_motion(self, dev_id: int) -> Optional[bool]:
         return self._get(dev_id).motion
+
+    def get_indicator_led(self, dev_id: int) -> IndicatorLedState:
+        return self._get(dev_id).indicator_led
+
+    async def set_indicator_led_field(self, node: "CyncDevice", **fields) -> None:
+        """Merge the given field(s) into the cached IndicatorLedState and
+        send the FULL merged state live - CyncDevice.set_indicator_led()
+        sends mode/color/brightness/wifi_disconnect_blink as one atomic
+        mesh command, so changing just one HA entity must still resend the
+        other 3's last-known values, not just the field that changed."""
+        bucket = self._get(node.id)
+        for key, value in fields.items():
+            setattr(bucket.indicator_led, key, value)
+        state = bucket.indicator_led
+        await node.set_indicator_led(
+            mode=LED_MODE_TO_INT[state.mode],
+            color=LED_COLOR_TO_INT[state.color],
+            brightness=state.brightness,
+            wifi_disconnect_blink=state.wifi_disconnect_blink,
+        )
+        async_dispatcher_send(self.hass, signal_indicator_led_update(self.entry_id, node.id))
+
+    def seed_indicator_led_field(self, node: "CyncDevice", **fields) -> None:
+        """Restore-on-startup path: update the cache and notify sibling
+        entities WITHOUT sending a live command. Deliberately a separate,
+        non-async method rather than a send_command=True/False flag on
+        set_indicator_led_field - makes it structurally impossible for a
+        restore call site to accidentally re-issue a live mesh command to
+        every device on every HA restart just by getting a default wrong."""
+        bucket = self._get(node.id)
+        for key, value in fields.items():
+            setattr(bucket.indicator_led, key, value)
+        async_dispatcher_send(self.hass, signal_indicator_led_update(self.entry_id, node.id))
 
     def is_online(self, dev_id: int) -> bool:
         return self._get(dev_id).online

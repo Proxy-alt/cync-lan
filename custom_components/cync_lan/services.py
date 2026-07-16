@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
+from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,11 +36,10 @@ ATTR_DELAY_SECONDS = "delay_seconds"
 ATTR_DEACTIVATION_SECONDS = "deactivation_seconds"
 ATTR_SCENE_ID = "scene_id"
 
-# Confirmed enums - see docs/mesh_opcodes.md (LEDIndicatorMode.java,
-# LEDIndicatorColor.java) and devices.py's _build_motion_sensor_settings_payload
-# (MotionSensorSensitivity.java).
-_LED_MODE = {"always_on": 0, "always_off": 1, "normal": 2}
-_LED_COLOR = {"white": 0, "red": 1, "green": 2, "blue": 3}
+# Confirmed enums - see docs/mesh_opcodes.md
+# (MotionSensorSensitivity.java). Indicator LED's mode/color enums live in
+# bridge.py (LED_MODE_TO_INT/LED_COLOR_TO_INT) - shared with select.py so a
+# service call and an entity write converge on the same values/cache.
 _SENSOR_TYPE = {"motion": 1, "ambient_light": 2}
 _SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
 
@@ -102,10 +102,16 @@ def _resolve_bridge_entry(hass: HomeAssistant, device_id: str):
 
 
 async def _handle_set_indicator_led(hass: HomeAssistant, call: ServiceCall) -> None:
-    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
-    await node.set_indicator_led(
-        mode=_LED_MODE[call.data[ATTR_MODE]],
-        color=_LED_COLOR[call.data[ATTR_COLOR]],
+    entry, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    # Routed through the same shared cache select.py/number.py/switch.py's
+    # 4 indicator-LED entities use (bridge.py's set_indicator_led_field) -
+    # not node.set_indicator_led() directly - so a service call and an
+    # entity write always converge on identical cached state instead of
+    # silently diverging (see bridge.py's IndicatorLedState docstring).
+    await entry.runtime_data.bridge.set_indicator_led_field(
+        node,
+        mode=call.data[ATTR_MODE],
+        color=call.data[ATTR_COLOR],
         brightness=call.data[ATTR_BRIGHTNESS],
         wifi_disconnect_blink=call.data.get(ATTR_WIFI_DISCONNECT_BLINK, False),
     )
@@ -134,8 +140,8 @@ _SERVICE_SCHEMAS = {
     SERVICE_SET_INDICATOR_LED: vol.Schema(
         {
             vol.Required(ATTR_DEVICE_ID): cv.string,
-            vol.Required(ATTR_MODE): vol.In(_LED_MODE),
-            vol.Required(ATTR_COLOR): vol.In(_LED_COLOR),
+            vol.Required(ATTR_MODE): vol.In(LED_MODE_TO_INT),
+            vol.Required(ATTR_COLOR): vol.In(LED_COLOR_TO_INT),
             vol.Required(ATTR_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
             vol.Optional(ATTR_WIFI_DISCONNECT_BLINK, default=False): cv.boolean,
         }

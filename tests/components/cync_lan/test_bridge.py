@@ -5,7 +5,7 @@ the dataclass/dispatcher behavior rather than a full HA entity platform."""
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -397,6 +397,90 @@ async def test_mark_app_wifi_active_auto_expires(bridge, hass):
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
     await hass.async_block_till_done()
     assert bridge._get(-1).app_wifi_active is False
+
+
+async def test_get_indicator_led_returns_defaults_before_anything_is_set(bridge):
+    state = bridge.get_indicator_led(5)
+    assert state.mode == "normal"
+    assert state.color == "white"
+    assert state.brightness == 100
+    assert state.wifi_disconnect_blink is False
+
+
+async def test_set_indicator_led_field_merges_and_resends_full_state(bridge):
+    """The single most important regression test for this feature:
+    CyncDevice.set_indicator_led() sends mode/color/brightness/
+    wifi_disconnect_blink as one atomic mesh command, so changing just one
+    field via one HA entity must still resend the other 3's last-known
+    (or default) values, not just the field that changed."""
+    node = MagicMock(id=5)
+    node.set_indicator_led = AsyncMock()
+
+    await bridge.set_indicator_led_field(node, brightness=42)
+
+    node.set_indicator_led.assert_awaited_once_with(
+        mode=2,  # "normal" default
+        color=0,  # "white" default
+        brightness=42,
+        wifi_disconnect_blink=False,
+    )
+    assert bridge.get_indicator_led(5).brightness == 42
+
+    # A second, independent field change must resend the FIRST change too,
+    # not reset it back to the default.
+    await bridge.set_indicator_led_field(node, color="red")
+    node.set_indicator_led.assert_awaited_with(
+        mode=2, color=1, brightness=42, wifi_disconnect_blink=False
+    )
+
+
+async def test_set_indicator_led_field_dispatches_shared_signal(bridge, hass):
+    from custom_components.cync_lan.bridge import signal_indicator_led_update
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    calls = []
+    async_dispatcher_connect(
+        hass, signal_indicator_led_update("test_entry", 5), lambda: calls.append(True)
+    )
+
+    node = MagicMock(id=5)
+    node.set_indicator_led = AsyncMock()
+    await bridge.set_indicator_led_field(node, mode="always_on")
+    await hass.async_block_till_done()
+
+    assert calls == [True]
+
+
+async def test_seed_indicator_led_field_updates_cache_without_commanding_hardware(bridge):
+    """Restore-on-startup path: must update the cache and notify sibling
+    entities WITHOUT ever calling node.set_indicator_led - otherwise every
+    HA restart would silently re-issue live mesh commands (including
+    toggling wifi_disconnect_blink) to every device just from
+    RestoreEntity/RestoreNumber seeding, even on hardware that never
+    actually changed."""
+    node = MagicMock(id=5)
+    node.set_indicator_led = AsyncMock()
+
+    bridge.seed_indicator_led_field(node, brightness=77)
+
+    assert bridge.get_indicator_led(5).brightness == 77
+    node.set_indicator_led.assert_not_awaited()
+
+
+async def test_seed_indicator_led_field_dispatches_shared_signal(bridge, hass):
+    from custom_components.cync_lan.bridge import signal_indicator_led_update
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    calls = []
+    async_dispatcher_connect(
+        hass, signal_indicator_led_update("test_entry", 5), lambda: calls.append(True)
+    )
+
+    node = MagicMock(id=5)
+    bridge.seed_indicator_led_field(node, mode="always_off")
+    await hass.async_block_till_done()
+
+    assert calls == [True]
 
 
 async def test_mark_app_wifi_active_independent_expiry_from_mesh_active(bridge, hass):

@@ -60,6 +60,39 @@ async def test_is_on_and_percentage_from_bridge(hass):
     assert entity.percentage == 75
 
 
+async def test_preset_mode_reflects_matching_percentage(hass):
+    """Regression test: preset_mode previously had no property at all
+    (always read None), so the preset dropdown never showed a selection
+    even when percentage was at exactly one of the 4 preset values."""
+    from cync_lan.structs import EntityState
+
+    node = _fake_node()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanFan(bridge, "entry1", node)
+
+    for pct, preset in ((25, "low"), (50, "medium"), (75, "high"), (100, "max")):
+        await bridge.parse_entity_state(EntityState(name="x", dev_id=5, brightness=pct))
+        assert entity.preset_mode == preset
+
+
+async def test_preset_mode_none_when_percentage_does_not_match_a_preset(hass):
+    from cync_lan.structs import EntityState
+
+    node = _fake_node()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanFan(bridge, "entry1", node)
+
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, brightness=60))
+    assert entity.preset_mode is None
+
+
+def test_preset_mode_none_when_no_state_yet():
+    node = _fake_node()
+    bridge = MagicMock()
+    entity = CyncLanFan(bridge, "entry1", node)
+    assert entity.preset_mode is None
+
+
 async def test_turn_on_with_percentage_calls_set_fan_percentage():
     node = _fake_node()
     bridge = MagicMock()

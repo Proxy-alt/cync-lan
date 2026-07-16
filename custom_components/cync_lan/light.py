@@ -245,6 +245,31 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         return bool(state.power) if state else None
 
     @property
+    def color_mode(self) -> ColorMode | None:
+        """Live, not the static value __init__ computed once via
+        next(iter(modes)) - for a dual-capable device (RGB+COLOR_TEMP both
+        supported) that static value was fixed at construction time by
+        Python's set iteration order (hash-randomization-dependent for a
+        StrEnum), permanently rendering the wrong control widget for an
+        unpredictable subset of devices regardless of what the bulb is
+        actually doing. Mirrors src/cync_lan/mqtt_client.py's own
+        already-shipping live color_mode convention exactly: the device's
+        own status packets report temperature=254 as a sentinel meaning
+        "currently in RGB mode" (see MQTTClient.update_rgb/update_temperature
+        and its pub_entity_state color_mode branch), with any 0-100 value
+        meaning "currently in CCT mode" instead.
+        """
+        modes = self._attr_supported_color_modes
+        if ColorMode.RGB in modes and ColorMode.COLOR_TEMP in modes:
+            state = self._entity_state()
+            if state is not None:
+                if state.temperature == 254:
+                    return ColorMode.RGB
+                if 0 <= state.temperature <= 100:
+                    return ColorMode.COLOR_TEMP
+        return self._attr_color_mode  # single-mode device, or no state yet
+
+    @property
     def brightness(self) -> int | None:
         state = self._entity_state()
         if not state:

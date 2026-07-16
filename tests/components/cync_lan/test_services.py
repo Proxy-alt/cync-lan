@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import DOMAIN
 from custom_components.cync_lan.services import (
     SERVICE_EXECUTE_SCENE,
@@ -50,7 +51,8 @@ def _make_entry(hass, dev_ids: list[int] = ()):
         node.set_indicator_led = AsyncMock()
         node.set_motion_sensor_settings = AsyncMock()
     entry.runtime_data = SimpleNamespace(
-        ncync_server=SimpleNamespace(node_devices=nodes)
+        ncync_server=SimpleNamespace(node_devices=nodes),
+        bridge=CyncLanBridge(hass, entry.entry_id),
     )
     return entry
 
@@ -111,6 +113,36 @@ async def test_set_indicator_led_calls_node_method(hass):
     node.set_indicator_led.assert_awaited_once_with(
         mode=2, color=1, brightness=80, wifi_disconnect_blink=True
     )
+    async_unload_services(hass)
+
+
+async def test_set_indicator_led_updates_shared_bridge_cache(hass):
+    """A service call and the 4 indicator-LED entities (select.py/number.py/
+    switch.py) must converge on the same cached state, not diverge - proves
+    _handle_set_indicator_led routes through bridge.set_indicator_led_field
+    rather than calling node.set_indicator_led() directly."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_INDICATOR_LED,
+        {
+            "device_id": device.id,
+            "mode": "always_off",
+            "color": "green",
+            "brightness": 33,
+            "wifi_disconnect_blink": True,
+        },
+        blocking=True,
+    )
+
+    cached = entry.runtime_data.bridge.get_indicator_led(5)
+    assert cached.mode == "always_off"
+    assert cached.color == "green"
+    assert cached.brightness == 33
+    assert cached.wifi_disconnect_blink is True
     async_unload_services(hass)
 
 

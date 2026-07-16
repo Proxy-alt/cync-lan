@@ -335,6 +335,15 @@ correction (see CORRECTION above) and **the user confirmed it works**. Both `op_
 break any automation already built against it - but its description text now says "confirmed
 working" instead of "predicted, not confirmed").
 
+**UPDATE, later this session**: also exposed as 4 real HA config entities - `select.py`'s
+`CyncLanIndicatorLedModeSelect`/`CyncLanIndicatorLedColorSelect`, `number.py`'s
+`CyncLanIndicatorLedBrightness`, `switch.py`'s `CyncLanIndicatorLedWifiBlinkSwitch` - rather than
+only the raw service, following an audit of Home Assistant's own docs on when a service call should
+be a real entity instead (`assumed_state`/`EntityCategory.CONFIG` are HA's documented pattern for
+exactly this "can command, can't read back" situation). Both surfaces converge on one shared
+per-device cache in `bridge.py` (`IndicatorLedState`/`set_indicator_led_field`) so a service call
+and an entity write can never diverge. The service stays for backward compatibility.
+
 This confirmation is also indirect evidence *for* the sibling commands below (motion sensor
 settings, scenes): it proves the `0x8E` op, the `repeat_op_code=False` envelope shape, and the
 length-formula `cmd_code` prediction methodology all hold for at least one real command in this

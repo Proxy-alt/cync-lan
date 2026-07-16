@@ -15,6 +15,8 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 _PRESET_MODES = ["low", "medium", "high", "max"]
+# Mirrors src/cync_lan/structs.py's FanSpeed.to_perc() exactly.
+_PRESET_PERCENTAGES = {"low": 25, "medium": 50, "high": 75, "max": 100}
 
 
 async def async_setup_entry(
@@ -54,6 +56,18 @@ class CyncLanFan(CyncLanEntity, FanEntity):
     def percentage(self) -> int | None:
         state = self._entity_state()
         return state.brightness if state else None
+
+    @property
+    def preset_mode(self) -> str | None:
+        """Live, reflecting the current percentage back to the preset
+        dropdown - previously always None (no property existed at all),
+        so the UI never showed a selection even when the fan was at
+        exactly one of the 4 preset percentages."""
+        percentage = self.percentage
+        for preset, pct in _PRESET_PERCENTAGES.items():
+            if percentage == pct:
+                return preset
+        return None
 
     async def async_turn_on(
         self, percentage: int | None = None, preset_mode: str | None = None, **kwargs

@@ -257,6 +257,46 @@ async def test_turn_on_with_color_temp_kelvin():
     node.set_temperature.assert_awaited_with(4000)
 
 
+async def test_color_mode_static_when_only_one_mode_supported(hass):
+    """Single-mode devices (brightness-only, or only one of RGB/CCT) have
+    no live disambiguation to do - color_mode just returns the static
+    value computed at construction, regardless of state.temperature."""
+    from cync_lan.structs import EntityState
+
+    node = _fake_node(supports_temperature=True, supports_rgb=False)
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanLight(bridge, "entry1", node)
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=254))
+    assert entity.color_mode == "color_temp"
+
+
+async def test_color_mode_dual_capable_follows_live_temperature_sentinel(hass):
+    """Regression test: previously color_mode was set once at construction
+    via next(iter(modes)) and never updated - for a dual RGB+COLOR_TEMP
+    device this could permanently lock the wrong control widget in the UI,
+    unrelated to what the bulb is actually doing. Mirrors
+    src/cync_lan/mqtt_client.py's own established convention: temperature
+    == 254 means the device is currently in RGB mode, 0-100 means CCT."""
+    from cync_lan.structs import EntityState
+
+    node = _fake_node(supports_temperature=True, supports_rgb=True)
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanLight(bridge, "entry1", node)
+
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=254))
+    assert entity.color_mode == "rgb"
+
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=30))
+    assert entity.color_mode == "color_temp"
+
+
+async def test_color_mode_dual_capable_falls_back_to_static_before_any_state(hass):
+    node = _fake_node(supports_temperature=True, supports_rgb=True)
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanLight(bridge, "entry1", node)
+    assert entity.color_mode == entity._attr_color_mode
+
+
 async def test_turn_on_with_effect():
     node = _fake_node(supports_rgb=True)
     bridge = MagicMock()

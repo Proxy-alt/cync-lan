@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (97 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (222 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,13 +9,16 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 3 experimental_* services (indicator LED, motion/ambient
-      sensor tuning, scene activation - exposed as services rather than
-      entities since their cmd_code is predicted, not confirmed, and a
-      service call is a more honest fit than an always-on entity) are
-      registered idempotently in async_setup_entry (hass.services.has_service
-      guard) and removed in async_unload_entry only once no Cync LAN entry
-      remains loaded. Tested in test_services.py.
+      services.py's 3 experimental_* services are registered idempotently in
+      async_setup_entry (hass.services.has_service guard) and removed in
+      async_unload_entry only once no Cync LAN entry remains loaded. Tested
+      in test_services.py. Motion/ambient sensor tuning and scene activation
+      stay service-only (cmd_code still predicted, not confirmed - a service
+      call is a more honest fit than an always-on entity). Indicator LED's
+      service is kept for backward compatibility but is no longer the
+      primary surface - it's confirmed working on real hardware now, so
+      it's also exposed as 4 real entities (number.py/select.py/switch.py),
+      both routed through the same bridge.py cache so they can't diverge.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -170,9 +173,9 @@ rules:
     status: done
     comment: >-
       PARALLEL_UPDATES = 0 declared and explicitly justified in each
-      platform module (light/switch/fan/binary_sensor) - the protocol layer
-      serializes its own commands per bridge connection, so entities don't
-      need HA-side throttling.
+      platform module (light/switch/fan/binary_sensor/number/select/sensor) -
+      the protocol layer serializes its own commands per bridge connection,
+      so entities don't need HA-side throttling.
   reauthentication-flow:
     status: done
     comment: >-
@@ -181,12 +184,12 @@ rules:
   test-coverage:
     status: done
     comment: >-
-      97% overall line coverage on custom_components/cync_lan (645
-      statements, 19 missed), measured with pytest-cov against a real 90-
-      test run. bridge.py and light.py both at 100%. Remaining gaps are in
-      __init__.py's rarely-hit background-task error branches,
-      config_flow.py's exception logging branches, and binary_sensor.py's
-      setup-entry edge cases.
+      98% overall line coverage on custom_components/cync_lan (1197
+      statements, 27 missed), measured with pytest-cov against a real 222-
+      test run. number.py/select.py/sensor.py/switch.py/entity.py/util.py
+      all at 100%. Remaining gaps are in __init__.py's rarely-hit
+      background-task error branches, config_flow.py's exception logging
+      branches, and binary_sensor.py's setup-entry edge cases.
 
   # -------------------------------- Gold ---------------------------------
   devices:
@@ -264,7 +267,13 @@ rules:
       attempted here.
   entity-category:
     status: done
-    comment: CyncLanAppMeshActiveSensor sets entity_category = EntityCategory.DIAGNOSTIC. Tested.
+    comment: >-
+      CyncLanAppMeshActiveSensor sets entity_category = EntityCategory.
+      DIAGNOSTIC. The 4 indicator-LED entities (select.py's mode/color,
+      number.py's brightness, switch.py's wifi_disconnect_blink) are
+      EntityCategory.CONFIG - real hardware-confirmed device settings, not
+      primary function. sensor.py's motion-schedule-slot sensors are
+      EntityCategory.DIAGNOSTIC - read-only device facts. Tested.
   entity-device-class:
     status: done
     comment: SwitchDeviceClass.OUTLET/SWITCH in switch.py; motion/occupancy device_class in binary_sensor.py. Tested.
@@ -274,12 +283,15 @@ rules:
   entity-translations:
     status: done
     comment: >-
-      Both binary_sensor entities (motion, app_mesh_active) resolve their
-      name through translation_key + strings.json rather than a hardcoded
-      literal - confirmed end-to-end in test_entity_translations.py, which
-      runs a real config entry through full setup and asserts the resolved
-      friendly_name in hass.states (not just that the translation_key
-      attribute is set).
+      binary_sensor's motion/app_mesh_active, select.py's mode/color
+      (including per-option state translations), number.py's brightness,
+      switch.py's wifi_disconnect_blink, and sensor.py's schedule-slot
+      sensors (including the translation_placeholders-based disambiguated
+      name for a device in 2+ groups) all resolve through translation_key +
+      strings.json rather than a hardcoded literal - confirmed end-to-end in
+      test_entity_translations.py, which runs a real config entry through
+      full setup and asserts the resolved friendly_name in hass.states (not
+      just that the translation_key attribute is set).
   exception-translations:
     status: done
     comment: >-

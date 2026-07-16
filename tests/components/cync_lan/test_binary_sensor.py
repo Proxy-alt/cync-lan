@@ -93,68 +93,6 @@ async def test_is_on_reads_bridge_motion_state(hass):
     assert entity.is_on is True
 
 
-async def test_extra_state_attributes_none_when_no_schedules(hass):
-    node = _fake_node()
-    bridge = CyncLanBridge(hass, "entry1")
-    entity = CyncLanMotionSensor(bridge, "entry1", node, is_secondary=False)
-    assert entity.extra_state_attributes is None
-
-    entity = CyncLanMotionSensor(bridge, "entry1", node, is_secondary=False, group_schedules=[])
-    assert entity.extra_state_attributes is None
-
-
-async def test_extra_state_attributes_exposes_group_schedules(hass):
-    node = _fake_node()
-    bridge = CyncLanBridge(hass, "entry1")
-    schedules = [
-        {
-            "group_id": 32770,
-            "group_name": "Utility Room",
-            "sensor_schedules": {"daytime": {"slot_id": 1, "brightness": 100}},
-        }
-    ]
-    entity = CyncLanMotionSensor(
-        bridge, "entry1", node, is_secondary=False, group_schedules=schedules
-    )
-    assert entity.extra_state_attributes == {"cync_sensor_schedules": schedules}
-
-
-async def test_setup_entry_wires_group_schedules_into_motion_sensor(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    node = _fake_node()
-    g.ncync_server = MagicMock()
-    g.ncync_server.node_devices = {1: node}
-
-    entry = MagicMock()
-    entry.entry_id = "entry1"
-    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
-    entry.runtime_data.groups = {
-        32770: {
-            "name": "Utility Room",
-            "device_ids": [5],
-            "is_subgroup": False,
-            "sensor_schedules": {"daytime": {"slot_id": 1, "brightness": 100}},
-        }
-    }
-
-    added = []
-    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
-
-    motion_entities = [e for e in added if isinstance(e, CyncLanMotionSensor)]
-    assert len(motion_entities) == 1
-    assert motion_entities[0].extra_state_attributes == {
-        "cync_sensor_schedules": [
-            {
-                "group_id": 32770,
-                "group_name": "Utility Room",
-                "sensor_schedules": {"daytime": {"slot_id": 1, "brightness": 100}},
-            }
-        ]
-    }
-
-
 async def test_app_mesh_active_sensor_diagnostic_and_disabled_by_default(hass):
     bridge = CyncLanBridge(hass, "entry1")
     entity = CyncLanAppMeshActiveSensor(bridge, "entry1")

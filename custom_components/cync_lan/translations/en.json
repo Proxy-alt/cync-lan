@@ -62,6 +62,43 @@
       "app_wifi_active": {
         "name": "Cync App Active (WiFi)"
       }
+    },
+    "select": {
+      "indicator_led_mode": {
+        "name": "Indicator LED mode",
+        "state": {
+          "always_on": "Always on",
+          "always_off": "Always off",
+          "normal": "Normal"
+        }
+      },
+      "indicator_led_color": {
+        "name": "Indicator LED color",
+        "state": {
+          "white": "White",
+          "red": "Red",
+          "green": "Green",
+          "blue": "Blue"
+        }
+      }
+    },
+    "number": {
+      "indicator_led_brightness": {
+        "name": "Indicator LED brightness"
+      }
+    },
+    "switch": {
+      "indicator_led_wifi_disconnect_blink": {
+        "name": "Indicator LED blink on WiFi disconnect"
+      }
+    },
+    "sensor": {
+      "sensor_schedule_slot": {
+        "name": "{slot} schedule"
+      },
+      "sensor_schedule_slot_grouped": {
+        "name": "{group_name} {slot} schedule"
+      }
     }
   },
   "exceptions": {
