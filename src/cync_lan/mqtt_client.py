@@ -162,6 +162,7 @@ class MQTTClient:
         self.topic = topic
         self.ha_topic = ha_topic
         self._app_mesh_active_expiry_task: Optional[asyncio.Task] = None
+        self._app_wifi_active_expiry_task: Optional[asyncio.Task] = None
 
     async def start(self):
         itr = 0
@@ -1414,6 +1415,32 @@ class MQTTClient:
 
         self._app_mesh_active_expiry_task = asyncio.create_task(
             _expire(), name="app_mesh_active_expiry"
+        )
+
+    async def mark_app_wifi_active(self, timeout: float = 60.0):
+        """Flag the "Cync App Active (WiFi)" occupancy entity ON, resetting the auto-off timer.
+
+        Call this whenever the app's TCP login handshake (packet header
+        0x10/0x13, see PacketBuilder.APP_REQUEST_HEADERS) is seen - unlike
+        mark_app_mesh_active, this only means the app is running and reached
+        this server over WiFi, not that it's physically near a BTLE-mesh
+        device. Kept as a separate entity/topic for that reason.
+        """
+        await self.publish(f"{self.topic}/status/bridge/app_wifi_active", b"ON")
+        if self._app_wifi_active_expiry_task is not None:
+            self._app_wifi_active_expiry_task.cancel()
+
+        async def _expire():
+            try:
+                await asyncio.sleep(timeout)
+                await self.publish(
+                    f"{self.topic}/status/bridge/app_wifi_active", b"OFF"
+                )
+            except asyncio.CancelledError:
+                pass
+
+        self._app_wifi_active_expiry_task = asyncio.create_task(
+            _expire(), name="app_wifi_active_expiry"
         )
 
     async def create_bridge_device(self) -> bool:

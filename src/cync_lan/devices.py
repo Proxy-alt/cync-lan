@@ -1619,6 +1619,13 @@ class CyncTCPSession:
                     f"{lp} Device has been identified as the Cync mobile app, enabling proxying to the Cync cloud for all App connections..."
                 )
                 self.is_app = True
+                # This fires for any recognized app login version (0x10, 0x13,
+                # ...), unlike mark_app_mesh_active which only fires on BTLE
+                # mesh proximity - the app being on WiFi at all doesn't mean
+                # it's physically near a device, so this is a distinct,
+                # broader "app is active" signal (see g.mqtt_client's
+                # mark_app_wifi_active).
+                await g.mqtt_client.mark_app_wifi_active()
                 await self.blackhole("is app", True)
                 # g.ncync_server.app_tcp_connections[self.ip_address] = g.ncync_server.tcp_connections.pop(self.ip_address)
                 # # update app / node / tcp conn stats
