@@ -43,6 +43,62 @@ from cync_lan.metadata.model_info import device_type_map, DeviceClassification
 from cync_lan.structs import EntityState, FanSpeed, GlobalObject
 from cync_lan.utils import send_sigterm
 
+# ---------------------------------------------------------------------------
+# Navigation index (quick lookups only - see each method's own docstring /
+# inline comments for behavioral detail). Line numbers are current as of
+# this edit; re-grep the method name if the file has since changed.
+#
+# ParseResult (dataclass: matched/handled/reason for one parsed MQTT msg) L110
+#
+# class MQTTClient                                                       L116
+#   singleton plumbing: __new__ / __init__                       L123 / L128
+#   Connect / receive loop:
+#     start() - connect/subscribe/receive loop, seeds device state  L167
+#     connect() - broker connect + birth msg + HASS discovery       L249
+#     start_receiver_task() - async iterate self.client.messages    L584
+#     stop() - mark devices offline, disconnect, cancel tasks       L590
+#   Incoming "<topic>/set/..." message parsing/dispatch:
+#     _parse_device_target (device_uuid -> (CyncDevice, sub_id))    L290
+#     _handle_bridge_extra (bridge/app_logging/restart/export/otp)  L314
+#     _handle_mitm_extra (bridge/enable-disable MITM on a device)   L350
+#     _queue_fan_extra (fan percentage/preset/raw_perc)             L371
+#     _queue_json_payload (JSON state/brightness/color_temp/color)  L428
+#     _queue_non_json_payload (bare "on"/"off" payload)              L464
+#     _handle_cync_set (top-level set/ dispatcher)                   L482
+#     _handle_hass_status (HASS birth/will messages)                 L522
+#     async_parse_mqtt_msg (entry point: topic routing)               L553
+#   App-presence tracking (occupancy entities driven by the app's own TCP
+#   traffic, not a device):
+#     report_unknown_device_id (no-op here; see bridge.py for the real
+#       implementation that can trigger a re-export)                  L630
+#   Device state -> MQTT publish helpers:
+#     pub_online (availability topic per device/child)                L642
+#     update_entity_power / update_brightness                  L680 / L696
+#     update_fan_speed / update_fan_percent                    L712 / L741
+#     update_temperature / update_rgb                          L756 / L779
+#     pub_entity_state (low-level single-topic publish)              L810
+#     publish_motion_state (binary_sensor motion/occupancy trigger)  L848
+#     parse_entity_state (device status snapshot -> mqtt payload)    L871
+#   Birth/Will:
+#     send_birth_msg / send_will_msg                           L966 / L989
+#   HASS MQTT discovery (device/entity registry configs):
+#     _publish_motion_sensor_entity (read-only binary_sensor)       L1011
+#     _publish_entity (light/switch/fan discovery config)           L1061
+#     _get_device_registry (device registry dict for a node)        L1173
+#     homeassistant_discovery (iterate nodes, publish everything)   L1205
+#     add_mitm_button / remove_mitm_button              L1357 / L1385
+#     mark_app_mesh_active (occupancy entity + auto-off timer)      L1395
+#     mark_app_wifi_active (app seen over WiFi/TCP, distinct from
+#       mark_app_mesh_active which means "near a BTLE device")      L1420
+#     create_bridge_device (bridge device + its buttons/sensors)    L1446
+#   Low-level MQTT publish wrappers:
+#     publish / publish_json_msg                        L1771 / L1800
+#   Kelvin <-> Cync white-temp (0-100) conversions:
+#     kelvin2cync / cync2kelvin                          L1826 / L1844
+#   get_startup_topic_state_sync (sync probe for a retained topic,
+#     seeds b"OFF" if none found - used at HASS discovery time)      L1862
+# ---------------------------------------------------------------------------
+
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 bridge_device_reg_struct = CYNC_BRIDGE_DEVICE_REGISTRY_CONF

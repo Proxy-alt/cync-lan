@@ -24,6 +24,31 @@ if TYPE_CHECKING:
     # newer CPython versions at all.
     import uvloop
 
+# ---------------------------------------------------------------------------
+# Navigation index (quick lookups only - see each method's own docstring /
+# inline comments for behavioral detail). Line numbers are current as of
+# this edit; re-grep the method name if the file has since changed.
+#
+# class nCyncServer                                                    L59
+#   singleton plumbing: __new__ / __init__                       L80  / L100
+#   TCP device pool accessors:
+#     get_dev_tcp_pool (async, filters closed/app sessions)             L85
+#     get_dev_tcp_pool_sync (sync variant, same filter)                 L97
+#   Device bookkeeping:
+#     remove_tcp_device (drop + publish updated counts)                L132
+#     add_tcp_device (register + start_tasks())                        L166
+#     _update_app_stats (publish app/device connection counts)         L177
+#   TLS / cert setup:
+#     _ensure_self_signed_cert (generate cert+key if either missing)   L196
+#     create_ssl_context (load chain, set allowed ciphers)              L240
+#   Server lifecycle:
+#     start() - build SSL context, bind, serve_forever                 L279
+#     stop() - close all device connections, then the server itself    L321
+#   _register_new_connection - asyncio.start_server client_connected_cb;
+#     replaces/re-inits an existing device session on reconnect, or
+#     creates a brand-new CyncTCPSession                                L375
+# ---------------------------------------------------------------------------
+
 __all__ = [
     "nCyncServer",
 ]
