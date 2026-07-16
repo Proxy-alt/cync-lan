@@ -53,6 +53,66 @@ g = GlobalObject()
 
 _unsupported_logger: Optional[logging.Logger] = None
 
+# ============================================================================
+# NAVIGATION INDEX - quick jump points for this ~3350-line file (grep a name
+# below, or jump straight to its line number; not exhaustive, just the
+# sections/methods most useful for a quick lookup without reading the whole
+# file top to bottom).
+# ----------------------------------------------------------------------------
+# Module-level helpers (unsupported/unknown device capture logging):
+#   _get_unsupported_logger              line 117
+#   capture_unsupported_device           line 139
+#   capture_unknown_packet               line 186
+#
+# class CyncDevice (line 201) - in-memory representation of one physical Cync
+# device (light/switch/plug/fan/sensor/hvac): classification, cached state,
+# and outbound command methods.
+#   __init__                             line 228
+#   Classification properties: is_sol_lamp(267) is_hvac(276) is_light(343)
+#     is_switch(381) is_plug(411) is_fan_controller(429) has_motion_sensor(443)
+#     is_dimmable(454) supports_rgb(462) supports_temperature(476) bt_only(329)
+#     has_wifi(337) has_multi_entities(425)
+#   Cached-state properties (proxy to the primary EntityState in self.entities):
+#     online(490) state(506) brightness(550) temperature(563) red(576)
+#     green(589) blue(602) rgb(615) version(293) mac(321)
+#   handle_entity_update                 line 634 (status packet -> online tracking -> MQTT)
+#   handle_motion_update                 line 688 (motion trigger -> MQTT, bypasses staleness logic)
+#   get_ctrl_msg_id_bytes                line 704
+#   send_command                         line 721 (builds a control packet, broadcasts to TCP pool)
+#   CyncDevice command methods: set_fan_percentage(780) set_fan_speed(805)
+#     set_power(830) set_brightness(850) set_temperature(877) set_rgb(904)
+#     set_lightshow(930) _build_motion_sensor_settings_payload(956, NOT wired
+#     into a live send yet - see its docstring)
+#
+# class CyncTCPSession (line 1018) - one TCP connection (device or Cync app):
+# reader/writer lifecycle, MITM cloud proxying, and inbound packet parsing.
+#   __init__                             line 1037
+#   existing_init                        line 1083 (re-init path when a device reconnects)
+#   MITM / cloud proxy: start_proxy(1113) start_mitm(1138) is_proxy_good(1162)
+#     stop_proxy(1195) stop_mitm(1241) _cloud_proxy_task(1252) _setup_mitm_logger(1279)
+#   CyncTCPSession connection handling: blackhole(1326) can_connect(1357)
+#     start_tasks(1394) get_ctrl_msg_id_bytes(1434) connection_watcher_task(2373)
+#     callback_cleanup_task(2412) receive_task(2451) read(2483) write(2513)
+#     close(2566) is_closed(2651)
+#     Properties: reader(2620) writer(2628) closing(2636) closed(2644)
+#   Packet parsing (active path, in call order):
+#     parse_raw_data                     line 1451 (reassembles the TCP byte
+#       stream into whole packets, handles partial/resync, feeds parse_packet)
+#     parse_packet                       line 1587 (dispatches by header byte:
+#       0x43/0x83/0x73/app-request/unknown)
+#     _dispatch_device_request           line 1645
+#     _handle_43_packet                  line 1700
+#     _handle_83_packet                  line 1757
+#     _parse_83_device_state             line 1900
+#     _handle_73_mesh_control            line 2006
+#     _process_73_mesh_info              line 2127
+#     ask_for_mesh_info                  line 2322
+#     send_a3                            line 2352
+#   parse_packet_OLD                     line 2656 (superseded legacy parser -
+#     grep confirms nothing calls it; parse_packet above is the live path.
+#     Kept in-file for reference only.)
+# ============================================================================
+
 
 def _get_unsupported_logger() -> logging.Logger:
     """Lazily set up the dedicated, always-separate log file for unsupported/unknown
