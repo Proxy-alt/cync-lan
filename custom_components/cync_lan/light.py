@@ -11,6 +11,7 @@ from homeassistant.components.light import (
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
     ATTR_RGB_COLOR,
+    ATTR_TRANSITION,
     ColorMode,
     LightEntity,
 )
@@ -226,7 +227,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             modes.add(ColorMode.COLOR_TEMP)
         if node.supports_rgb:
             modes.add(ColorMode.RGB)
-            self._attr_effect_list = list(_factory_effects())
+            self._attr_effect_list = list(_light_run_mode_effects())
             self._attr_supported_features = _light_effect_feature()
         if not modes:
             modes.add(ColorMode.BRIGHTNESS)
@@ -271,9 +272,25 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             await self._node.set_temperature(kwargs[ATTR_COLOR_TEMP_KELVIN])
         if ATTR_EFFECT in kwargs:
-            await self._node.set_lightshow(kwargs[ATTR_EFFECT])
-        if ATTR_BRIGHTNESS in kwargs:
-            bri_pct = round(kwargs[ATTR_BRIGHTNESS] * 100 / 255)
+            await self._node.set_light_effect(kwargs[ATTR_EFFECT])
+        bri_pct = (
+            round(kwargs[ATTR_BRIGHTNESS] * 100 / 255) if ATTR_BRIGHTNESS in kwargs else None
+        )
+        if ATTR_TRANSITION in kwargs:
+            # EXPERIMENTAL (see set_fine_brightness's docstring, predicted
+            # cmd_code): the fine-brightness wire command always carries a
+            # mandatory target-brightness field, so a transition always
+            # needs one - falls back to current brightness, then 100, when
+            # only `transition=` was given with no explicit brightness=.
+            if bri_pct is not None:
+                target_bri = max(1, bri_pct)
+            elif self.brightness:
+                target_bri = round(self.brightness * 100 / 255)
+            else:
+                target_bri = 100
+            fade_ms = round(kwargs[ATTR_TRANSITION] * 1000)
+            await self._node.set_fine_brightness(target_bri, fade_ms)
+        elif bri_pct is not None:
             await self._node.set_brightness(max(1, bri_pct))
         if not kwargs:
             await self._node.set_power(1)
@@ -306,10 +323,10 @@ class CyncLanLightGroup(LightGroup):
         super().__init__(unique_id, name, entity_ids, mode=False)
 
 
-def _factory_effects():
-    from cync_lan.devices import FACTORY_EFFECTS_BYTES
+def _light_run_mode_effects():
+    from cync_lan.devices import LIGHT_RUN_MODE_EFFECTS
 
-    return FACTORY_EFFECTS_BYTES.keys()
+    return LIGHT_RUN_MODE_EFFECTS.keys()
 
 
 def _light_effect_feature():

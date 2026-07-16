@@ -83,5 +83,107 @@
       "title": "No Cync devices have connected",
       "description": "No Cync devices have connected to the local listener on port {port} since setup finished. This almost always means the DNS redirection prerequisite isn't actually in place yet, or the affected devices haven't been power-cycled since you set it up (they only do a fresh DNS lookup on boot). See the integration's README for the DNS redirection steps, then power-cycle your devices."
     }
+  },
+  "selector": {
+    "indicator_led_mode": {
+      "options": {
+        "always_on": "Always on",
+        "always_off": "Always off",
+        "normal": "Normal"
+      }
+    },
+    "indicator_led_color": {
+      "options": {
+        "white": "White",
+        "red": "Red",
+        "green": "Green",
+        "blue": "Blue"
+      }
+    },
+    "motion_sensor_type": {
+      "options": {
+        "motion": "Motion sensor",
+        "ambient_light": "Ambient light sensor"
+      }
+    },
+    "motion_sensor_sensitivity": {
+      "options": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low"
+      }
+    }
+  },
+  "services": {
+    "experimental_set_indicator_led": {
+      "name": "Set indicator LED (experimental)",
+      "description": "Experimental — the outer command byte is predicted, not confirmed against a real packet capture. Sets a device's small status/indicator LED mode, color, and brightness. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Cync device whose indicator LED to set."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Always on, always off, or normal operation."
+        },
+        "color": {
+          "name": "Color",
+          "description": "The indicator LED only supports these 4 colors, not full RGB."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "1-100."
+        },
+        "wifi_disconnect_blink": {
+          "name": "Blink on WiFi disconnect",
+          "description": "Blink the indicator LED when the device loses its WiFi connection."
+        }
+      }
+    },
+    "experimental_set_motion_sensor_settings": {
+      "name": "Set motion/ambient sensor settings (experimental)",
+      "description": "Experimental — the outer command byte is predicted, not confirmed against a real packet capture. Tunes a motion or ambient-light sensor's enabled state, sensitivity, and timing. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Cync device with the sensor to tune."
+        },
+        "sensor_type": {
+          "name": "Sensor type",
+          "description": "Which sensor on the device to tune."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Turn the sensor on or off. Leave unset to update sensitivity/timing without changing the enabled state."
+        },
+        "sensitivity": {
+          "name": "Sensitivity",
+          "description": "Only applies when updating sensitivity/timing (enabled left unset)."
+        },
+        "delay_seconds": {
+          "name": "Delay",
+          "description": "Only applies when updating sensitivity/timing (enabled left unset)."
+        },
+        "deactivation_seconds": {
+          "name": "Deactivation delay",
+          "description": "Only applies when updating sensitivity/timing (enabled left unset)."
+        }
+      }
+    },
+    "experimental_execute_scene": {
+      "name": "Activate a Cync scene (experimental)",
+      "description": "Experimental — both the outer command byte and the target address are predicted, not confirmed against a real packet capture. Activates a saved Cync Scene (a named multi-device state snapshot configured in the Cync app). Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "fields": {
+        "device_id": {
+          "name": "Bridge device",
+          "description": "Scenes are home-wide, not per-device - select the \"Cync LAN Bridge\" device, not an individual light/switch."
+        },
+        "scene_id": {
+          "name": "Scene ID",
+          "description": "The numeric ID of the scene to activate, as configured in the Cync app (0-255)."
+        }
+      }
+    }
   }
 }

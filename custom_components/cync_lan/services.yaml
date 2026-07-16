@@ -1,0 +1,89 @@
+experimental_set_indicator_led:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    mode:
+      required: true
+      selector:
+        select:
+          options:
+            - always_on
+            - always_off
+            - normal
+          translation_key: indicator_led_mode
+    color:
+      required: true
+      selector:
+        select:
+          options:
+            - white
+            - red
+            - green
+            - blue
+          translation_key: indicator_led_color
+    brightness:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: slider
+    wifi_disconnect_blink:
+      selector:
+        boolean:
+
+experimental_set_motion_sensor_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    sensor_type:
+      required: true
+      selector:
+        select:
+          options:
+            - motion
+            - ambient_light
+          translation_key: motion_sensor_type
+    enabled:
+      selector:
+        boolean:
+    sensitivity:
+      selector:
+        select:
+          options:
+            - high
+            - medium
+            - low
+          translation_key: motion_sensor_sensitivity
+    delay_seconds:
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+    deactivation_seconds:
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+
+experimental_execute_scene:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    scene_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255

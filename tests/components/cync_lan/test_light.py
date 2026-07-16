@@ -32,6 +32,8 @@ def _fake_node(**overrides):
     node.set_temperature = AsyncMock()
     node.set_rgb = AsyncMock()
     node.set_lightshow = AsyncMock()
+    node.set_light_effect = AsyncMock()
+    node.set_fine_brightness = AsyncMock()
     for key, value in overrides.items():
         setattr(node, key, value)
     return node
@@ -78,6 +80,20 @@ def test_rgb_mode_exposes_effect_list():
     entity = CyncLanLight(bridge, "entry1", node)
     assert "rgb" in entity.supported_color_modes
     assert entity.effect_list
+
+
+def test_effect_list_includes_new_modes():
+    """The effect list must cover all 5 light-run-modes (Static/LightShow/
+    MusicShow/Reveal/MultiColor), not just the original LightShow-only
+    presets - see LIGHT_RUN_MODE_EFFECTS."""
+    node = _fake_node(supports_rgb=True)
+    bridge = MagicMock()
+    entity = CyncLanLight(bridge, "entry1", node)
+    assert "rainbow" in entity.effect_list  # existing LightShow preset
+    assert "static" in entity.effect_list
+    assert "music_midnight" in entity.effect_list
+    assert "reveal" in entity.effect_list
+    assert "multicolor" in entity.effect_list
 
 
 def test_kelvin_range_pulled_from_characteristics():
@@ -140,6 +156,37 @@ async def test_turn_on_no_kwargs_just_powers_on():
 
     await entity.async_turn_on()
     node.set_power.assert_awaited_with(1)
+
+
+async def test_turn_on_with_transition_and_brightness():
+    """EXPERIMENTAL: transition= (fade time) combined with brightness=
+    routes through set_fine_brightness, not the regular set_brightness."""
+    node = _fake_node()
+    bridge = MagicMock()
+    entity = CyncLanLight(bridge, "entry1", node)
+
+    await entity.async_turn_on(brightness=128, transition=2.5)
+    node.set_fine_brightness.assert_awaited_once_with(round(128 * 100 / 255), 2500)
+    node.set_brightness.assert_not_awaited()
+
+
+async def test_turn_on_with_transition_only_falls_back_to_current_brightness(hass):
+    """transition= with no explicit brightness= falls back to the entity's
+    current brightness (or 100 if there isn't one yet)."""
+    from cync_lan.structs import EntityState
+
+    node = _fake_node()
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanLight(bridge, "entry1", node)
+
+    # No state yet -> falls back to 100.
+    await entity.async_turn_on(transition=1.0)
+    node.set_fine_brightness.assert_awaited_with(100, 1000)
+
+    # With a known current brightness -> falls back to that instead.
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, power=1, brightness=40))
+    await entity.async_turn_on(transition=1.0)
+    node.set_fine_brightness.assert_awaited_with(40, 1000)
 
 
 async def test_turn_off_calls_set_power_zero():
@@ -216,7 +263,7 @@ async def test_turn_on_with_effect():
     entity = CyncLanLight(bridge, "entry1", node)
 
     await entity.async_turn_on(effect="rainbow")
-    node.set_lightshow.assert_awaited_with("rainbow")
+    node.set_light_effect.assert_awaited_with("rainbow")
 
 
 def test_light_group_uses_or_based_mode():

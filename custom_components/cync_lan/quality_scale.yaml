@@ -7,10 +7,15 @@
 rules:
   # ------------------------------- Bronze -------------------------------
   action-setup:
-    status: exempt
+    status: done
     comment: >-
-      No custom service actions are defined; all control goes through the
-      standard light/switch/fan entity platforms.
+      services.py's 3 experimental_* services (indicator LED, motion/ambient
+      sensor tuning, scene activation - exposed as services rather than
+      entities since their cmd_code is predicted, not confirmed, and a
+      service call is a more honest fit than an always-on entity) are
+      registered idempotently in async_setup_entry (hass.services.has_service
+      guard) and removed in async_unload_entry only once no Cync LAN entry
+      remains loaded. Tested in test_services.py.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -69,8 +74,12 @@ rules:
       publish action outside the scope of what a code change in this
       branch can do.
   docs-actions:
-    status: exempt
-    comment: No custom service actions defined.
+    status: done
+    comment: >-
+      strings.json's "services" block documents all 3 experimental_*
+      services and their fields, each description explicitly flagging that
+      the underlying cmd_code (and, for scenes, the target address too) is
+      predicted rather than confirmed.
   docs-triggers:
     status: exempt
     comment: No custom triggers defined (standard entity-state triggers apply).
@@ -122,8 +131,13 @@ rules:
 
   # ------------------------------- Silver -------------------------------
   action-exceptions:
-    status: exempt
-    comment: No custom service actions to raise from.
+    status: done
+    comment: >-
+      services.py's _resolve_device/_resolve_bridge_entry raise
+      ServiceValidationError with a clear message for an unknown device_id,
+      a device belonging to another integration, or (for
+      experimental_execute_scene specifically) an individual device passed
+      where the bridge device is required. Tested in test_services.py.
   config-entry-unloading:
     status: done
     comment: >-

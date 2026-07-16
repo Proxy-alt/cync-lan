@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_LOCAL_PORT,
     DOMAIN,
 )
+from .services import async_setup_services, async_unload_services
 from .util import configure_environment, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,11 +44,11 @@ PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.FAN,
     Platform.LIGHT,
-    # No Platform.NUMBER yet: the only candidate (motion sensor sensitivity/
-    # timeout settings) is still unwired pending a real packet capture to
-    # confirm the outbound command bytes (see devices.py's
-    # _build_motion_sensor_settings_payload) - add it once that lands rather
-    # than shipping speculative entities.
+    # No Platform.NUMBER/SELECT: motion-sensor tuning and indicator-LED
+    # settings are exposed via services.py's experimental_* services
+    # instead - their cmd_code is predicted, not confirmed against a real
+    # capture (see docs/mesh_opcodes.md), so a service call (an explicit,
+    # deliberate action) is a more honest fit than an always-on entity.
     Platform.SWITCH,
 ]
 
@@ -227,6 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    async_setup_services(hass)
     return True
 
 
@@ -333,4 +335,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime_data.server_task
     except asyncio.CancelledError:
         pass
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    async_unload_services(hass)
+    return unloaded
