@@ -25,6 +25,7 @@ from cync_lan.const import (
     CYNC_UNSUPPORTED_RAW_DEBUG,
     DATA_BOUNDARY,
     FACTORY_EFFECTS_BYTES,
+    LIGHT_RUN_MODE_EFFECTS,
     RAW_MSG,
     STREAM_CHUNK_SIZE,
     TCP_BLACKHOLE_DELAY, CYNC_MITM_APP_LOGGER,
@@ -47,68 +48,81 @@ from cync_lan.structs import (
 )
 from cync_lan.utils import bytes2list, extract_firmware_dynamically, format_socat_style
 
-__all__ = ["CyncDevice", "CyncTCPSession"]
+__all__ = ["CyncDevice", "CyncTCPSession", "broadcast_control_command", "execute_scene"]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
 _unsupported_logger: Optional[logging.Logger] = None
 
 # ============================================================================
-# NAVIGATION INDEX - quick jump points for this ~3350-line file (grep a name
+# NAVIGATION INDEX - quick jump points for this ~3450-line file (grep a name
 # below, or jump straight to its line number; not exhaustive, just the
 # sections/methods most useful for a quick lookup without reading the whole
 # file top to bottom).
 # ----------------------------------------------------------------------------
 # Module-level helpers (unsupported/unknown device capture logging):
-#   _get_unsupported_logger              line 117
-#   capture_unsupported_device           line 139
-#   capture_unknown_packet               line 186
+#   _get_unsupported_logger              line 131
+#   capture_unsupported_device           line 153
+#   capture_unknown_packet               line 200
+#   _warn_experimental_cmd_code          line 218 (logs once per command name
+#     that its cmd_code is PREDICTED, not confirmed - see docs/mesh_opcodes.md)
+#   broadcast_control_command            line 239 (module-level: builds +
+#     broadcasts a control packet to an arbitrary target_id - extracted from
+#     CyncDevice.send_command, which is now a thin wrapper around this,
+#     because execute_scene below has no CyncDevice to be `self`)
+#   execute_scene                        line 318 (EXPERIMENTAL: home-wide
+#     scene activation, 0xEF - no per-device target, target_id=0x00)
 #
-# class CyncDevice (line 201) - in-memory representation of one physical Cync
+# class CyncDevice (line 347) - in-memory representation of one physical Cync
 # device (light/switch/plug/fan/sensor/hvac): classification, cached state,
 # and outbound command methods.
-#   __init__                             line 228
-#   Classification properties: is_sol_lamp(267) is_hvac(276) is_light(343)
-#     is_switch(381) is_plug(411) is_fan_controller(429) has_motion_sensor(443)
-#     is_dimmable(454) supports_rgb(462) supports_temperature(476) bt_only(329)
-#     has_wifi(337) has_multi_entities(425)
+#   __init__                             line 374
+#   Classification properties: is_sol_lamp(413) is_hvac(422) is_light(489)
+#     is_switch(527) is_plug(557) is_fan_controller(575) has_motion_sensor(589)
+#     is_dimmable(600) supports_rgb(608) supports_temperature(622) bt_only(475)
+#     has_wifi(483) has_multi_entities(571)
 #   Cached-state properties (proxy to the primary EntityState in self.entities):
-#     online(490) state(506) brightness(550) temperature(563) red(576)
-#     green(589) blue(602) rgb(615) version(293) mac(321)
-#   handle_entity_update                 line 634 (status packet -> online tracking -> MQTT)
-#   handle_motion_update                 line 688 (motion trigger -> MQTT, bypasses staleness logic)
-#   get_ctrl_msg_id_bytes                line 704
-#   send_command                         line 721 (builds a control packet, broadcasts to TCP pool)
-#   CyncDevice command methods: set_fan_percentage(780) set_fan_speed(805)
-#     set_power(830) set_brightness(850) set_temperature(877) set_rgb(904)
-#     set_lightshow(930) _build_motion_sensor_settings_payload(956, NOT wired
-#     into a live send yet - see its docstring)
+#     online(636) state(652) brightness(696) temperature(709) red(722)
+#     green(735) blue(748) rgb(761) version(439) mac(467)
+#   handle_entity_update                 line 780 (status packet -> online tracking -> MQTT)
+#   handle_motion_update                 line 834 (motion trigger -> MQTT, bypasses staleness logic)
+#   get_ctrl_msg_id_bytes                line 850
+#   send_command                         line 867 (thin wrapper around the
+#     module-level broadcast_control_command, target_id=self.id)
+#   CyncDevice command methods: set_fan_percentage(876) set_fan_speed(901)
+#     set_power(926) set_brightness(946) set_fine_brightness(973, EXPERIMENTAL)
+#     set_temperature(1010) set_rgb(1037) _send_light_run_mode(1063, shared
+#     sender for the 0xE2/0x07 command family) set_lightshow(1090,
+#     LightShow-only presets) set_light_effect(1103, general - all 5 modes
+#     via LIGHT_RUN_MODE_EFFECTS) _build_motion_sensor_settings_payload(1117)
+#     set_motion_sensor_settings(1178, EXPERIMENTAL, wires the payload above
+#     into a real send) set_indicator_led(1207, EXPERIMENTAL)
 #
-# class CyncTCPSession (line 1018) - one TCP connection (device or Cync app):
+# class CyncTCPSession (line 1258) - one TCP connection (device or Cync app):
 # reader/writer lifecycle, MITM cloud proxying, and inbound packet parsing.
-#   __init__                             line 1037
-#   existing_init                        line 1083 (re-init path when a device reconnects)
-#   MITM / cloud proxy: start_proxy(1113) start_mitm(1138) is_proxy_good(1162)
-#     stop_proxy(1195) stop_mitm(1241) _cloud_proxy_task(1252) _setup_mitm_logger(1279)
-#   CyncTCPSession connection handling: blackhole(1326) can_connect(1357)
-#     start_tasks(1394) get_ctrl_msg_id_bytes(1434) connection_watcher_task(2373)
-#     callback_cleanup_task(2412) receive_task(2451) read(2483) write(2513)
-#     close(2566) is_closed(2651)
-#     Properties: reader(2620) writer(2628) closing(2636) closed(2644)
+#   __init__                             line 1277
+#   existing_init                        line 1323 (re-init path when a device reconnects)
+#   MITM / cloud proxy: start_proxy(1353) start_mitm(1378) is_proxy_good(1402)
+#     stop_proxy(1435) stop_mitm(1481) _cloud_proxy_task(1492) _setup_mitm_logger(1519)
+#   CyncTCPSession connection handling: blackhole(1566) can_connect(1597)
+#     start_tasks(1634) get_ctrl_msg_id_bytes(1674) connection_watcher_task(2613)
+#     callback_cleanup_task(2652) receive_task(2691) read(2723) write(2753)
+#     close(2806) is_closed(2891)
+#     Properties: reader(2860) writer(2868) closing(2876) closed(2884)
 #   Packet parsing (active path, in call order):
-#     parse_raw_data                     line 1451 (reassembles the TCP byte
+#     parse_raw_data                     line 1691 (reassembles the TCP byte
 #       stream into whole packets, handles partial/resync, feeds parse_packet)
-#     parse_packet                       line 1587 (dispatches by header byte:
+#     parse_packet                       line 1827 (dispatches by header byte:
 #       0x43/0x83/0x73/app-request/unknown)
-#     _dispatch_device_request           line 1645
-#     _handle_43_packet                  line 1700
-#     _handle_83_packet                  line 1757
-#     _parse_83_device_state             line 1900
-#     _handle_73_mesh_control            line 2006
-#     _process_73_mesh_info              line 2127
-#     ask_for_mesh_info                  line 2322
-#     send_a3                            line 2352
-#   parse_packet_OLD                     line 2656 (superseded legacy parser -
+#     _dispatch_device_request           line 1885
+#     _handle_43_packet                  line 1940
+#     _handle_83_packet                  line 1997
+#     _parse_83_device_state             line 2140
+#     _handle_73_mesh_control            line 2246
+#     _process_73_mesh_info              line 2367
+#     ask_for_mesh_info                  line 2562
+#     send_a3                            line 2592
+#   parse_packet_OLD                     line 2896 (superseded legacy parser -
 #     grep confirms nothing calls it; parse_packet above is the live path.
 #     Kept in-file for reference only.)
 # ============================================================================
@@ -196,6 +210,138 @@ def capture_unknown_packet(ip_lp: str, reason: str, raw: bytes):
     _get_unsupported_logger().debug(
         f"{ip_lp} UNKNOWN ({reason})\nHEX: {raw.hex(' ')}\nINT: {list(raw)}"
     )
+
+
+_EXPERIMENTAL_CMDS_WARNED: set = set()
+
+
+def _warn_experimental_cmd_code(lp: str, name: str) -> None:
+    """Log once per process per command name that this command uses a
+    cmd_code PREDICTED (not confirmed against a real packet capture) by
+    the length formula documented in docs/mesh_opcodes.md's "TCP relay
+    envelope research" section - validated 3/3 against already-confirmed
+    production commands (set_power/set_brightness/set_rgb/set_lightshow),
+    but the source class that formula came from is itself flagged
+    @Deprecated in the decompiled app, so treat it as a strong prediction,
+    not a certainty. If this command doesn't behave as expected, please
+    report it (device model + what happened) - see docs/mesh_opcodes.md.
+    """
+    if name in _EXPERIMENTAL_CMDS_WARNED:
+        return
+    _EXPERIMENTAL_CMDS_WARNED.add(name)
+    logger.warning(
+        f"{lp} EXPERIMENTAL: '{name}' uses a predicted (not confirmed) cmd_code - "
+        f"see docs/mesh_opcodes.md's 'TCP relay envelope research'. If this doesn't "
+        f"work as expected, please report it (device model + observed behavior)."
+    )
+
+
+async def broadcast_control_command(
+    op: int,
+    cmd_: int,
+    target_id: int,
+    sub_id: int,
+    payload: bytes,
+    m_cb: ControlMessageCallback,
+    lp: str,
+) -> None:
+    """Build and broadcast a control packet to the TCP pool, targeting an
+    arbitrary `target_id`.
+
+    Extracted from CyncDevice.send_command() (a thin wrapper around this,
+    always passing target_id=self.id) so commands that don't target a
+    specific device - e.g. a home-wide scene activation, which has no
+    CyncDevice to be `self` - can still go out through the same broadcast
+    path. Pure extraction: byte-for-byte identical behavior to the
+    pre-refactor send_command for any caller that does pass a real
+    device's id.
+    """
+    tasks = []
+    tcp_pool = await g.ncync_server.get_dev_tcp_pool()
+    if not tcp_pool:
+        logger.debug(f"{lp} no eligible TCP connections available for command broadcast")
+        return
+
+    tcp_connections: List["CyncTCPSession"] = random.sample(
+        tcp_pool,
+        k=min(CYNC_CMD_BROADCASTS, len(tcp_pool)),
+    )
+    for bridge_device in tcp_connections:
+        if bridge_device.ready_to_control or bridge_device.mitm_mode:
+            cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+
+            inner_pkt = PacketBuilder.build_control_packet(
+                msg_id=cmsg_id,
+                target_id=target_id,
+                sub_id=sub_id,
+                op_code=op,
+                cmd_code=cmd_,
+                command_payload=payload
+            )
+
+            full_packet = PacketBuilder.build_outer_packet(
+                packet_type=0x73,
+                queue_id=bridge_device.queue_id,
+                inner_packet=inner_pkt
+            )
+
+            # bridge_device.node can still be None here: ready_to_control is set
+            # (in send_a3()) before the bridge's first MeshInfo response sets
+            # node, so a command can race ahead of self-identification. These
+            # are debug-only strings, but an unguarded .node.id crashed the
+            # whole MQTT receive loop (uncaught AttributeError propagating out
+            # of send_command), taking down MQTT state updates and command
+            # handling until a manual restart.
+            bridge_node_id = bridge_device.node.id if bridge_device.node else "unidentified"
+
+            if bridge_device.mitm_mode is True:
+                logger.debug(
+                    f"{lp} MITM mode active for this device: {bridge_device.ip_address} (ID: {bridge_node_id})"
+                    f" not writing data >>> \n\n{full_packet.hex(" ")}")
+            else:
+                m_cb.id = cmsg_id
+                m_cb.message = full_packet
+                m_cb.sent_at = time.time()
+                bridge_device.messages.control[cmsg_id] = m_cb
+                tasks.append(bridge_device.write(full_packet))
+                str_appnd = "..."
+                if CYNC_RAW:
+                    str_appnd = (f' state to device ({bridge_device.ip_address}[{bridge_node_id}|queue_id: {bridge_device.queue_id.hex(" ")}):\n'
+                                 f'HEX: {full_packet.hex(" ")}\n'
+                                 f'INT: {bytes2list(full_packet)}\n')
+                    logger.debug(f"{lp} Sending{str_appnd}")
+
+    if tasks:
+        await asyncio.gather(*tasks)
+
+
+async def execute_scene(scene_id: int) -> None:
+    """EXPERIMENTAL: activates a saved Cync Scene (a named multi-device
+    state snapshot, see docs/cync_automations.md) via 0xEF
+    (ExecuteSceneCommand, confirmed payload shape).
+
+    Scenes are home-wide, not tied to any specific device - there's no
+    CyncDevice to be `self` here, unlike every other command in this
+    module, so this goes straight through broadcast_control_command()
+    with target_id=0x00 (MeshAddress's documented "none/self/unassigned"
+    sentinel, see docs/mesh_opcodes.md - itself an additional, separate
+    guess on top of cmd_, compounding the risk here beyond the other
+    experimental commands in this file).
+
+    cmd_ (0x0C) is PREDICTED, not confirmed - see
+    _warn_experimental_cmd_code and docs/mesh_opcodes.md.
+    """
+    lp = "execute_scene:"
+    _warn_experimental_cmd_code(lp, "execute_scene")
+    if not (0 <= scene_id <= 255):
+        logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-255")
+        return
+    op = 0xEF
+    cmd_ = 0x0C
+    # Payload: 0x11, 0x02, scene_id, 0x01 - 4 bytes.
+    payload = struct.pack(">BBBB", 0x11, 0x02, scene_id, 0x01)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
 
 class CyncDevice:
@@ -719,63 +865,13 @@ class CyncDevice:
         return self.control_bytes
 
     async def send_command(self, op: int, cmd_: int, sub_id: int, payload: bytes, m_cb: ControlMessageCallback, lp: str):
-        tasks = []
-        tcp_pool = await g.ncync_server.get_dev_tcp_pool()
-        if not tcp_pool:
-            logger.debug(f"{lp} no eligible TCP connections available for command broadcast")
-            return
-
-        tcp_connections: List["CyncTCPSession"] = random.sample(
-            tcp_pool,
-            k=min(CYNC_CMD_BROADCASTS, len(tcp_pool)),
-        )
-        for bridge_device in tcp_connections:
-            if bridge_device.ready_to_control or bridge_device.mitm_mode:
-                cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
-
-                inner_pkt = PacketBuilder.build_control_packet(
-                    msg_id=cmsg_id,
-                    target_id=self.id,
-                    sub_id=sub_id,
-                    op_code=op,
-                    cmd_code=cmd_,
-                    command_payload=payload
-                )
-
-                full_packet = PacketBuilder.build_outer_packet(
-                    packet_type=0x73,
-                    queue_id=bridge_device.queue_id,
-                    inner_packet=inner_pkt
-                )
-
-                # bridge_device.node can still be None here: ready_to_control is set
-                # (in send_a3()) before the bridge's first MeshInfo response sets
-                # node, so a command can race ahead of self-identification. These
-                # are debug-only strings, but an unguarded .node.id crashed the
-                # whole MQTT receive loop (uncaught AttributeError propagating out
-                # of send_command), taking down MQTT state updates and command
-                # handling until a manual restart.
-                bridge_node_id = bridge_device.node.id if bridge_device.node else "unidentified"
-
-                if bridge_device.mitm_mode is True:
-                    logger.debug(
-                        f"{lp} MITM mode active for this device: {bridge_device.ip_address} (ID: {bridge_node_id})"
-                        f" not writing data >>> \n\n{full_packet.hex(" ")}")
-                else:
-                    m_cb.id = cmsg_id
-                    m_cb.message = full_packet
-                    m_cb.sent_at = time.time()
-                    bridge_device.messages.control[cmsg_id] = m_cb
-                    tasks.append(bridge_device.write(full_packet))
-                    str_appnd = "..."
-                    if CYNC_RAW:
-                        str_appnd = (f' state to device ({bridge_device.ip_address}[{bridge_node_id}|queue_id: {bridge_device.queue_id.hex(" ")}):\n'
-                                     f'HEX: {full_packet.hex(" ")}\n'
-                                     f'INT: {bytes2list(full_packet)}\n')
-                        logger.debug(f"{lp} Sending{str_appnd}")
-
-        if tasks:
-            await asyncio.gather(*tasks)
+        """Thin wrapper around the module-level broadcast_control_command(),
+        always targeting this device's own id. See that function for the
+        real implementation - factored out so commands with no specific
+        device target (e.g. a home-wide scene activation) can use the same
+        broadcast path without needing a CyncDevice instance to be `self`.
+        """
+        await broadcast_control_command(op, cmd_, self.id, sub_id, payload, m_cb, lp)
 
     async def set_fan_percentage(self, perc: int) -> bool:
         """
@@ -874,6 +970,43 @@ class CyncDevice:
 
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
+    async def set_fine_brightness(
+        self, bri: int, fade_ms: int, sub_id: Optional[int] = None
+    ) -> None:
+        """EXPERIMENTAL: sub-percent brightness with a fade/transition time,
+        via 0xE2 sub-command 0x08 (SetFineBrightnessCommand, confirmed
+        payload shape) - unlike set_brightness(), which has no fade concept.
+
+        cmd_ (0x0F) is PREDICTED, not confirmed against a real packet
+        capture - via the length formula in docs/mesh_opcodes.md's "TCP
+        relay envelope research" (validated 3/3 against already-confirmed
+        production commands, but the source class it's derived from is
+        itself flagged @Deprecated in the decompiled app). See
+        _warn_experimental_cmd_code.
+        """
+        lp = f"{self.lp}set_fine_brightness:"
+        _warn_experimental_cmd_code(lp, "set_fine_brightness")
+        if not (0 <= bri <= 100):
+            logger.error(f"{lp} Invalid brightness: {bri} must be 0-100")
+            return
+
+        op = 0xE2
+        cmd_ = 0x0F
+        _sub_id = sub_id if sub_id is not None else 0x00
+        fade_ms = max(0, min(65535, fade_ms))
+        # Payload: 0x11, 0x02, 0x08, brightness*10 (u16 BE, tenths of a
+        # percent), fade_ms (u16 BE) - 7 bytes.
+        payload = struct.pack(">BBB", 0x11, 0x02, 0x08) + struct.pack(
+            ">HH", round(bri * 10), fade_ms
+        )
+        m_cb = ControlMessageCallback(
+            msg_id=0x00,
+            message=None,
+            sent_at=0.0,
+            callback=partial(g.mqtt_client.update_brightness, self, bri),
+        )
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+
     async def set_temperature(self, temp: int, sub_id: Optional[int] = None):
         lp = f"{self.lp}set_temperature:"
         if temp < 0 or (temp > 100 and temp not in (129, 254)):
@@ -927,20 +1060,22 @@ class CyncDevice:
         )
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
-    async def set_lightshow(self, show: str, sub_id: Optional[int] = None):
-        lp = f"{self.lp}set_lightshow:"
-        show = show.casefold()
-        if show not in FACTORY_EFFECTS_BYTES:
-            logger.error(f"{lp} Invalid effect: {show}")
-            return
-
-        chosen = FACTORY_EFFECTS_BYTES[show]
+    async def _send_light_run_mode(
+        self, mode_code: int, index: int, nonce: int, sub_id: Optional[int] = None
+    ) -> None:
+        """Shared sender for the 0xE2 sub-0x07 "light-run-mode" command
+        family: [modeCode, index, nonce]. modeCode selects Static(0x00)/
+        LightShow(0x01)/MusicShow(0x02)/Reveal(0x03)/MultiColor(0x04) - see
+        docs/mesh_opcodes.md. `nonce` is confirmed genuinely random and
+        unvalidated by the receiving device (SetLightRunModeCommand.java
+        writes Random.nextInt() there on every real send) - callers may
+        safely pass a constant.
+        """
+        lp = f"{self.lp}set_light_effect:"
         op = 0xE2
         cmd_ = 0x0E
         _sub_id = sub_id if sub_id is not None else 0x00
-
-        # Payload: 0x11, 0x02, 0x07, 0x01, byte1, byte2 (6 bytes)
-        payload = struct.pack(">BBBBBB", 0x11, 0x02, 0x07, 0x01, chosen[0], chosen[1])
+        payload = struct.pack(">BBBBBB", 0x11, 0x02, 0x07, mode_code, index, nonce)
         m_cb = ControlMessageCallback(
             msg_id=0x00,
             message=None,
@@ -951,6 +1086,32 @@ class CyncDevice:
             ),
         )
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+
+    async def set_lightshow(self, show: str, sub_id: Optional[int] = None):
+        """LightShow-only (modeCode 0x01) factory presets. Kept for
+        backward compatibility - see set_light_effect() for the more
+        general command covering all of Static/LightShow/MusicShow/
+        Reveal/MultiColor via LIGHT_RUN_MODE_EFFECTS."""
+        lp = f"{self.lp}set_lightshow:"
+        show = show.casefold()
+        if show not in FACTORY_EFFECTS_BYTES:
+            logger.error(f"{lp} Invalid effect: {show}")
+            return
+        index, nonce = FACTORY_EFFECTS_BYTES[show]
+        await self._send_light_run_mode(0x01, index, nonce, sub_id)
+
+    async def set_light_effect(self, effect: str, sub_id: Optional[int] = None):
+        """The general light-run-mode command: any preset across Static/
+        LightShow/MusicShow/Reveal/MultiColor (LIGHT_RUN_MODE_EFFECTS,
+        src/cync_lan/const.py) rather than just the LightShow-only presets
+        set_lightshow() supports."""
+        lp = f"{self.lp}set_light_effect:"
+        effect = effect.casefold()
+        if effect not in LIGHT_RUN_MODE_EFFECTS:
+            logger.error(f"{lp} Invalid effect: {effect}")
+            return
+        mode_code, index, nonce = LIGHT_RUN_MODE_EFFECTS[effect]
+        await self._send_light_run_mode(mode_code, index, nonce, sub_id)
 
     @staticmethod
     def _build_motion_sensor_settings_payload(
@@ -972,15 +1133,15 @@ class CyncDevice:
         decompiled app, cross-checked independently twice.
 
         `cmd_` (the second envelope argument send_command()/build_control_packet()
-        expects - see set_power/set_brightness/set_rgb for that pattern) is
-        NOT confirmed: it has no equivalent field in any of the decompiled
+        expects - see set_power/set_brightness/set_rgb for that pattern) was
+        long unconfirmed: it has no equivalent field in any of the decompiled
         per-command byte arrays (those only cover the *inner* mesh command,
-        not cync-lan's own outer envelope), and existing cmd_ values across
-        set_power (0x0D)/set_brightness+set_temperature+set_rgb (0x10)/
-        set_lightshow (0x0E) don't follow an inferable pattern (e.g. payload
-        length) precise enough to guess this one safely. Do NOT wire this
-        into a live send until a real packet capture pins down cmd_ - op
-        alone isn't enough to build a correct outer packet.
+        not cync-lan's own outer envelope). It's since been PREDICTED (0x13)
+        via the length formula in docs/mesh_opcodes.md's "TCP relay envelope
+        research" (validated 3/3 against already-confirmed production
+        commands, but the source class it's derived from is itself flagged
+        @Deprecated in the decompiled app) - see set_motion_sensor_settings(),
+        which wires this payload into a real, EXPERIMENTAL send.
 
         Wire format: VendorID (0x11 0x02) + sub-opcode (0x07, fixed - marks
         "sensor settings" as a command family) + an 8-byte params struct:
@@ -1013,6 +1174,85 @@ class CyncDevice:
                 0x00,
             )
         return struct.pack(">BBB", 0x11, 0x02, 0x07) + params
+
+    async def set_motion_sensor_settings(
+        self,
+        setting_type: int,
+        enabled: Optional[bool] = None,
+        sensitivity: Optional[int] = None,
+        delay_seconds: int = 0,
+        deactivation_seconds: int = 0,
+        sub_id: Optional[int] = None,
+    ) -> None:
+        """EXPERIMENTAL: writes motion/ambient-light sensor tuning via
+        0xF7 sub-command 0x07 - see _build_motion_sensor_settings_payload()
+        for the confirmed payload shape and the cmd_ prediction's
+        provenance. See _warn_experimental_cmd_code.
+        """
+        lp = f"{self.lp}set_motion_sensor_settings:"
+        _warn_experimental_cmd_code(lp, "set_motion_sensor_settings")
+        try:
+            payload = self._build_motion_sensor_settings_payload(
+                setting_type, enabled, sensitivity, delay_seconds, deactivation_seconds
+            )
+        except ValueError as e:
+            logger.error(f"{lp} {e}")
+            return
+        op = 0xF7
+        cmd_ = 0x13
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+
+    async def set_indicator_led(
+        self,
+        mode: int,
+        color: int,
+        brightness: int,
+        wifi_disconnect_blink: bool = False,
+        sub_id: Optional[int] = None,
+    ) -> None:
+        """EXPERIMENTAL: sets the device's small status/indicator LED
+        (mode/color/brightness) via 0xF7 sub-command 0x06
+        (SetStatusIndicatorSettingsCommand, confirmed payload shape) -
+        distinct from the device's main light output.
+
+        mode: 0=always on, 1=always off, 2=normal (confirmed,
+        LEDIndicatorMode.java). color: 0=white, 1=red, 2=green, 3=blue -
+        a 4-value enum, not full RGB (confirmed, LEDIndicatorColor.java).
+        brightness: 1-100. wifi_disconnect_blink: blink the indicator when
+        WiFi is disconnected.
+
+        cmd_ (0x0E) is PREDICTED, not confirmed - see
+        _warn_experimental_cmd_code and docs/mesh_opcodes.md.
+        """
+        lp = f"{self.lp}set_indicator_led:"
+        _warn_experimental_cmd_code(lp, "set_indicator_led")
+        if mode not in (0, 1, 2):
+            logger.error(f"{lp} Invalid mode: {mode} must be 0 (always on), 1 (always off), or 2 (normal)")
+            return
+        if color not in (0, 1, 2, 3):
+            logger.error(f"{lp} Invalid color: {color} must be 0-3 (white/red/green/blue)")
+            return
+        if not (1 <= brightness <= 100):
+            logger.error(f"{lp} Invalid brightness: {brightness} must be 1-100")
+            return
+
+        op = 0xF7
+        cmd_ = 0x0E
+        _sub_id = sub_id if sub_id is not None else 0x00
+        # Payload: 0x11, 0x02, 0x06, (mode<<4)|color, brightness, wifi_disconnect_flag - 6 bytes.
+        payload = struct.pack(
+            ">BBBBBB",
+            0x11,
+            0x02,
+            0x06,
+            (mode << 4) | color,
+            brightness,
+            1 if wifi_disconnect_blink else 0,
+        )
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
 
 class CyncTCPSession:

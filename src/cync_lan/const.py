@@ -32,6 +32,7 @@ __all__ = [
     "CYNC_EXPORT_PORT",
     "CYNC_UUID_PATH",
     "FACTORY_EFFECTS_BYTES",
+    "LIGHT_RUN_MODE_EFFECTS",
     "LOCAL_TZ",
     "CYNC_CONFIG_FILE_PATH",
     "CYNC_CLOUD_AUTH_PATH",
@@ -225,6 +226,33 @@ FACTORY_EFFECTS_BYTES: Dict[str, Tuple[int, int]] = {
     "red_white_blue": (int(0x07), int(0x4F)),
     "vegas": (int(0x08), int(0xE3)),
     "party_time": (int(0x09), int(0x06)),
+}
+
+# The full light-run-mode command (0xE2 sub 0x07) is more general than
+# FACTORY_EFFECTS_BYTES alone represents - it's [modeCode, index, nonce],
+# and FACTORY_EFFECTS_BYTES only ever sends modeCode=0x01 (LightShow).
+# Confirmed via SetLightRunModeCommand.java + LightShow/MusicShow/Reveal/
+# MultiColor.java (see docs/mesh_opcodes.md): modeCode 0x00=Static (index
+# always 0), 0x01=LightShow (existing FACTORY_EFFECTS_BYTES presets),
+# 0x02=MusicShow, 0x03=Reveal (index always 0), 0x04=MultiColor. The nonce
+# byte is confirmed genuinely random/unvalidated (see the comment above
+# FACTORY_EFFECTS_BYTES) so 0x00 is a safe placeholder for every preset
+# that doesn't have a real captured value.
+LIGHT_RUN_MODE_EFFECTS: Dict[str, Tuple[int, int, int]] = {
+    **{name: (0x01, idx, nonce) for name, (idx, nonce) in FACTORY_EFFECTS_BYTES.items()},
+    "static": (0x00, 0x00, 0x00),
+    "music_midnight": (0x02, 1, 0x00),
+    "music_earth_tones": (0x02, 2, 0x00),
+    "music_heat_wave": (0x02, 3, 0x00),
+    "music_solar_flare": (0x02, 4, 0x00),
+    "music_breeze": (0x02, 5, 0x00),
+    "music_tropical": (0x02, 6, 0x00),
+    "music_spectrum": (0x02, 7, 0x00),
+    "music_supernova": (0x02, 8, 0x00),
+    "music_burst": (0x02, 65, 0x00),
+    "reveal": (0x03, 0x00, 0x00),
+    "multicolor": (0x04, 1, 0x00),
+    "cool_blues": (0x04, 2, 0x00),
 }
 
 ORIGIN_STRUCT = {
