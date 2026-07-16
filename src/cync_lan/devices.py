@@ -2299,6 +2299,8 @@ class CyncTCPSession:
                     f"{lp} Received MeshInfo for unknown device ID: "
                     f"{dev_id} -> You need to export a new config file from the cloud!"
                 )
+                if g.mqtt_client:
+                    g.mqtt_client.report_unknown_device_id(dev_id)
 
             i += entry_len
 
