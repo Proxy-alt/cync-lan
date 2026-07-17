@@ -136,24 +136,52 @@ for the full payload), dispatched through the exact same command-delegate abstra
 (`XlinkCommandDelegate` for WiFi/TCP mesh) that cync-lan already speaks for ordinary light control.
 This is architecturally identical to every opcode cync-lan already reverse-engineers - **a
 genuinely good fit for this project's local-only design**, not a forced round-trip through Cync's
-cloud. Scenes/Schedules were not analyzed for a write opcode in this pass - would need separate
-verification before extending this same claim to them (and Scenes in particular, being pure
-app-side multi-device snapshots rather than a single device setting, may only ever be
-writable via the cloud - unconfirmed either way).
+cloud.
+
+**UPDATE, later session: Scenes/Schedules are local-mesh-writable too - this was wrong.** A
+dedicated pass traced the actual create/edit/delete code path
+(`com/gelighting/cbygekit/services/scenes/RoutinesService.java`) and found it never touches HTTP -
+every write builds a command object and dispatches it through the same `XlinkCommandDelegate`/
+`TelinkCommandDelegate` mesh-command machinery as everything else in this doc:
+
+| Command | Opcode | Role |
+|---|---|---|
+| `CreateSceneHubCommand` | `HUB_CREATE_SCENE = 0x10` | Create a scene (name + icon ID) |
+| `DeleteSceneHubCommand` | `HUB_DELETE_SCENE = 0x1F` | Delete a scene |
+| `CreateScheduleHubCommand` | `HUB_CREATE_SCHEDULE = 0x92` | Create a schedule |
+| `AddDeviceSceneCommand` | payload prefix `0xEE,0x11,0x02` | Add one device's captured state to a scene (sceneId, mode, brightness/CCT/RGB, fade) |
+| `ToggleAutomationCommand`/`ToggleAutomationHubCommand`, `RemoveDeviceSceneCommand`, `DeleteScheduleHubCommand` | (same family) | Enable/disable, remove a device from a scene, delete a schedule |
+
+(Opcodes confirmed at `com/gelighting/cbygekit/services/devices/xlink/XlinkCommandCode.java:46-51`.)
+A grep for `retrofit2`/`@GET`/`@POST`/`@PUT`/`@DELETE` across `services/scenes/`, `services/
+schedules/`, and `services/devices/command/` came back completely empty. `SceneRepository.java`
+persists purely to on-device Room/SQLite (`SceneDao`/`CoreDatabase`), not a network layer. The
+`sceneArray`/`schedules` fields already seen in real cloud exports exist because the **hub**
+telemeters its own mesh state up to the cloud independently - not because the app writes scenes
+through a REST call. Same conclusion as motion-sensor schedules, just not yet verified at the same
+op_code-dispatch level of confidence: these are `HUB`-prefixed commands (as opposed to the
+per-device commands the rest of this session's op_code work covered), and whether they route through
+the same `0x8E` hardcoded-relay path already found for `SetStatusIndicatorSettingsCommand`/etc. (see
+mesh_opcodes.md's "CORRECTION" section) or a different hub-specific dispatch is **not yet checked** -
+needs the same careful verification indicator LED needed before it silently worked, not before it
+silently failed.
 
 ## Recommendation
 
 The "sync an HA automation back to Cync" theory, as generally framed, doesn't hold up - there's no
-general automation concept on the Cync side for most HA automations to become. But there is one
-concrete, well-scoped, locally-writable feature here worth building on its own merits:
+general automation concept on the Cync side for most HA automations to become. But there are now two
+concrete, locally-writable features worth building on their own merits:
 
 1. **Read motion-sensor schedules from the cloud export** and expose them in HA (informational at
    minimum - "this group's motion sensor uses these 4 time-of-day brightness/color settings").
 2. **Write motion-sensor schedules over the local mesh** (`0xF7 0x11 0x02 0x0B`, `cmd_code` via the
    length formula in `mesh_opcodes.md`) - this is the piece that would let an HA-side UI/automation
    actually change a Cync group's native motion-sensor behavior, no cloud call needed.
-3. Scenes/Schedules (the cloud-only "Routines" tab) are a separate, larger effort with an unverified
-   write path - worth deprioritizing behind the above.
+3. **Scenes/Schedules (the "Routines" tab) are also locally writable**, not cloud-only as earlier
+   thought - `HUB_CREATE_SCENE`/`HUB_CREATE_SCHEDULE`/`AddDeviceSceneCommand`/etc. (see above). This
+   is a bigger feature than motion-sensor schedules (multi-device snapshots + time triggers, not one
+   device's setting) and its exact op_code dispatch path isn't verified yet the way indicator LED's
+   was before it shipped - real, buildable, but needs that verification pass first, not blind wiring.
 
 Neither is implemented yet - this doc establishes what's confirmed and buildable, not a finished
 feature.
