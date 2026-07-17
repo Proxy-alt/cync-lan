@@ -437,10 +437,12 @@ needed here unless a newer app build adds types.
    control, and cover Scenes'/Schedules' write path (not yet analyzed - see docs/cync_automations.md).
 5. **Whether the official app's cloud dependency (and, further out, new-device provisioning) could
    ever be fully replaced by a self-hosted server** - see docs/cloud_independence_research.md. The
-   app's own device-control channel turns out to be just as unauthenticated as device firmware, and
-   BLE-provisioned device identity is confirmed client-side, not cloud-assigned - but the actual BLE
-   pairing/encryption handshake itself is unresearched and is the one real remaining blocker. Needs
-   a live BLE capture, not more decompilation, to resolve.
+   app's own device-control channel turns out to be just as unauthenticated as device firmware,
+   BLE-provisioned device identity is confirmed client-side, and a follow-up pass (native library
+   triage + a targeted re-decompile) confirmed the BLE pairing/session-key crypto is local-only too
+   (mesh credentials come from an already-paired hub over BLE or are locally synthesized, no
+   server-issued secret found anywhere). Remaining: a live BLE capture would still be the only way
+   to get 100% certainty, but it's now a confirmatory step, not resolving an open blocker.
 
 ## BTLE mesh provisioning & MeshInfo details
 

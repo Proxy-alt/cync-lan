@@ -132,20 +132,75 @@ reads as sync-after-the-fact, not identity issuance.
 consistent with the Telink-style framing already found on the TCP side in
 [mesh_opcodes.md](mesh_opcodes.md).
 
-## Open questions - this is not a green light yet
+## Update: both open questions resolved - BLE pairing crypto is local-only
 
-**The one real unknown: BLE pairing/encryption itself.** Everything traced above is *app-level*
-logic (what data the app decides to send/store). The actual BLE GATT pairing/encryption handshake
-- `TelinkDeviceBleManager`'s session setup, and any `no.nordicsemi.android.ble` SDK internals - was
-**not traced**. If Cync uses a server-issued secret to authenticate the phone-to-device BLE session
-(some IoT vendors do this specifically as an anti-spoofing measure), that would be a real,
-separate blocker that wouldn't show up in decompiled app-level flow tracing - it would need a live
-BLE capture (a BLE sniffer, e.g. an nRF52840 dongle + Wireshark, capturing an actual pairing
-session) to confirm either way.
+A follow-up session re-ran JADX against the same APK with different flags specifically to recover
+what static analysis couldn't reach the first time, then triaged the native `.so` libraries the
+Java/Kotlin layer can't see into. Both of the open questions above are now resolved.
 
-**Also unresolved**: 4 of the 20 pipeline steps (`BleDeviceCommissionService` fields `H`/`D`/`T`/`E`)
-didn't decompile cleanly (JADX `Method dump skipped` / `JadxOverflowException`) and weren't
-individually named.
+**Re-decompile methodology** (for reproducing or extending this): the original decompile lost 4 of
+`BleDeviceCommissionService`'s 20 pipeline steps to JADX's aggressive default inlining, which
+collapses Kotlin coroutine state-machine methods into their callers and can push already-complex
+generated code past JADX's internal region-complexity guard (`JadxOverflowException`). Re-running
+with `--no-inline-anonymous --no-inline-methods --no-inline-kotlin-lambda --deobf --cfg
+--show-bad-code` against the same APK, repacked from its extracted form back into a zip container
+(`zip -r -X -0 out.apk .` from the extracted APK directory, since JADX's resource decoder expects a
+proper zip, not a loose directory) recovered real names for all 4 previously-unnamed steps by
+keeping their lambda/continuation classes as separately-named files instead of inlining them away.
+Note: disabling inlining is a **targeted trade**, not a strict improvement - it fixed the 4 target
+methods but pushed ~850 *other*, unrelated methods elsewhere in the app (mostly Kotlin
+stdlib/coroutines/Ktor internals, not anything in this project's area of interest) into the same
+kind of decompilation failure. Worth doing for a specific investigation, not as a default.
+
+**The 4 previously-unresolved pipeline steps (positions 4, 7, 9, 10) are: `createGroupsAndSubgroupsOperation`,
+`assignToGroupsOperation`, `setLoadTypeOperation`, `checkMotionSensorOperation`** - all four confirmed
+local-only (group/subgroup model building and motion-sensor capability checks against already-in-memory
+`CommissionBuilder` state via local `GroupService`/`MotionSensorService` classes, no HTTP client
+reference anywhere in their bodies). This closes out the entire 20-step pipeline: **exactly 1 of 20
+steps (`writeChangesToCloudOperation`) touches the network at all.**
+
+**BLE pairing/session crypto - confirmed local, not server-gated:**
+
+- **`libBleLib.so` turned out to be a red herring.** Its JNI package is
+  `com.thingclips.ble.jni.BLEJniLib` (Tuya/ThingClips branding, the same bundled-but-likely-unused
+  SDK pattern already flagged for `ThingCertificatePinner.java`) - `greadelf -d libBleLib.so` shows
+  no crypto library linkage at all, and its one `made_session_key` function (disassembled via
+  `r2 -e bin.relocs.apply=true -A -c 'pdf @ sym.made_session_key' libBleLib.so`) is a 16-byte CRC8
+  table-whitening loop over two already-local byte arrays - not AES/ECDH/HMAC, no capacity for a
+  network round trip at all. This is very likely unused code from a different product line, not
+  Cync's real Telink pairing engine.
+- **The real logic is in Kotlin, not native**: `TelinkDeviceBleManager.getSessionKey()`
+  (`.../telink/TelinkDeviceBleManager.java:912-932`, backing class
+  `TelinkDeviceBleManager$getSessionKey$2.java`) just awaits a local `Flow` already populated by
+  data arriving over the established BLE connection (`FlowKt.filterNotNull` on a manager-internal
+  field) - no network call anywhere in it.
+- **`MeshCredentials`** (the actual mesh-wide network name+password - the real shared secret, not
+  the per-session key above) comes from exactly one of two local sources
+  (`DeviceServiceDefault.java`'s `MeshDataProviderImpl.getMeshCredentials`, ~line 960-1010): if a
+  mesh already exists at this location, it's read via a `HubMeshNameAndPasswordNotification` BLE
+  characteristic **directly off an already-paired hub device on the same mesh** (peer-to-peer, not
+  cloud); if this is a brand-new mesh, it's synthesized from a locally-held `LocationModel`'s own
+  name/ID fields (`locationModel.f40108c.toUpperCase()` + `locationModel.f40109d`). Neither path
+  makes an HTTP call.
+- **Independent corroboration from a different angle**: `libxlinkdtsl.so` (the native library
+  actually securing the separate `cm.gelighting.com` TCP relay channel, not BLE - confirmed via its
+  exported JNI symbols `io.xlink.wifi.sdk.util.XlinkDTSLUtils.{initDTSL,encryptSendData,...}`) is
+  Eclipse tinyDTLS using a **PSK** ciphersuite (`TLS_PSK_WITH_AES_128_CCM_8`), with strings
+  (`secretPSK`, `default identity`, `Xlink_Identify`) suggesting a shared/default PSK identity
+  rather than a real per-device server-issued secret - reinforcing, at the native/wire-protocol
+  level, Finding 1's conclusion that this channel isn't meaningfully authenticated per-device.
+- **`libnetwork-android.so` re-checked for native pinning** (the one thing Java-only analysis
+  couldn't rule out) - `strings` found no pinning/TrustManager-related text, and its only JNI
+  exports (`ThingNetworkApi.sendBroadcast`/`stopBroadcast`) are LAN-discovery utilities, not the
+  account-API HTTPS path at all - so this doesn't so much confirm "no pinning" on that channel as
+  show it isn't the right place to look; Finding 2's conclusion stands unchanged.
+
+**Net conclusion**: no cloud round-trip or server-issued secret was found anywhere in device
+identity assignment, mesh-address assignment, group placement, or the BLE pairing/session-key
+crypto itself. A live BLE sniffer capture (the originally-suggested next step) would still be the
+only way to get 100% certainty, but static analysis has now converged on the same answer from three
+independent angles (app-level flow tracing, native library inspection, and the Kotlin session-key
+logic itself) - the practical case for a hard cloud dependency in BLE pairing is now weak.
 
 ## Suggested next step: MITM the app's own traffic during a real pairing session
 
