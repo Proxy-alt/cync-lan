@@ -16,8 +16,10 @@ from cync_lan.devices import (
     CyncDevice,
     _EXPERIMENTAL_CMDS_WARNED,
     _warn_experimental_cmd_code,
+    _warn_experimental_group_targeting,
     broadcast_control_command,
     execute_scene,
+    set_group_power,
 )
 from cync_lan.packet import PacketBuilder
 from cync_lan.structs import GlobalObject
@@ -297,6 +299,74 @@ def test_version_str_unaffected_by_empty_or_unknown_firmware():
 
     node2 = CyncDevice(dev_id=5, fw_version="Unknown")
     assert node2.version_str is None
+
+
+async def test_set_group_power_splits_group_id_into_target_and_sub_id():
+    """The single most important regression test for this feature: target_id
+    and sub_id are not independent fields - together they ARE the outer
+    envelope's 2-byte MeshAddress (target_id=low byte, sub_id=high byte).
+    A group_id of 32770 (0x8002) must split into target_id=0x02, sub_id=0x80."""
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    await set_group_power(32770, 1)
+
+    assert len(fake_bridge.written) == 1
+    payload = struct.pack(">BBBBB", 0x11, 0x02, 1, 0x00, 0x00)
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x02, sub_id=0x80, op_code=0xD0, cmd_code=0x0D,
+        command_payload=payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_set_group_power_reuses_confirmed_set_power_op_and_cmd():
+    """op_code/cmd_code here are NOT predictions - must be byte-identical to
+    the already-confirmed, already-shipping set_power command."""
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    await set_group_power(0, 0)
+
+    inner_payload = struct.pack(">BBBBB", 0x11, 0x02, 0, 0x00, 0x00)
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0xD0, cmd_code=0x0D,
+        command_payload=inner_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_set_group_power_rejects_invalid_group_id_and_state():
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[])
+
+    await set_group_power(70000, 1)  # out of range
+    g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
+
+    await set_group_power(32770, 2)  # invalid state
+    g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
+
+
+def test_warn_experimental_group_targeting_fires_once_per_name():
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_group_cmd_unique_name")
+    import cync_lan.devices as devices_module
+
+    with patch.object(devices_module.logger, "warning") as mock_warn:
+        _warn_experimental_group_targeting("lp:", "test_group_cmd_unique_name")
+        _warn_experimental_group_targeting("lp:", "test_group_cmd_unique_name")
+        mock_warn.assert_called_once()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_group_cmd_unique_name")
 
 
 def test_warn_experimental_cmd_code_fires_once_per_name():

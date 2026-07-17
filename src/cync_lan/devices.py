@@ -48,7 +48,13 @@ from cync_lan.structs import (
 )
 from cync_lan.utils import bytes2list, extract_firmware_dynamically, format_socat_style
 
-__all__ = ["CyncDevice", "CyncTCPSession", "broadcast_control_command", "execute_scene"]
+__all__ = [
+    "CyncDevice",
+    "CyncTCPSession",
+    "broadcast_control_command",
+    "execute_scene",
+    "set_group_power",
+]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
@@ -236,6 +242,27 @@ def _warn_experimental_cmd_code(lp: str, name: str) -> None:
     )
 
 
+def _warn_experimental_group_targeting(lp: str, name: str) -> None:
+    """Log once per process per command name that this command targets a
+    group's MeshAddress (32768-65535) rather than a single device - unlike
+    every other EXPERIMENTAL command in this file, op_code/cmd_code here
+    are NOT predictions (this reuses an already-confirmed command exactly).
+    What's unconfirmed is the ADDRESSING: whether device firmware actually
+    responds to a group-range target as "the whole group," which has never
+    been tested against real hardware - see docs/mesh_opcodes.md's "Groups
+    control" section.
+    """
+    if name in _EXPERIMENTAL_CMDS_WARNED:
+        return
+    _EXPERIMENTAL_CMDS_WARNED.add(name)
+    logger.warning(
+        f"{lp} EXPERIMENTAL: '{name}' targets a group MeshAddress, which has never "
+        f"been confirmed to work against real device firmware - see "
+        f"docs/mesh_opcodes.md's 'Groups control' section. If this doesn't work as "
+        f"expected, please report it (device model + observed behavior)."
+    )
+
+
 async def broadcast_control_command(
     op: int,
     cmd_: int,
@@ -318,6 +345,57 @@ async def broadcast_control_command(
 
     if tasks:
         await asyncio.gather(*tasks)
+
+
+async def set_group_power(group_id: int, state: int) -> None:
+    """EXPERIMENTAL: turns every device in a group on/off in one broadcast,
+    by targeting the group's own MeshAddress instead of a single device.
+
+    Unlike every other EXPERIMENTAL command in this module, op_code/cmd_code
+    here are NOT predictions - this reuses set_power's already-confirmed
+    0xD0/0x0D exactly, byte-for-byte (see the "Confirmed, already shipping
+    in production" table in docs/mesh_opcodes.md). What's unconfirmed is the
+    ADDRESSING itself.
+
+    A real-hardware trace found `broadcast_control_command`'s `target_id`
+    and `sub_id` parameters were never two independent fields - together
+    they already ARE the outer envelope's one 2-byte little-endian
+    MeshAddress (`target_id` = low byte, `sub_id` = high byte). Every
+    existing single-device command just always hardcodes sub_id=0x00,
+    which happens to also be correct for non-multi-gang devices, so nobody
+    noticed the high byte was live. Group addresses (32768-65535, exactly
+    the `group_id` key cync-lan's own parsed `groups` dict already uses -
+    see cloud_api.py's `raw_group["groupID"]`) fit entirely inside that same
+    16-bit space - splitting one into (target_id, sub_id) needs no
+    PacketBuilder changes at all, since `_require_u8` already accepts any
+    byte 0-255 in both fields.
+
+    What's NOT confirmed: whether device firmware actually treats a
+    group-range target as "respond as the whole group" - the one real 0x8E
+    packet capture available used broadcast 0xFFFF, which is byte-identical
+    under both the old and new addressing model and doesn't independently
+    prove this. Separately, the app's own multi-device command path looks
+    like a per-device fan-out loop, not evidence it ever relies on a true
+    group broadcast. See docs/mesh_opcodes.md's "Groups control" section.
+
+    group_id: the full 32768+ group MeshAddress, matching cync-lan's own
+    groups dict key exactly (not an offset from 32768).
+    """
+    lp = "set_group_power:"
+    _warn_experimental_group_targeting(lp, "set_group_power")
+    if not (0 <= group_id <= 0xFFFF):
+        logger.error(f"{lp} Invalid group_id: {group_id} must be 0-65535")
+        return
+    if state not in (0, 1):
+        logger.error(f"{lp} Invalid state: {state} must be 0 or 1")
+        return
+    target_id = group_id & 0xFF
+    sub_id = (group_id >> 8) & 0xFF
+    op = 0xD0
+    cmd_ = 0x0D
+    payload = struct.pack(">BBBBB", 0x11, 0x02, state, 0x00, 0x00)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, target_id, sub_id, payload, m_cb, lp)
 
 
 async def execute_scene(scene_id: int) -> None:

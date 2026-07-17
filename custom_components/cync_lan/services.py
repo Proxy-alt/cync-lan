@@ -1,9 +1,13 @@
-"""Custom services for Cync LAN: experimental commands whose outer envelope
-byte (cmd_) is PREDICTED (via the length formula in
-docs/mesh_opcodes.md's "TCP relay envelope research"), not confirmed
-against a real packet capture. Every service ID is prefixed
-"experimental_" as the primary user-facing risk signal - visible in
-Developer Tools -> Actions and the automation/script action picker.
+"""Custom services for Cync LAN. Every service ID is prefixed "experimental_"
+as the primary user-facing risk signal - visible in Developer Tools -> Actions
+and the automation/script action picker. Two different kinds of "experimental"
+here: most commands' outer envelope byte (cmd_) is PREDICTED (via the length
+formula in docs/mesh_opcodes.md's "TCP relay envelope research"), not
+confirmed against a real packet capture - experimental_set_group_power is
+different, its op_code/cmd_code are fully confirmed (it reuses set_power
+exactly) and what's unconfirmed is whether device firmware honors a
+group-range target address at all (see docs/mesh_opcodes.md's "Groups
+control" section).
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_SET_INDICATOR_LED = "experimental_set_indicator_led"
 SERVICE_SET_MOTION_SENSOR_SETTINGS = "experimental_set_motion_sensor_settings"
 SERVICE_EXECUTE_SCENE = "experimental_execute_scene"
+SERVICE_SET_GROUP_POWER = "experimental_set_group_power"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -35,6 +40,8 @@ ATTR_SENSITIVITY = "sensitivity"
 ATTR_DELAY_SECONDS = "delay_seconds"
 ATTR_DEACTIVATION_SECONDS = "deactivation_seconds"
 ATTR_SCENE_ID = "scene_id"
+ATTR_GROUP_ID = "group_id"
+ATTR_STATE = "state"
 
 # Confirmed enums - see docs/mesh_opcodes.md
 # (MotionSensorSensitivity.java). Indicator LED's mode/color enums live in
@@ -75,8 +82,8 @@ def _resolve_device(hass: HomeAssistant, device_id: str):
                 return entry, node
     raise ServiceValidationError(
         f"Device {device_id} is not a Cync LAN device (or its entry isn't loaded). "
-        "Note: experimental_execute_scene targets the 'Cync LAN Bridge' device, not "
-        "an individual device."
+        "Note: experimental_execute_scene and experimental_set_group_power target "
+        "the 'Cync LAN Bridge' device, not an individual device."
     )
 
 
@@ -84,7 +91,9 @@ def _resolve_bridge_entry(hass: HomeAssistant, device_id: str):
     """Resolve a HA device-registry device_id to its config entry, requiring
     it to be the "Cync LAN Bridge" hub device (identifiers=(DOMAIN, entry_id),
     no dev_id suffix - see binary_sensor.py's diagnostic sensors) rather than
-    an individual device, since Scenes are home-wide, not per-device."""
+    an individual device - used by services that have no single CyncDevice
+    to target (Scenes are home-wide; group commands target a group's own
+    MeshAddress, not a device's)."""
     registry = dr.async_get(hass)
     device = registry.async_get(device_id)
     if device is None:
@@ -95,9 +104,8 @@ def _resolve_bridge_entry(hass: HomeAssistant, device_id: str):
             if entry is not None and entry.domain == DOMAIN:
                 return entry
     raise ServiceValidationError(
-        f"Device {device_id} is not the Cync LAN Bridge device - "
-        "experimental_execute_scene must target the bridge device, not an "
-        "individual light/switch/sensor."
+        f"Device {device_id} is not the Cync LAN Bridge device - this service "
+        "must target the bridge device, not an individual light/switch/sensor."
     )
 
 
@@ -136,6 +144,15 @@ async def _handle_execute_scene(hass: HomeAssistant, call: ServiceCall) -> None:
     await execute_scene(call.data[ATTR_SCENE_ID])
 
 
+async def _handle_set_group_power(hass: HomeAssistant, call: ServiceCall) -> None:
+    from cync_lan.devices import set_group_power
+
+    _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
+    await set_group_power(
+        call.data[ATTR_GROUP_ID], 1 if call.data[ATTR_STATE] else 0
+    )
+
+
 _SERVICE_SCHEMAS = {
     SERVICE_SET_INDICATOR_LED: vol.Schema(
         {
@@ -166,17 +183,25 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_SCENE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
         }
     ),
+    SERVICE_SET_GROUP_POWER: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_GROUP_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+            vol.Required(ATTR_STATE): cv.boolean,
+        }
+    ),
 }
 
 _HANDLERS = {
     SERVICE_SET_INDICATOR_LED: _handle_set_indicator_led,
     SERVICE_SET_MOTION_SENSOR_SETTINGS: _handle_set_motion_sensor_settings,
     SERVICE_EXECUTE_SCENE: _handle_execute_scene,
+    SERVICE_SET_GROUP_POWER: _handle_set_group_power,
 }
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 3 experimental services - idempotent, so calling this
+    """Register all 4 experimental services - idempotent, so calling this
     from every config entry's async_setup_entry (there's only ever one
     entry per the unique-config-entry design, but this is cheap insurance)
     is safe."""
@@ -192,7 +217,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove all 3 services, but only once no Cync LAN config entry
+    """Remove all 4 services, but only once no Cync LAN config entry
     remains loaded - checked as "<=1" rather than "==0" because this runs
     from async_unload_entry *before* HA has finished marking the entry
     currently being unloaded as unloaded, so that entry itself would

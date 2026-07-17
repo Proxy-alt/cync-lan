@@ -289,14 +289,46 @@ group's synthetic `MeshAddress` (32768+groupId) rather than a device address. Th
 resolution call site was abstracted through `Result<Flow<T>>` in the decompiled source and
 couldn't be traced to full confirmation.
 
-**CORRECTION, this session's later work**: this turned out not to be the cheap win it looked like.
-`PacketBuilder.build_control_packet()`'s routing struct packs `target_id` as a single byte
-(`_require_u8`, `src/cync_lan/packet/builder.py:215`) - group synthetic addresses (32768+) cannot
-be passed as `target_id` as-is, they'd fail validation outright. No code anywhere in cync-lan
-sends to anything but a single-byte device address today. Whether the real wire protocol supports
-a wider target field elsewhere (a different routing field, or a different packet type entirely for
-group commands) is still an open question - **dropped from this round**, needs dedicated protocol
-research before it's buildable, not a quick follow-up.
+**CORRECTION (twice), this session's later work.**
+
+First pass looked like a dead end: `PacketBuilder.build_control_packet()`'s routing struct packs
+`target_id` as a single byte (`_require_u8`, `src/cync_lan/packet/builder.py:215`) - group synthetic
+addresses (32768+) can't be passed as `target_id` as-is, they'd fail validation outright. Dropped
+from that round pending dedicated protocol research.
+
+**Second pass, resolved**: `target_id` and `sub_id` were never two independent fields.
+`XlinkDeviceManager.CommandDelegate.mo14054f()` (the real app's outer-envelope builder, confirmed
+byte-for-byte, re-traced with fresh eyes after the earlier pass mischaracterized it as a possibly
+separate/legacy code path - it isn't; `SetComboCommand`, the group-membership `0xD7` command above,
+and the `0x8E`-family commands all funnel through this exact same method) writes a genuine 2-byte
+little-endian `MeshAddress` destination field. Lining up byte positions: cync-lan's own
+`routing = [msg_id][0000][target_id][sub_id]` is structurally identical to the app's
+`[msgId_lo][msgId_mid][msgId_hi][00][00][dest_lo][dest_hi]` whenever `msg_id < 256` (mid/hi bytes
+naturally zero) - meaning **`target_id` (low byte) and `sub_id` (high byte) already jointly
+represent one 16-bit MeshAddress**, they just never needed to be anything but `sub_id=0` for
+ordinary single-gang devices, so nobody noticed the high byte was live. Group addresses (32768-65535,
+exactly cync-lan's own `group_id` dict key - see `cloud_api.py`'s `raw_group["groupID"]`) fit
+entirely inside that same 16-bit space. **No `PacketBuilder` changes are needed at all** -
+`_require_u8` already accepts any byte 0-255 in both fields; a caller just needs to stop hardcoding
+`sub_id=0x00` and instead split a group address as `target_id = addr & 0xFF, sub_id = (addr >> 8) &
+0xFF`.
+
+**WIRED IN, EXPERIMENTAL, but unlike every other experimental command in this doc, not a `cmd_code`
+guess**: `devices.py`'s `set_group_power(group_id, state)` reuses `set_power`'s exactly-confirmed
+`op=0xD0`/`cmd_=0x0D`/payload byte-for-byte - the only unconfirmed thing is the addressing itself.
+Two real gaps remain, honestly: (1) the one real `0x8E`-family packet capture available used
+broadcast `target_id=sub_id=0xFF` (i.e. address `0xFFFF`), which is byte-identical whether you think
+of it as "two independent 0xFF bytes" or "one 16-bit `0xFFFF` address" - it doesn't independently
+prove the 2-byte model, the byte-layout argument above is the real evidence, not this capture; (2)
+whether the app itself ever relies on a true one-packet group broadcast is still unclear -
+`DeviceServiceDefault.mo13857w` ("sendMulticastCommand") takes a `Collection<DeviceId>` (individual
+device IDs) and its `MulticastStrategy` enum (`CONTINUE_ON_FAILURE`/`BREAK_ON_FAILURE`) reads like
+per-item loop error handling, not an addressing mode - circumstantial evidence the app fans out
+per-device commands for "group" actions rather than ever sending one true group-targeted packet.
+So: the wire format can *represent* a group address, cync-lan can now send one with zero new
+plumbing, but whether real device firmware actually *honors* it as "respond as the whole group" has
+never been tested - that's what `cync_lan.experimental_set_group_power` (`custom_components/
+cync_lan/services.py`) exists to find out.
 
 ### Scenes control — real `op_code = 0x8E` (was wrongly `0xEF`, see CORRECTION above)
 
@@ -437,10 +469,12 @@ needed here unless a newer app build adds types.
    services.py`). None of these are independently confirmed against a live capture (the formula's
    source class is `@Deprecated` in the app) - **the highest-value remaining step is real-world
    testing/reporting from users**, not further research, now that the plumbing exists.
-3. **Group control needs real protocol research, not just address-targeting** - dropped from this
-   round after finding `target_id` is hard-capped to a single byte in cync-lan's own packet builder
-   (see the Groups section above's correction). Whether the real wire protocol has a wider target
-   field elsewhere is unknown.
+3. ~~Group control needs real protocol research, not just address-targeting~~ — **resolved and
+   wired in**: `target_id`/`sub_id` were never independent fields, together they already form the
+   outer envelope's 2-byte MeshAddress, so group addresses need zero `PacketBuilder` changes - see
+   the Groups section above's second correction. `cync_lan.experimental_set_group_power` is wired
+   in and needs real-hardware testing to confirm device firmware actually honors a group-range
+   target, same as every other experimental command in this doc.
 4. A real packet capture (MITM of a device's TCP session, which cync-lan's DNS-redirect setup
    already positions for) remains the way to fully confirm the length-field formula, resolve group
    control, and cover Scenes'/Schedules' write path (not yet analyzed - see docs/cync_automations.md).

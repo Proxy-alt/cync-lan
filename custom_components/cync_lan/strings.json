@@ -221,6 +221,24 @@
           "description": "The numeric ID of the scene to activate, as configured in the Cync app (0-255)."
         }
       }
+    },
+    "experimental_set_group_power": {
+      "name": "Set a group's power (experimental)",
+      "description": "Experimental — unlike this integration's other experimental services, the command itself (set_power) is fully confirmed; what's unconfirmed is whether device firmware actually responds to a group address as \"the whole group\" rather than a single device. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "fields": {
+        "device_id": {
+          "name": "Bridge device",
+          "description": "Groups are addressed home-wide via the group's own mesh address, not per-device - select the \"Cync LAN Bridge\" device, not an individual light/switch."
+        },
+        "group_id": {
+          "name": "Group ID",
+          "description": "The group's numeric mesh address (32768-65535) - find it in your exported cync_mesh.yaml/raw_mesh.cync, not a value the Cync app displays directly."
+        },
+        "state": {
+          "name": "State",
+          "description": "On or off for every device in the group."
+        }
+      }
     }
   }
 }

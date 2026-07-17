@@ -1,4 +1,4 @@
-"""Tests for services.py's 3 experimental_* services."""
+"""Tests for services.py's 4 experimental_* services."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import DOMAIN
 from custom_components.cync_lan.services import (
     SERVICE_EXECUTE_SCENE,
+    SERVICE_SET_GROUP_POWER,
     SERVICE_SET_INDICATOR_LED,
     SERVICE_SET_MOTION_SENSOR_SETTINGS,
     async_setup_services,
@@ -57,11 +58,12 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_three_services(hass):
+async def test_setup_registers_all_four_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
     assert hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
     async_unload_services(hass)
 
 
@@ -79,6 +81,7 @@ async def test_unload_removes_services_when_no_entries_loaded(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
     assert not hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
+    assert not hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
 
 
 async def test_unload_keeps_services_when_other_entries_still_loaded(hass):
@@ -284,6 +287,71 @@ async def test_execute_scene_raises_for_unknown_device_id(hass):
             DOMAIN,
             SERVICE_EXECUTE_SCENE,
             {"device_id": "does-not-exist", "scene_id": 3},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_group_power_requires_bridge_device(hass):
+    """Same shape as execute_scene: groups are addressed home-wide via the
+    group's own mesh address, not through an individual CyncDevice."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_GROUP_POWER,
+            {"device_id": device.id, "group_id": 32770, "state": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_group_power_calls_set_group_power_with_bridge_device(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.set_group_power", new=AsyncMock()
+    ) as mock_set_group_power:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_GROUP_POWER,
+            {"device_id": bridge_device.id, "group_id": 32770, "state": True},
+            blocking=True,
+        )
+    mock_set_group_power.assert_awaited_once_with(32770, 1)
+    async_unload_services(hass)
+
+
+async def test_set_group_power_maps_state_off(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.set_group_power", new=AsyncMock()
+    ) as mock_set_group_power:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_GROUP_POWER,
+            {"device_id": bridge_device.id, "group_id": 32770, "state": False},
+            blocking=True,
+        )
+    mock_set_group_power.assert_awaited_once_with(32770, 0)
+    async_unload_services(hass)
+
+
+async def test_set_group_power_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_GROUP_POWER,
+            {"device_id": "does-not-exist", "group_id": 32770, "state": True},
             blocking=True,
         )
     async_unload_services(hass)

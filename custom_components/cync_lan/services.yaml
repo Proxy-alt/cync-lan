@@ -87,3 +87,21 @@ experimental_execute_scene:
         number:
           min: 0
           max: 255
+
+experimental_set_group_power:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    group_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+    state:
+      required: true
+      selector:
+        boolean:

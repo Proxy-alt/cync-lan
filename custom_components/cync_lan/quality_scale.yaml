@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (222 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (230 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,16 +9,20 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 3 experimental_* services are registered idempotently in
+      services.py's 4 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning and scene activation
       stay service-only (cmd_code still predicted, not confirmed - a service
-      call is a more honest fit than an always-on entity). Indicator LED's
-      service is kept for backward compatibility but is no longer the
-      primary surface - it's confirmed working on real hardware now, so
-      it's also exposed as 4 real entities (number.py/select.py/switch.py),
-      both routed through the same bridge.py cache so they can't diverge.
+      call is a more honest fit than an always-on entity). Group power is a
+      third kind: its cmd_code is fully confirmed (reuses set_power exactly),
+      what's unconfirmed is whether firmware honors a group-range target
+      address at all - see docs/mesh_opcodes.md's "Groups control" section.
+      Indicator LED's service is kept for backward compatibility but is no
+      longer the primary surface - it's confirmed working on real hardware
+      now, so it's also exposed as 4 real entities (number.py/select.py/
+      switch.py), both routed through the same bridge.py cache so they
+      can't diverge.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -79,10 +83,12 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 3 experimental_*
-      services and their fields, each description explicitly flagging that
-      the underlying cmd_code (and, for scenes, the target address too) is
-      predicted rather than confirmed.
+      strings.json's "services" block documents all 4 experimental_*
+      services and their fields, each description explicitly flagging what's
+      actually unconfirmed for that specific command - predicted cmd_code
+      for most, the target address too for scenes, and for group power
+      specifically (its cmd_code is confirmed) whether firmware honors a
+      group-range target at all.
   docs-triggers:
     status: exempt
     comment: No custom triggers defined (standard entity-state triggers apply).
@@ -184,8 +190,8 @@ rules:
   test-coverage:
     status: done
     comment: >-
-      98% overall line coverage on custom_components/cync_lan (1197
-      statements, 27 missed), measured with pytest-cov against a real 222-
+      98% overall line coverage on custom_components/cync_lan (1204
+      statements, 27 missed), measured with pytest-cov against a real 230-
       test run. number.py/select.py/sensor.py/switch.py/entity.py/util.py
       all at 100%. Remaining gaps are in __init__.py's rarely-hit
       background-task error branches, config_flow.py's exception logging
