@@ -202,6 +202,15 @@ only way to get 100% certainty, but static analysis has now converged on the sam
 independent angles (app-level flow tracing, native library inspection, and the Kotlin session-key
 logic itself) - the practical case for a hard cloud dependency in BLE pairing is now weak.
 
+## Update: the actual BLE GATT wire protocol is now documented
+
+See [ble_provisioning_protocol.md](ble_provisioning_protocol.md) - service/characteristic UUIDs,
+the pairing/session-key handshake, command encryption (MIC + CTR-style keystream), and the
+`SetWifiCommand` chunking format, all traced from the decompiled app and cross-validated against
+independent open-source Telink-mesh prior art (`google/python-dimond`, `vpaeder/telinkpp`,
+`google/python-laurel` - the last one specifically cited elsewhere as used for Cync/GE devices).
+This is the missing byte-level layer under everything documented above.
+
 ## Suggested next step: MITM the app's own traffic during a real pairing session
 
 Given Finding 1 (the app's `cm.gelighting.com` channel is unauthenticated, same as firmware), the
