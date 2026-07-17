@@ -400,7 +400,7 @@ sub-command - both now correctly sent under the shared `0x8E` outer op.
   (`LightRingIndicatorMode`) distinct from `LEDIndicatorMode`, translated via
   `LightRingIndicatorModeToLEDIndicatorModeMapper` — unclear if it maps 1:1 or adds states.
 
-### Motion-sensor schedule write — payload leads with `0xF7`, sub-command `0x0B` — **NOT YET WIRED IN, needs the `0x8E` correction applied before it is**
+### Motion-sensor schedule write — payload leads with `0xF7`, sub-command `0x0B` — **WIRED IN, EXPERIMENTAL**
 
 Third sibling in the `0xF7 0x11 0x02` family (alongside motion/ambient settings at `0x07` and
 indicator LED at `0x06`). Writes one of a group's 4 fixed motion-sensor schedule slots — see
@@ -408,24 +408,44 @@ indicator LED at `0x06`). Writes one of a group's 4 fixed motion-sensor schedule
 model this command writes.
 
 - Confirmed: `SetMotionSensorScheduleCommand.java` lines 85-193, `OPCODE_BYTES = {0xF7,0x11,0x02,0x0B}`.
-  Payload after the 4-byte opcode: a flags byte (slot id 0-3 packed with mode bits and an
-  RGB-vs-CCT flag), start hour, start minute, end hour, end minute, brightness, then either a CCT
-  byte or 3 RGB bytes depending on the flag.
-- **Same op-family bug as indicator LED/motion sensor settings/scenes applies here too** (see the
-  "CORRECTION" section above) - `SetMotionSensorScheduleCommand.java:129-130` routes through the
-  identical `XlinkCommandDelegate.DefaultImpls.c`→`h()`→hardcoded-`0x8E` path. The `0xF7` above is
-  the payload's own leading byte, not a real outer `op_code` - if/when this gets wired into a real
-  send, it must use `op_code=0x8E`, `repeat_op_code=False`, and prepend `0xF7` to the payload
-  (`devices.py`'s `set_indicator_led()`/`set_motion_sensor_settings()` are the reference
-  implementation for this pattern). Not corrected here only because it was never wired into a real
-  send in the first place - purely documented until now.
-- Blocked: `cmd_code` — apply the length formula from "TCP relay envelope research" above the same
-  as any other command here (payload length is confirmed, so this one's actually computable, not
-  just theoretically so) - remember the formula's payload-length input must now include the leading
-  `0xF7` byte, per the correction above.
-- **This is the one write-side finding in this doc that doesn't need a cloud API at all** — it's a
-  local mesh command, architecturally identical to every other opcode cync-lan already speaks. See
-  the automations doc for why that matters for a HA-automation-to-Cync-device sync feature.
+  Real outer op is the same hardcoded `0x8E` already confirmed working on real hardware for
+  indicator LED - `SetMotionSensorScheduleCommand.java:129-130` routes through the identical
+  `XlinkCommandDelegate.DefaultImpls.c`→`h()` path. `devices.py`'s `set_motion_sensor_schedule()`
+  implements this with `op_code=0x8E`, `repeat_op_code=False`, `0xF7` prepended to the payload -
+  same pattern as `set_indicator_led()`/`set_motion_sensor_settings()`.
+- **Full payload, resolved to the exact bit level** (`m14101x()`, lines 163-202): 4-byte
+  discriminator array (`0xF7,0x11,0x02,0x0B`) + a flags byte + start_hour + start_minute + end_hour
+  + end_minute + brightness + 3 color bytes = 13 bytes total.
+  - Flags byte: `slot_id (bits 0-1, 0-3) | mode_bit | rgb_flag`. Mode bits (from the app's own
+    if/else-if chain, NOT derived from `MotionSensorResponseMode.java`'s ordinals):
+    DISABLED→`0x80`, OCCUPANCY→`0x00` (no bit, the implicit else case), VACANCY→`0x20`,
+    SIMPLE→`0x10`. `rgb_flag = 0x40` when using RGB color (independent bit, combines with any
+    mode). Bits 2-3 are never touched by any code path - confirmed reserved/always-0, not a gap.
+  - `start_hour`/`end_hour`: 0-23. `start_minute`/`end_minute`: 0-59. Plain `LocalTime`
+    hour/minute, big-endian order.
+  - `brightness`: 0-100, range-checked in the app itself (`SensorSchedule2.java:182-195`).
+  - Color tail (always 3 bytes): CCT → `[pct, 0x00, 0x00]` (0=warmest, 100=coolest, matches the
+    cloud-JSON `cct` field 1:1); RGB → `[r, g, b]`, each 0-255. `RevealColor` throws
+    `UnsupportedOperationException` in the app - not encodable, not offered by `devices.py`.
+  - Slot id mapping confirmed identical to the already-decoded cloud-JSON model
+    (`MotionSensorMappersKt.m13647a`): Morning=0, Daytime=1, Evening=2, Sleep=3.
+- `cmd_code = 0x14` is **predicted** via the length formula (`7 + 13 = 20 = 0x14`) - reproduces
+  exactly for both confirmed 0x8E-family siblings (indicator LED `7+7=0x0E`, motion settings
+  `7+12=0x13`) but is not itself independently confirmed against a live capture.
+- **Targeted at an individual device, not a group MeshAddress** - confirmed via
+  `MotionSensorServiceDefault.java`'s `writeSchedule()` (~lines 894-1010): the real app resolves a
+  group's member devices and fans this command out per-device, rather than ever sending it once to
+  a synthesized group address. `devices.py`'s `set_motion_sensor_schedule()` is accordingly a
+  `CyncDevice` instance method (targets `self.id`), not a module-level group-targeted function like
+  `set_group_power()` - a genuinely different targeting model from the group-power finding above,
+  confirmed independently rather than assumed to match.
+- Exposed as `cync_lan.experimental_set_motion_sensor_schedule` (`custom_components/cync_lan/
+  services.py`) - **never itself tested against real hardware**, unlike indicator LED. The outer
+  op/payload-shape confidence transfers from the sibling commands' confirmation, but this specific
+  command's own behavior is unverified.
+- **This is a write-side finding that doesn't need a cloud API at all** — it's a local mesh command,
+  architecturally identical to every other opcode cync-lan already speaks. See the automations doc
+  for why that matters for a HA-automation-to-Cync-device sync feature.
 
 ### Multi-way-mode diagnostic — no wire opcode exists
 

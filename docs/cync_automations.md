@@ -158,13 +158,26 @@ schedules/`, and `services/devices/command/` came back completely empty. `SceneR
 persists purely to on-device Room/SQLite (`SceneDao`/`CoreDatabase`), not a network layer. The
 `sceneArray`/`schedules` fields already seen in real cloud exports exist because the **hub**
 telemeters its own mesh state up to the cloud independently - not because the app writes scenes
-through a REST call. Same conclusion as motion-sensor schedules, just not yet verified at the same
-op_code-dispatch level of confidence: these are `HUB`-prefixed commands (as opposed to the
-per-device commands the rest of this session's op_code work covered), and whether they route through
-the same `0x8E` hardcoded-relay path already found for `SetStatusIndicatorSettingsCommand`/etc. (see
-mesh_opcodes.md's "CORRECTION" section) or a different hub-specific dispatch is **not yet checked** -
-needs the same careful verification indicator LED needed before it silently worked, not before it
-silently failed.
+through a REST call.
+
+**UPDATE: op_code dispatch verified, and it's not the 0x8E bug for the pure Hub commands.**
+`CreateSceneHubCommand`/`DeleteSceneHubCommand`/`CreateScheduleHubCommand`/
+`DeleteScheduleHubCommand`/`ToggleAutomationHubCommand` each build their own complete wire frame
+directly (`Frame.m14440a()`/`XlinkTranslatorKt.m14449a()`, two independently-implemented but
+structurally identical framers) and pass it to a third dispatch method (`mo14053e`) that does no
+envelope construction of its own - just posts the already-framed bytes. The `XlinkCommandCode`
+values (`HUB_CREATE_SCENE=0x10`, `HUB_DELETE_SCENE=0x1F`, `HUB_CREATE_SCHEDULE=0x92`,
+`HUB_DELETE_SCHEDULE=0x94`, `HUB_TOGGLE_AUTOMATION=0x93`) are the real outer op_codes, written
+verbatim - genuinely different from the `SetStatusIndicatorSettingsCommand`-style bug, not another
+instance of it. None of these five use a `MeshAddress` target at all (accepted as a parameter,
+unused in every body read) - consistent with being hub-scoped/home-wide, not per-device.
+
+`AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's captured state
+within a scene) are different and dual-path, branching on the target device's product type: the
+"regular" product path **does** have the exact `0x8E`-relay bug (the `0xEE,0x11,0x02,...` array
+misread as an op_code, same fix class as indicator LED - not yet applied); a "special" product-type
+path calls the explicit-op_code method directly with the real op `0xEE`, no bug. See
+`mesh_opcodes.md`'s "CORRECTION" section for the general bug pattern this partially replicates.
 
 ## Recommendation
 
@@ -172,16 +185,31 @@ The "sync an HA automation back to Cync" theory, as generally framed, doesn't ho
 general automation concept on the Cync side for most HA automations to become. But there are now two
 concrete, locally-writable features worth building on their own merits:
 
-1. **Read motion-sensor schedules from the cloud export** and expose them in HA (informational at
-   minimum - "this group's motion sensor uses these 4 time-of-day brightness/color settings").
-2. **Write motion-sensor schedules over the local mesh** (`0xF7 0x11 0x02 0x0B`, `cmd_code` via the
-   length formula in `mesh_opcodes.md`) - this is the piece that would let an HA-side UI/automation
-   actually change a Cync group's native motion-sensor behavior, no cloud call needed.
+1. **Read motion-sensor schedules from the cloud export** and expose them in HA - **done**, one
+   diagnostic sensor entity per schedule slot (`custom_components/cync_lan/sensor.py`).
+2. ~~Write motion-sensor schedules over the local mesh~~ - **done**: `devices.py`'s
+   `set_motion_sensor_schedule()`, exposed as `cync_lan.experimental_set_motion_sensor_schedule` -
+   see `mesh_opcodes.md`'s "Motion-sensor schedule write" section for the full resolved byte format.
+   Not yet tested against real hardware.
 3. **Scenes/Schedules (the "Routines" tab) are also locally writable**, not cloud-only as earlier
-   thought - `HUB_CREATE_SCENE`/`HUB_CREATE_SCHEDULE`/`AddDeviceSceneCommand`/etc. (see above). This
-   is a bigger feature than motion-sensor schedules (multi-device snapshots + time triggers, not one
-   device's setting) and its exact op_code dispatch path isn't verified yet the way indicator LED's
-   was before it shipped - real, buildable, but needs that verification pass first, not blind wiring.
+   thought - `HUB_CREATE_SCENE`/`HUB_CREATE_SCHEDULE`/`AddDeviceSceneCommand`/etc. (see above).
+   **UPDATE: the op_code dispatch path is now verified, with a real split.** The pure Hub-scoped
+   commands (`CreateSceneHubCommand`, `DeleteSceneHubCommand`, `CreateScheduleHubCommand`,
+   `DeleteScheduleHubCommand`, `ToggleAutomationHubCommand`) do **not** have the `0x8E`-relay bug at
+   all - each builds its own complete wire frame via `Frame.m14440a()`/`XlinkTranslatorKt.m14449a()`
+   with the `XlinkCommandCode` value (`0x10`/`0x1F`/`0x92`/`0x94`/`0x93`) written directly as the
+   real outer op_code, no hidden relay. None of them use a per-device `MeshAddress` at all - their
+   payloads carry only `sceneId`/`scheduleId`/flags, consistent with being genuinely home-wide/hub-
+   scoped commands with no device target (cync-lan's `target_id`/`sub_id` for these still needs a
+   real capture to pin down, since the app's own frame has no explicit routing field for them to
+   trace from). `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's
+   captured state within a scene) are different: they're dual-path depending on the target device's
+   product type, and the "regular" path **does** have the exact `0x8E`-relay bug (payload
+   `0xEE,0x11,0x02,...` misread as an op_code) - the same fix class as indicator LED, not yet
+   applied. Bigger feature than motion-sensor schedules (multi-device snapshots + time triggers, not
+   one device's setting), and the Hub-command family's `target_id`/`sub_id` values still need a real
+   capture before wiring in with any confidence - not blind-wireable yet, but the dispatch-path
+   ambiguity that blocked starting is resolved.
 
-Neither is implemented yet - this doc establishes what's confirmed and buildable, not a finished
-feature.
+Motion-sensor schedule writing is implemented; Scenes/Schedules writing is not yet - this doc
+establishes what's confirmed and buildable for the remaining piece, not a finished feature.
