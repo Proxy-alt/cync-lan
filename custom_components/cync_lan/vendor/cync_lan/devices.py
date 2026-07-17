@@ -10,7 +10,7 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import Coroutine, Dict, List, Optional, Union, Callable
+from typing import Coroutine, Dict, List, Optional, Tuple, Union, Callable
 
 from cync_lan.const import (
     CYNC_CLOUD_IP,
@@ -1338,6 +1338,106 @@ class CyncDevice:
         op = 0x8E
         cmd_ = 0x13
         payload = struct.pack(">B", 0xF7) + inner_payload
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+
+    # MotionSensorResponseMode.java's ordinals (the natural/public input value)
+    # mapped to their real wire-format flags-byte bits - NOT the same numbers,
+    # confirmed via SetMotionSensorScheduleCommand.m14101x()'s if/else-if chain,
+    # not derived from the ordinals themselves. OCCUPANCY sets no bit at all
+    # (the implicit "else" case).
+    _MOTION_SCHEDULE_MODE_BITS = {0: 0x80, 1: 0x00, 2: 0x20, 3: 0x10}  # DISABLED/OCCUPANCY/VACANCY/SIMPLE
+
+    async def set_motion_sensor_schedule(
+        self,
+        slot_id: int,
+        mode: int,
+        start_hour: int,
+        start_minute: int,
+        end_hour: int,
+        end_minute: int,
+        brightness: int,
+        cct: Optional[int] = None,
+        rgb: Optional[Tuple[int, int, int]] = None,
+        sub_id: Optional[int] = None,
+    ) -> None:
+        """EXPERIMENTAL: writes one of a group's 4 fixed motion-sensor
+        schedule slots (see docs/cync_automations.md for the full native
+        data model this writes, and docs/mesh_opcodes.md's "Motion-sensor
+        schedule write" section for the wire format this implements).
+
+        Confirmed via SetMotionSensorScheduleCommand.m14101x() to route
+        through the exact same op-family bug already fixed (and confirmed
+        working on real hardware) for set_indicator_led/
+        set_motion_sensor_settings - the real outer op is the hardcoded
+        0x8E "mesh-relay" op, not 0xF7 (the payload's own leading
+        discriminator byte). Unlike those two siblings, this specific
+        command has never itself been tested against real hardware -
+        cmd_ (0x14) is PREDICTED via the length formula, not confirmed.
+
+        Sent to an individual device (self.id), not a group MeshAddress -
+        confirmed the real app fans this out per member device of the
+        group rather than ever sending it once to a synthesized group
+        address (MotionSensorServiceDefault.java's writeSchedule()).
+
+        slot_id: 0=Morning, 1=Daytime, 2=Evening, 3=Sleep (matches
+        docs/cync_automations.md's cloud-JSON slot numbering exactly).
+        mode: 0=disabled, 1=occupancy, 2=vacancy, 3=simple
+        (MotionSensorResponseMode.java ordinals - vacancy exists at the
+        wire level but wasn't traced to a reachable UI path in the app).
+        start_hour/end_hour: 0-23. start_minute/end_minute: 0-59.
+        brightness: 0-100.
+        cct: 0-100 (0=warmest, 100=coolest) - mutually exclusive with rgb.
+        rgb: (r, g, b), each 0-255 - mutually exclusive with cct.
+        Exactly one of cct/rgb must be given.
+        """
+        lp = f"{self.lp}set_motion_sensor_schedule:"
+        _warn_experimental_cmd_code(lp, "set_motion_sensor_schedule")
+        if slot_id not in (0, 1, 2, 3):
+            logger.error(f"{lp} Invalid slot_id: {slot_id} must be 0-3")
+            return
+        if mode not in self._MOTION_SCHEDULE_MODE_BITS:
+            logger.error(f"{lp} Invalid mode: {mode} must be 0-3")
+            return
+        if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+            logger.error(f"{lp} Invalid hour: start_hour/end_hour must be 0-23")
+            return
+        if not (0 <= start_minute <= 59 and 0 <= end_minute <= 59):
+            logger.error(f"{lp} Invalid minute: start_minute/end_minute must be 0-59")
+            return
+        if not (0 <= brightness <= 100):
+            logger.error(f"{lp} Invalid brightness: {brightness} must be 0-100")
+            return
+        if (cct is None) == (rgb is None):
+            logger.error(f"{lp} Exactly one of cct or rgb must be given")
+            return
+
+        flags = slot_id | self._MOTION_SCHEDULE_MODE_BITS[mode]
+        if rgb is not None:
+            r, g, b = rgb
+            if not all(0 <= c <= 255 for c in (r, g, b)):
+                logger.error(f"{lp} Invalid rgb: each channel must be 0-255")
+                return
+            flags |= 0x40
+            color = (r, g, b)
+        else:
+            if not (0 <= cct <= 100):
+                logger.error(f"{lp} Invalid cct: {cct} must be 0-100")
+                return
+            color = (cct, 0x00, 0x00)
+
+        op = 0x8E
+        cmd_ = 0x14
+        payload = struct.pack(
+            ">BBBBBBBBBBBBB",
+            0xF7, 0x11, 0x02, 0x0B,
+            flags,
+            start_hour, start_minute,
+            end_hour, end_minute,
+            brightness,
+            *color,
+        )
         _sub_id = sub_id if sub_id is not None else 0x00
         m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)

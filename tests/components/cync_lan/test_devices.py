@@ -227,6 +227,95 @@ async def test_set_motion_sensor_settings_wires_into_send_command():
     assert kwargs["repeat_op_code"] is False
 
 
+async def test_set_motion_sensor_schedule_cct_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_motion_sensor_schedule(
+        slot_id=1,  # Daytime
+        mode=3,  # simple
+        start_hour=6, start_minute=30, end_hour=18, end_minute=0,
+        brightness=80,
+        cct=50,
+    )
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E  # op - mesh-relay, not the misread 0xF7
+    assert args[1] == 0x14  # predicted cmd_ (7 + 13-byte payload)
+    flags = 1 | 0x10  # slot_id=1, SIMPLE=0x10, no rgb flag
+    assert args[3] == struct.pack(
+        ">BBBBBBBBBBBBB",
+        0xF7, 0x11, 0x02, 0x0B,
+        flags,
+        6, 30, 18, 0,
+        80,
+        50, 0x00, 0x00,
+    )
+    assert kwargs["repeat_op_code"] is False
+
+
+async def test_set_motion_sensor_schedule_rgb_sets_flag_bit():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_motion_sensor_schedule(
+        slot_id=3,  # Sleep
+        mode=0,  # disabled
+        start_hour=22, start_minute=0, end_hour=5, end_minute=59,
+        brightness=10,
+        rgb=(255, 128, 0),
+    )
+
+    args, kwargs = node.send_command.call_args
+    flags = 3 | 0x80 | 0x40  # slot_id=3, DISABLED=0x80, rgb flag=0x40
+    assert args[3] == struct.pack(
+        ">BBBBBBBBBBBBB",
+        0xF7, 0x11, 0x02, 0x0B,
+        flags,
+        22, 0, 5, 59,
+        10,
+        255, 128, 0,
+    )
+
+
+async def test_set_motion_sensor_schedule_occupancy_mode_sets_no_bit():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_motion_sensor_schedule(
+        slot_id=0, mode=1,  # occupancy - no mode bit set
+        start_hour=0, start_minute=0, end_hour=0, end_minute=0,
+        brightness=0, cct=0,
+    )
+
+    args, _ = node.send_command.call_args
+    flags = args[3][4]
+    assert flags == 0x00  # slot_id=0 | occupancy(no bit)
+
+
+async def test_set_motion_sensor_schedule_rejects_invalid_inputs():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_motion_sensor_schedule(4, 3, 0, 0, 0, 0, 50, cct=50)  # bad slot_id
+    await node.set_motion_sensor_schedule(0, 9, 0, 0, 0, 0, 50, cct=50)  # bad mode
+    await node.set_motion_sensor_schedule(0, 3, 24, 0, 0, 0, 50, cct=50)  # bad hour
+    await node.set_motion_sensor_schedule(0, 3, 0, 60, 0, 0, 50, cct=50)  # bad minute
+    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 101, cct=50)  # bad brightness
+    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 50)  # neither cct nor rgb
+    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 50, cct=50, rgb=(1, 1, 1))  # both
+    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 50, rgb=(256, 0, 0))  # bad rgb channel
+    node.send_command.assert_not_awaited()
+
+
 async def test_execute_scene_payload_shape():
     g = GlobalObject()
     fake_bridge = _FakeBridgeDevice()

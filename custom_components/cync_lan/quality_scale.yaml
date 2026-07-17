@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (230 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (237 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,7 +9,7 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 4 experimental_* services are registered idempotently in
+      services.py's 5 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning and scene activation
@@ -83,7 +83,7 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 4 experimental_*
+      strings.json's "services" block documents all 5 experimental_*
       services and their fields, each description explicitly flagging what's
       actually unconfirmed for that specific command - predicted cmd_code
       for most, the target address too for scenes, and for group power
@@ -190,8 +190,8 @@ rules:
   test-coverage:
     status: done
     comment: >-
-      98% overall line coverage on custom_components/cync_lan (1204
-      statements, 27 missed), measured with pytest-cov against a real 230-
+      98% overall line coverage on custom_components/cync_lan (1218
+      statements, 27 missed), measured with pytest-cov against a real 237-
       test run. number.py/select.py/sensor.py/switch.py/entity.py/util.py
       all at 100%. Remaining gaps are in __init__.py's rarely-hit
       background-task error branches, config_flow.py's exception logging

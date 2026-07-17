@@ -105,3 +105,70 @@ experimental_set_group_power:
       required: true
       selector:
         boolean:
+
+experimental_set_motion_sensor_schedule:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    slot:
+      required: true
+      selector:
+        select:
+          options:
+            - morning
+            - daytime
+            - evening
+            - sleep
+          translation_key: motion_schedule_slot
+    mode:
+      required: true
+      selector:
+        select:
+          options:
+            - disabled
+            - occupancy
+            - vacancy
+            - simple
+          translation_key: motion_schedule_mode
+    start_hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+    start_minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+    end_hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+    end_minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+    brightness:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    cct:
+      selector:
+        number:
+          min: 0
+          max: 100
+    rgb:
+      selector:
+        color_rgb:

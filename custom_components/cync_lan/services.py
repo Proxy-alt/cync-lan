@@ -28,6 +28,7 @@ SERVICE_SET_INDICATOR_LED = "experimental_set_indicator_led"
 SERVICE_SET_MOTION_SENSOR_SETTINGS = "experimental_set_motion_sensor_settings"
 SERVICE_EXECUTE_SCENE = "experimental_execute_scene"
 SERVICE_SET_GROUP_POWER = "experimental_set_group_power"
+SERVICE_SET_MOTION_SENSOR_SCHEDULE = "experimental_set_motion_sensor_schedule"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -42,6 +43,13 @@ ATTR_DEACTIVATION_SECONDS = "deactivation_seconds"
 ATTR_SCENE_ID = "scene_id"
 ATTR_GROUP_ID = "group_id"
 ATTR_STATE = "state"
+ATTR_SLOT = "slot"
+ATTR_START_HOUR = "start_hour"
+ATTR_START_MINUTE = "start_minute"
+ATTR_END_HOUR = "end_hour"
+ATTR_END_MINUTE = "end_minute"
+ATTR_CCT = "cct"
+ATTR_RGB = "rgb"
 
 # Confirmed enums - see docs/mesh_opcodes.md
 # (MotionSensorSensitivity.java). Indicator LED's mode/color enums live in
@@ -49,6 +57,12 @@ ATTR_STATE = "state"
 # service call and an entity write converge on the same values/cache.
 _SENSOR_TYPE = {"motion": 1, "ambient_light": 2}
 _SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
+# Matches sensor.py's _SLOT_LABELS ordering and docs/cync_automations.md's
+# cloud-JSON slot numbering exactly.
+_SCHEDULE_SLOT = {"morning": 0, "daytime": 1, "evening": 2, "sleep": 3}
+# MotionSensorResponseMode.java ordinals - vacancy exists at the wire level
+# but wasn't traced to a reachable UI path in the app.
+_SCHEDULE_MODE = {"disabled": 0, "occupancy": 1, "vacancy": 2, "simple": 3}
 
 
 def _resolve_device(hass: HomeAssistant, device_id: str):
@@ -153,6 +167,22 @@ async def _handle_set_group_power(hass: HomeAssistant, call: ServiceCall) -> Non
     )
 
 
+async def _handle_set_motion_sensor_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    rgb = call.data.get(ATTR_RGB)
+    await node.set_motion_sensor_schedule(
+        slot_id=_SCHEDULE_SLOT[call.data[ATTR_SLOT]],
+        mode=_SCHEDULE_MODE[call.data[ATTR_MODE]],
+        start_hour=call.data[ATTR_START_HOUR],
+        start_minute=call.data[ATTR_START_MINUTE],
+        end_hour=call.data[ATTR_END_HOUR],
+        end_minute=call.data[ATTR_END_MINUTE],
+        brightness=call.data[ATTR_BRIGHTNESS],
+        cct=call.data.get(ATTR_CCT),
+        rgb=tuple(rgb) if rgb else None,
+    )
+
+
 _SERVICE_SCHEMAS = {
     SERVICE_SET_INDICATOR_LED: vol.Schema(
         {
@@ -190,6 +220,24 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_STATE): cv.boolean,
         }
     ),
+    SERVICE_SET_MOTION_SENSOR_SCHEDULE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_SLOT): vol.In(_SCHEDULE_SLOT),
+            vol.Required(ATTR_MODE): vol.In(_SCHEDULE_MODE),
+            vol.Required(ATTR_START_HOUR): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+            vol.Required(ATTR_START_MINUTE): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
+            vol.Required(ATTR_END_HOUR): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+            vol.Required(ATTR_END_MINUTE): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
+            vol.Required(ATTR_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional(ATTR_CCT): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional(ATTR_RGB): vol.All(
+                cv.ensure_list,
+                [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+                vol.Length(min=3, max=3),
+            ),
+        }
+    ),
 }
 
 _HANDLERS = {
@@ -197,11 +245,12 @@ _HANDLERS = {
     SERVICE_SET_MOTION_SENSOR_SETTINGS: _handle_set_motion_sensor_settings,
     SERVICE_EXECUTE_SCENE: _handle_execute_scene,
     SERVICE_SET_GROUP_POWER: _handle_set_group_power,
+    SERVICE_SET_MOTION_SENSOR_SCHEDULE: _handle_set_motion_sensor_schedule,
 }
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 4 experimental services - idempotent, so calling this
+    """Register all 5 experimental services - idempotent, so calling this
     from every config entry's async_setup_entry (there's only ever one
     entry per the unique-config-entry design, but this is cheap insurance)
     is safe."""
@@ -217,7 +266,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove all 4 services, but only once no Cync LAN config entry
+    """Remove all 5 services, but only once no Cync LAN config entry
     remains loaded - checked as "<=1" rather than "==0" because this runs
     from async_unload_entry *before* HA has finished marking the entry
     currently being unloaded as unloaded, so that entry itself would

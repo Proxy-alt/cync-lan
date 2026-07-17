@@ -149,6 +149,22 @@
         "medium": "Medium",
         "low": "Low"
       }
+    },
+    "motion_schedule_slot": {
+      "options": {
+        "morning": "Morning",
+        "daytime": "Daytime",
+        "evening": "Evening",
+        "sleep": "Sleep"
+      }
+    },
+    "motion_schedule_mode": {
+      "options": {
+        "disabled": "Disabled",
+        "occupancy": "Occupancy",
+        "vacancy": "Vacancy",
+        "simple": "Simple (time-based)"
+      }
     }
   },
   "services": {
@@ -237,6 +253,52 @@
         "state": {
           "name": "State",
           "description": "On or off for every device in the group."
+        }
+      }
+    },
+    "experimental_set_motion_sensor_schedule": {
+      "name": "Set a motion sensor schedule slot (experimental)",
+      "description": "Experimental — the outer command byte is confirmed (same fix already confirmed working on real hardware for the indicator LED service), but the predicted cmd_code and this specific command have not themselves been tested against real hardware. Writes one of a group's 4 fixed motion-sensor schedule slots. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The motion/ambient-light sensor device to write the schedule to."
+        },
+        "slot": {
+          "name": "Slot",
+          "description": "Which of the 4 fixed time-of-day slots to write."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Disabled, occupancy-based, vacancy-based, or simple (time-based only)."
+        },
+        "start_hour": {
+          "name": "Start hour",
+          "description": "0-23."
+        },
+        "start_minute": {
+          "name": "Start minute",
+          "description": "0-59."
+        },
+        "end_hour": {
+          "name": "End hour",
+          "description": "0-23."
+        },
+        "end_minute": {
+          "name": "End minute",
+          "description": "0-59."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "0-100."
+        },
+        "cct": {
+          "name": "Color temperature",
+          "description": "0 (warmest) to 100 (coolest). Exactly one of Color temperature or RGB color must be set."
+        },
+        "rgb": {
+          "name": "RGB color",
+          "description": "Exactly one of Color temperature or RGB color must be set."
         }
       }
     }

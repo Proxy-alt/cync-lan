@@ -1,4 +1,4 @@
-"""Tests for services.py's 4 experimental_* services."""
+"""Tests for services.py's 5 experimental_* services."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from custom_components.cync_lan.services import (
     SERVICE_EXECUTE_SCENE,
     SERVICE_SET_GROUP_POWER,
     SERVICE_SET_INDICATOR_LED,
+    SERVICE_SET_MOTION_SENSOR_SCHEDULE,
     SERVICE_SET_MOTION_SENSOR_SETTINGS,
     async_setup_services,
     async_unload_services,
@@ -51,6 +52,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     for node in nodes.values():
         node.set_indicator_led = AsyncMock()
         node.set_motion_sensor_settings = AsyncMock()
+        node.set_motion_sensor_schedule = AsyncMock()
     entry.runtime_data = SimpleNamespace(
         ncync_server=SimpleNamespace(node_devices=nodes),
         bridge=CyncLanBridge(hass, entry.entry_id),
@@ -58,12 +60,13 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_four_services(hass):
+async def test_setup_registers_all_five_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
     assert hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SCHEDULE)
     async_unload_services(hass)
 
 
@@ -82,6 +85,7 @@ async def test_unload_removes_services_when_no_entries_loaded(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
     assert not hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
+    assert not hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SCHEDULE)
 
 
 async def test_unload_keeps_services_when_other_entries_still_loaded(hass):
@@ -352,6 +356,88 @@ async def test_set_group_power_raises_for_unknown_device_id(hass):
             DOMAIN,
             SERVICE_SET_GROUP_POWER,
             {"device_id": "does-not-exist", "group_id": 32770, "state": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_motion_sensor_schedule_calls_node_method_with_cct(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MOTION_SENSOR_SCHEDULE,
+        {
+            "device_id": device.id,
+            "slot": "daytime",
+            "mode": "simple",
+            "start_hour": 6,
+            "start_minute": 30,
+            "end_hour": 18,
+            "end_minute": 0,
+            "brightness": 80,
+            "cct": 50,
+        },
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_motion_sensor_schedule.assert_awaited_once_with(
+        slot_id=1, mode=3, start_hour=6, start_minute=30, end_hour=18,
+        end_minute=0, brightness=80, cct=50, rgb=None,
+    )
+    async_unload_services(hass)
+
+
+async def test_set_motion_sensor_schedule_calls_node_method_with_rgb(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MOTION_SENSOR_SCHEDULE,
+        {
+            "device_id": device.id,
+            "slot": "sleep",
+            "mode": "disabled",
+            "start_hour": 22,
+            "start_minute": 0,
+            "end_hour": 5,
+            "end_minute": 59,
+            "brightness": 10,
+            "rgb": [255, 128, 0],
+        },
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_motion_sensor_schedule.assert_awaited_once_with(
+        slot_id=3, mode=0, start_hour=22, start_minute=0, end_hour=5,
+        end_minute=59, brightness=10, cct=None, rgb=(255, 128, 0),
+    )
+    async_unload_services(hass)
+
+
+async def test_set_motion_sensor_schedule_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MOTION_SENSOR_SCHEDULE,
+            {
+                "device_id": "does-not-exist",
+                "slot": "morning",
+                "mode": "simple",
+                "start_hour": 0,
+                "start_minute": 0,
+                "end_hour": 0,
+                "end_minute": 0,
+                "brightness": 50,
+                "cct": 50,
+            },
             blocking=True,
         )
     async_unload_services(hass)
