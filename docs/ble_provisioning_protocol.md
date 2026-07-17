@@ -225,6 +225,13 @@ Confirmed, `SetWifiCommand.java` + `Utilities.m13402k`/`Utilities$chunkByteArray
 piece of this protocol with no prior art found anywhere** (see cross-validation section above); this
 is Cync/GE-specific, layered on top of the generic Telink base protocol.
 
+**Confirmed to use the identical encrypted mesh-command path as every other command** - re-verified
+2026-07-17 against the corrected packet model above. `DeviceWifiConnectionManager.m13937d`
+constructs `SetWifiCommand` and dispatches it via `DeviceController.mo14149i`
+(`DeviceWifiConnectionManager.java:891,1016`) - the same entry point every other command uses, down
+through `TelinkDeviceBleManager.m14326L` ("writeCommand"), the exact MIC/keystream routine already
+documented above. **No cleartext WiFi credentials are ever sent.**
+
 Opcode array `f34989z = {0xF6, 0x11, 0x02, 0x02}` (`SetWifiCommand.java:56`). Inner plaintext
 payload before chunking (`Utilities.java:225-236`):
 
@@ -237,12 +244,83 @@ payload before chunking (`Utilities.java:225-236`):
 ```
 
 This buffer is split into **8-byte chunks**, each prefixed with a **1-based running index byte**
-(`Utilities$chunkByteArray$1.java:32-34`). Each chunk becomes its own **independently
-mesh-command-encrypted** write (using the command-encryption scheme above): `[0xF6, 0x11, 0x02,
-0x02] + [chunkIndex] + ≤8 payload bytes`, with the chunk index reused as that packet's outer
-mesh-header opcode byte (`SetWifiCommand.java:120-131`). In other words, WiFi credential chunking
-happens *above* the encryption layer, as N separate encrypted mesh commands sent in sequence - not
-one long GATT write.
+(`Utilities$chunkByteArray$1.java:32-34`).
+
+**Corrected chunk→packet mapping** (`TelinkDeviceBleManager.java:1361-1375`) - the chunk index does
+**not** occupy the opcode byte position as originally stated; it goes into **packet byte 2**, the
+position documented above as "unused, always `0x00`" for ordinary commands - `SetWifiCommand`
+repurposes it:
+
+```
+packet[0:2]   seq (random, as usual)
+packet[2]     chunk index (1-based) - repurposes the "unused" byte, NOT the opcode position
+packet[3:5]   MIC (as usual)
+packet[5:7]   target MeshAddress, byte-reversed = 0x0000 (SELF_ADDRESS - see below)
+packet[7]     0xF6 - fixed opcode for every chunk (matches the WIFI notification type byte)
+packet[8:10]  0x11, 0x02 - vendor ID 0x0211, same as every other command
+packet[10]    0x02 - WiFi-family sub-discriminator (f34989z's 4th byte)
+packet[11]    chunk index again (redundant with packet[2])
+packet[12:20] up to 8 bytes of this chunk's actual payload
+```
+
+commandBody (packet[7:20]) is exactly 13 bytes - 1 sub-opcode + 1 redundant chunk-index + 8 data
+bytes - filling the corrected 10-byte-payload-capacity model precisely once the fixed opcode/vendor
+bytes are accounted for. WiFi credential chunking happens *above* the encryption layer, as N
+separate fully-encrypted mesh commands sent in sequence - not one long GATT write, and not a special
+unencrypted framing.
+
+**Target address**: for a freshly-discovered, not-yet-provisioned device, `TelinkBleDeviceController.
+m14192x` resolves a null target to `MeshAddress.Companion.m13644c(deviceId.index)`; a fresh device's
+`DeviceId` has index 0, so this resolves to `MeshAddress.f31063g` = `MeshAddress(0)` - confirmed as
+the SELF_ADDRESS sentinel (`MeshAddress.java:110`, `TelinkBleDeviceController.java:1001-1057`).
+
+**The step-1-vs-step-3 ordering question, resolved**: `writeCommand` itself calls "await BLE
+connected" (`TelinkDeviceBleManager.java:1388`) then "await/derive session key"
+(`TelinkDeviceBleManager.java:1399`) before encrypting *any* packet - and the underlying BLE connect
+call is idempotent (`TelinkDeviceBleManager.java:1825`: only connects if not already connected). So
+the 20-step pipeline's step 1 (`setWifiCredentialsIfNeeded`)'s first command transparently forces the
+full connect+pair+session-key sequence on demand; step 3's explicit `connectAndPairOperation` later
+in the list is a redundant confirmation of an already-established connection, not a first-time
+pairing step. The step list's linear ordering was misleading about when BLE connection actually
+happens - the real implementation is defensive/idempotent about it at every command, not just once
+up front.
+
+## New-device discovery (before any of the above)
+
+Confirmed, 2026-07-17 pass across the ge-sdk library and the app's own UI/domain layer
+(`com/savantsystems/oneapp/commissioning/scan/`, `.../domain/commissioning/ScanDevicesUseCase.java`,
+`.../data/commissioning/ge/GECommissioningDataSource.java`, and
+`com/gelighting/cbygekit/services/devices/BleDeviceScanner.java`). This is the step before
+everything above - how the app finds a pairable device in the first place.
+
+**No BLE-level `ScanFilter` is used at all**: `BleDeviceScanner$findDevices$1.java:360` builds an
+empty `new ScanFilter.Builder().build()` - the OS-level scan (`BluetoothLeScanner.startScan`) sees
+every nearby BLE advertisement. **All filtering happens in application code afterward**
+(`BleDeviceScanner.m13735b`/`parseScanResult`, `BleDeviceScanner.java:216-745`):
+
+1. Reads BLE manufacturer-specific data keyed by company ID `0x0211` (`BleDeviceScanner.java:166-174,
+   326`) - the same `0x11,0x02` vendor-ID bytes already confirmed in the mesh command protocol above;
+   `0x0211` is Telink Semiconductor's registered Bluetooth SIG company ID.
+2. Within that payload, reads a device-type byte, validated against the full GE/Cync product catalog
+   (`DeviceType.java`) - an advertisement with an unrecognized type byte is rejected outright
+   (`"Unknown device type"`, `BleDeviceScanner.java:372`).
+3. Separately checks the advertised local BLE name against `"telink_mesh1"`
+   (`BleDeviceScanner.java:457`) - Telink's stock factory-default/unprovisioned-node name.
+   `DeviceScanRecord.isNewDevice` (`model/DeviceScanRecord.java:30`) is set true when the name
+   matches this default, or the device's MAC is already tracked as mid-commissioning locally.
+
+**The one non-local piece**: distinguishing "a device I already own" from "an unowned device of the
+same product type" depends on a locally-cached set of already-known device/mesh names
+(`MeshDataProvider.mo13910c`, backed by `DeviceServiceDefault.java:865-867`'s `StateFlow<Set<String>>`,
+itself derived from `locationService` state populated at login) - **not a live network call at scan
+time**, but the exclusion list itself originates from the cloud-synced device list. This is not a
+new blocker for cync-lan specifically - the integration already maintains an equivalent device list
+from its own cloud export.
+
+**Practical takeaway for a Python/HA implementation**: no special BLE scan filter needed - filter
+client-side on manufacturer-data company ID `0x0211`, parse the device-type byte against a known
+catalog, and treat the advertised name `"telink_mesh1"` (or any name not matching an already-owned
+device) as the "ready to pair" signal. No cloud call required at discovery time itself.
 
 ## Confidence summary and open items
 
@@ -251,12 +329,20 @@ characteristic UUIDs, the full session-key handshake algorithm (with the two cor
 exact 20-byte command packet layout including the previously-missing vendor-ID field, the MIC +
 single-block-keystream encryption algorithm, and basic status-notification parsing
 (`data[7]==0xdc`, `data[10:18]`). The vendor-ID discovery also retroactively confirms cync-lan's own
-existing `0x11,0x02` payload-prefix convention is this exact same field, not a coincidence.
+existing `0x11,0x02` payload-prefix convention is this exact same field, not a coincidence - and the
+same bytes turn up a third time as the BLE-advertisement manufacturer-data company ID used for
+new-device discovery.
 
-**High confidence, decompile-only (no independent library covers new-device provisioning)**: the
-notification type-byte table, `pairMesh$2.java`'s mesh-credential-handoff step, the `SetWifiCommand`
-chunk/payload layout, and the 20/320ms inter-command throttling - `python-dimond`/`python-laurel`
-only ever join an *already-provisioned* mesh, so none of this could be cross-checked this pass.
+**High confidence, decompile-only but now internally cross-checked and fully traced end-to-end**:
+the notification type-byte table, `pairMesh$2.java`'s mesh-credential-handoff step, the
+`SetWifiCommand` chunk/payload layout (re-verified 2026-07-17 against the corrected packet model,
+including the connect-on-demand mechanism resolving the earlier step-ordering question and
+confirming no cleartext credentials), new-device BLE discovery/filtering, and the 20/320ms
+inter-command throttling. `python-dimond`/`python-laurel` only ever join an *already-provisioned*
+mesh, so none of the provisioning-specific pieces could be cross-checked against independent working
+code this pass - but the decompile-internal consistency (the same call paths, the same encryption
+routine, the same vendor-ID bytes appearing in three unrelated places) is itself strong internal
+evidence.
 
 **Lower confidence / genuinely open**:
 - Exact semantic mapping of the `Telink.OPCODE` enum's ordinal values to the literal integer opcodes
@@ -265,14 +351,15 @@ only ever join an *already-provisioned* mesh, so none of this could be cross-che
 - Whether the Cync app itself performs the mutual-auth verification step the original decompile pass
   described (`python-dimond` doesn't, and doesn't need to) - unresolved, but not blocking for a
   from-scratch client.
-- The `SetWifiCommand` chunking scheme specifically remains the least-validated piece of this whole
-  document - it's the one part with genuinely zero independent confirmation.
+- Whether an already-provisioned device stops advertising its default name (plausible, not directly
+  confirmed via UI strings this pass) - relevant only for a "should already-paired devices ever show
+  up in a scan" edge case, not a correctness blocker.
 
 **Recommended next steps, in order of cost**: (1) clone `vpaeder/telinkpp` too, as a second
-cross-check on the command-encryption algorithm now confirmed above; (2) prototype the
-`SetWifiCommand` chunking scheme specifically against a real device - now the single most valuable
-remaining unknown, since everything else in the mesh-communication path (as opposed to provisioning
-specifically) is validated against working code; (3) a live BLE capture during a real pairing
-session remains the way to get full certainty on the WiFi-handoff step and confirm the
-mutual-auth-verification question, same as `docs/cloud_independence_research.md`'s original
+cross-check on the command-encryption algorithm now confirmed above; (2) an actual prototype attempt
+against real hardware is now reasonable to try directly - discovery, pairing, mesh-join, WiFi
+handoff, and command encryption are all traced end-to-end with either independent library validation
+or thorough internal cross-checking; (3) a live BLE capture during a real pairing session remains
+the way to get full certainty on the couple of remaining lower-confidence items above, same as
+`docs/cloud_independence_research.md`'s original
 recommendation - now scoped to just the provisioning-specific pieces rather than the whole protocol.
