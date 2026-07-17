@@ -163,14 +163,51 @@ through a REST call.
 **UPDATE: op_code dispatch verified, and it's not the 0x8E bug for the pure Hub commands.**
 `CreateSceneHubCommand`/`DeleteSceneHubCommand`/`CreateScheduleHubCommand`/
 `DeleteScheduleHubCommand`/`ToggleAutomationHubCommand` each build their own complete wire frame
-directly (`Frame.m14440a()`/`XlinkTranslatorKt.m14449a()`, two independently-implemented but
-structurally identical framers) and pass it to a third dispatch method (`mo14053e`) that does no
-envelope construction of its own - just posts the already-framed bytes. The `XlinkCommandCode`
-values (`HUB_CREATE_SCENE=0x10`, `HUB_DELETE_SCENE=0x1F`, `HUB_CREATE_SCHEDULE=0x92`,
+directly and pass it to a third dispatch method (`mo14053e`) that does no envelope construction of
+its own - just posts the already-framed bytes. The `XlinkCommandCode` values
+(`HUB_CREATE_SCENE=0x10`, `HUB_DELETE_SCENE=0x1F`, `HUB_CREATE_SCHEDULE=0x92`,
 `HUB_DELETE_SCHEDULE=0x94`, `HUB_TOGGLE_AUTOMATION=0x93`) are the real outer op_codes, written
 verbatim - genuinely different from the `SetStatusIndicatorSettingsCommand`-style bug, not another
 instance of it. None of these five use a `MeshAddress` target at all (accepted as a parameter,
 unused in every body read) - consistent with being hub-scoped/home-wide, not per-device.
+
+**CORRECTION, follow-up pass**: `DeleteSceneHubCommand`/`DeleteScheduleHubCommand`/
+`ToggleAutomationHubCommand` all call `XlinkTranslatorKt.m14449a()` only -
+**`Frame.m14440a()` is never actually invoked by these 3 files**, contradicting the "two
+structurally identical framers" claim just above; not yet re-checked for `CreateSceneHubCommand`/
+`CreateScheduleHubCommand` specifically. `XlinkTranslatorKt.m14449a()` → `Xlink.m14391a()`
+(`Xlink.java:24-71`) builds `msgId(4B LE) + flagByte(1B const) + op_code(1B) + len(2B LE) + payload
++ checksum(1B)`, then **0x7D/0x7E byte-stuffs and wraps in `0x7E...0x7E`** - a PPP/HDLC-style
+escaped frame, structurally unlike cync-lan's own confirmed 5-byte-header TCP wire format (no
+delimiters/escaping there) documented in `mesh_opcodes.md`'s "TCP relay envelope research" section -
+which already flagged this exact `Xlink`/`XlinkTranslatorKt` code as `@Deprecated`, "the phone-app's
+older command channel, not necessarily byte-identical to the device-facing protocol cync-lan
+replicates."
+
+**This is a real, unresolved architectural question, not just a missing byte count**: it's unknown
+whether these 3 (and presumably the 2 Create commands) actually ride over the same TCP relay
+cync-lan speaks at all, wrapped in cync-lan's own `PacketBuilder` envelope like every other
+command in this codebase - or whether they're BLE-GATT-specific and would need this raw
+HDLC-escaped frame built and sent as a self-contained unit, bypassing `PacketBuilder` entirely.
+Confirmed payloads for the 3 read this pass (all via `WriteBuffer`'s fixed-width write methods -
+`m14441a`=1B, `m14443c`=4B LE, `m14444d`=2B LE, no generic/templated width ambiguity):
+- `DeleteSceneHubCommand` (`:63-67`): 2 bytes, `sceneId` as **uint16 LE** - note this contradicts
+  the existing `experimental_execute_scene` service's 1-byte `scene_id` (0-255) assumption; for
+  *this* command the same underlying field is written 2-byte-wide, not 1.
+- `DeleteScheduleHubCommand` (`:63-67`): 2 bytes, `scheduleId` as uint16 LE.
+- `ToggleAutomationHubCommand` (`:93-100`): 52 bytes total - `scheduleId`(2B LE) + `sceneId`(**4B
+  LE** - the same field written 2 different widths across these two commands, a real app-code
+  quirk, not an assumption) + 26 zero-padding bytes + a redundant zero u16 + `enabled`(1B, 0/1) +
+  1 zero byte + 16 zero bytes.
+
+Given the transport question above is unresolved, **none of these 3 are being wired into
+cync-lan yet** despite having exact payload byte layouts now - guessing at whether/how to adapt a
+BLE-flavored HDLC frame into cync-lan's TCP envelope would be a materially bigger and less
+grounded guess than anything else shipped this session. This genuinely needs a live packet
+capture (does a real "delete scene" action from the app produce anything resembling
+`PacketBuilder`'s format at all, over the TCP relay cync-lan intercepts?) rather than more
+decompiled-source reading - the open question is about which transport carries this command in
+practice, which static analysis of the phone app's Kotlin/Java source can't settle on its own.
 
 `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's captured state
 within a scene) are different and dual-path, branching on the target device's product type: the
@@ -193,23 +230,25 @@ concrete, locally-writable features worth building on their own merits:
    Not yet tested against real hardware.
 3. **Scenes/Schedules (the "Routines" tab) are also locally writable**, not cloud-only as earlier
    thought - `HUB_CREATE_SCENE`/`HUB_CREATE_SCHEDULE`/`AddDeviceSceneCommand`/etc. (see above).
-   **UPDATE: the op_code dispatch path is now verified, with a real split.** The pure Hub-scoped
-   commands (`CreateSceneHubCommand`, `DeleteSceneHubCommand`, `CreateScheduleHubCommand`,
-   `DeleteScheduleHubCommand`, `ToggleAutomationHubCommand`) do **not** have the `0x8E`-relay bug at
-   all - each builds its own complete wire frame via `Frame.m14440a()`/`XlinkTranslatorKt.m14449a()`
-   with the `XlinkCommandCode` value (`0x10`/`0x1F`/`0x92`/`0x94`/`0x93`) written directly as the
-   real outer op_code, no hidden relay. None of them use a per-device `MeshAddress` at all - their
-   payloads carry only `sceneId`/`scheduleId`/flags, consistent with being genuinely home-wide/hub-
-   scoped commands with no device target (cync-lan's `target_id`/`sub_id` for these still needs a
-   real capture to pin down, since the app's own frame has no explicit routing field for them to
-   trace from). `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's
-   captured state within a scene) are different: they're dual-path depending on the target device's
-   product type, and the "regular" path **does** have the exact `0x8E`-relay bug (payload
-   `0xEE,0x11,0x02,...` misread as an op_code) - the same fix class as indicator LED, not yet
-   applied. Bigger feature than motion-sensor schedules (multi-device snapshots + time triggers, not
-   one device's setting), and the Hub-command family's `target_id`/`sub_id` values still need a real
-   capture before wiring in with any confidence - not blind-wireable yet, but the dispatch-path
-   ambiguity that blocked starting is resolved.
+   **UPDATE: op_code dispatch verified (no `0x8E` bug for the pure Hub commands), exact payloads
+   resolved for 3 of the 5 - but a deeper, unresolved transport question means none are wired in
+   yet.** `DeleteSceneHubCommand`/`DeleteScheduleHubCommand`/`ToggleAutomationHubCommand` build
+   their own complete wire frame via `XlinkTranslatorKt.m14449a()`/`Xlink.m14391a()` - a
+   PPP/HDLC-style, `0x7E`-delimited-and-byte-stuffed frame, structurally unlike cync-lan's own
+   confirmed TCP wire format, and traced to the exact `Xlink`/`XlinkTranslatorKt` code
+   `mesh_opcodes.md` already flagged `@Deprecated` as possibly the phone app's *older* command
+   channel. **Whether these commands ride over the same TCP relay cync-lan intercepts at all, or
+   are BLE-GATT-specific, is genuinely unresolved** - not knowable from static source reading, needs
+   a real packet capture. Confirmed payload byte layouts (see "HA → Cync (writing)" above for exact
+   `WriteBuffer` field widths) exist for the 3 delete/toggle commands regardless, ready to wire in
+   the moment the transport question is settled. `CreateSceneHubCommand`/`CreateScheduleHubCommand`
+   need their own payload research on top of that (not yet done - `String30` name encoding, full
+   schedule field layout). `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one
+   device's captured state within a scene) are a separate case: dual-path depending on the target
+   device's product type, and the "regular" path **does** have the exact `0x8E`-relay bug (payload
+   `0xEE,0x11,0x02,...` misread as an op_code) - same fix class as indicator LED, not yet applied,
+   and not blocked by the transport question above since it's confirmed to go through the same
+   `mo14054f`/`mo14056h` methods already proven to carry real TCP-relay traffic.
 
 Motion-sensor schedule writing is implemented; Scenes/Schedules writing is not yet - this doc
 establishes what's confirmed and buildable for the remaining piece, not a finished feature.
