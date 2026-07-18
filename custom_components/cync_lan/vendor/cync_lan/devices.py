@@ -1472,13 +1472,20 @@ class CyncDevice:
         Plug - Toggle Power/Plug.md) - see
         PacketBuilder.build_control_packet's repeat_op_code param.
 
-        User-reported operational prerequisite (not yet traced in source):
-        the real Cync app requires physically waking the sensor first
-        (press and hold its off button ~5s until the LED turns green /
-        discoverable) before it accepts settings edits. If this appears to
-        silently no-op on real hardware, try that before assuming the
-        payload itself is wrong - see docs/mesh_opcodes.md's "Operational
-        prerequisite" section.
+        Operational prerequisite, RESOLVED against decompiled source: the
+        real Cync app requires physically waking the sensor first (press
+        and hold its off button ~5s until the LED turns green) before it
+        accepts settings edits. Confirmed this "discoverable" gate is just
+        the device's ordinary mesh online/offline status (real app checks
+        MotionSensorServiceDefault.isOnline(), same StateFlow every device
+        type reports) - not a BLE/GATT discoverability scan, and no
+        programmatic wake command exists anywhere in the app's source. The
+        real app's own writeSettings/writeSchedule silently return fake
+        success without transmitting anything if the target is offline -
+        callers of this method should check bridge/online status first
+        (the equivalent signal cync-lan already tracks) rather than send
+        blind. See docs/mesh_opcodes.md's "Operational prerequisite"
+        section for the full research trail.
         """
         lp = f"{self.lp}set_motion_sensor_settings:"
         _warn_experimental_cmd_code(lp, "set_motion_sensor_settings")
@@ -1546,10 +1553,14 @@ class CyncDevice:
         rgb: (r, g, b), each 0-255 - mutually exclusive with cct.
         Exactly one of cct/rgb must be given.
 
-        User-reported operational prerequisite (not yet traced in source):
-        same physical-wake requirement as set_motion_sensor_settings above
+        Operational prerequisite, RESOLVED against decompiled source: same
+        physical-wake requirement as set_motion_sensor_settings above
         (hold the sensor's off button ~5s until the LED turns green) - see
-        docs/mesh_opcodes.md's "Operational prerequisite" section.
+        that method's docstring and docs/mesh_opcodes.md's "Operational
+        prerequisite" section for the full research trail (confirmed:
+        ordinary online/offline status, not a BLE scan; no programmatic
+        wake exists; real app silently no-ops this command family when
+        the target is offline rather than erroring).
         """
         lp = f"{self.lp}set_motion_sensor_schedule:"
         _warn_experimental_cmd_code(lp, "set_motion_sensor_schedule")
