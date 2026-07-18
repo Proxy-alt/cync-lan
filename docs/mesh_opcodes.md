@@ -138,9 +138,12 @@ predicted `cmd_code = 0x13` (corrected from an earlier miscounted 9-byte/lower-v
 real payload is 11 bytes, `">BBBHHB"` is 8 bytes not 6). Exposed as the
 `cync_lan.experimental_set_motion_sensor_settings` HA service.
 
-**Operational prerequisite**: the real Cync app requires physically waking the sensor first (hold
-the off button ~5s until the LED turns green) before it accepts settings edits - see "Operational
-prerequisite: motion sensors must be woken before settings/schedule writes" further below.
+**Operational prerequisite, RESOLVED**: the real Cync app requires physically waking the sensor
+first (hold the off button ~5s until the LED turns green) before it accepts settings edits -
+confirmed this gate is just the device's ordinary online/offline mesh status (the same signal
+`bridge.is_online(dev_id)` already tracks), not a BLE/GATT discoverability scan, and no
+programmatic wake command exists. See "Operational prerequisite: motion sensors must be woken
+before settings/schedule writes" further below for the full research trail.
 
 **UPDATE 2, this session**: the `0xF7` below is **not** cync-lan's outer `op_code` - see the
 "CORRECTION" section further down. The real outer op is `0x8E`; `0xF7` is the payload's own
@@ -447,37 +450,70 @@ model this command writes.
   services.py`) - **never itself tested against real hardware**, unlike indicator LED. The outer
   op/payload-shape confidence transfers from the sibling commands' confirmation, but this specific
   command's own behavior is unverified.
-- **Operational prerequisite**: same physical-wake requirement as motion sensor settings above
-  (hold the off button ~5s until the LED turns green) - see "Operational prerequisite: motion
-  sensors must be woken before settings/schedule writes" further below.
+- **Operational prerequisite, RESOLVED**: same physical-wake requirement as motion sensor settings
+  above (hold the off button ~5s until the LED turns green = the device's ordinary mesh online
+  status, same signal as `bridge.is_online(dev_id)`) - see "Operational prerequisite: motion
+  sensors must be woken before settings/schedule writes" further below for the full research trail.
 - **This is a write-side finding that doesn't need a cloud API at all** — it's a local mesh command,
   architecturally identical to every other opcode cync-lan already speaks. See the automations doc
   for why that matters for a HA-automation-to-Cync-device sync feature.
 
-### Operational prerequisite: motion sensors must be woken before settings/schedule writes — user-reported, not yet traced in source
+### Operational prerequisite: motion sensors must be woken before settings/schedule writes — RESOLVED against decompiled source
 
-**User-reported from real Cync app usage** (not yet independently confirmed against decompiled
-source): to edit a motion sensor's settings in the real Cync app, the physical device must first
-be woken up by pressing and holding its off button for 5 seconds until the indicator LED turns
-green, making it "discoverable." Only then does the app's settings-edit UI let you write changes.
+Originally user-reported from real Cync app usage, now independently confirmed via a full
+decompiled-source research pass: to edit a motion sensor's settings in the real Cync app, the
+physical device must first be woken up by pressing and holding its off button for 5 seconds until
+the indicator LED turns solid green. Exact user-facing copy, `strings.xml:2354`:
 
-This plausibly applies to **both** `set_motion_sensor_settings()` (0x8E/0x13, motion/ambient
-enable+sensitivity+timing) and `set_motion_sensor_schedule()` (0x8E/0x14, the 4 schedule slots)
-above — both are the same `0xF7 0x11 0x02`-prefixed command family and both write persistent
-device configuration, unlike simple state commands like power/brightness. If either
-`cync_lan.experimental_set_motion_sensor_settings` or
-`cync_lan.experimental_set_motion_sensor_schedule` appears to silently no-op on real hardware (no
-error — this transport doesn't ACK), **try physically waking the device first** (hold the off
-button ~5s until the LED goes green) before concluding the command/payload itself is wrong.
+> Press and hold the off button for 5 seconds to wake the device & make it discoverable. The LED
+> light will turn green. Make sure your phone is within 40 feet of the device during this
+> process.
 
-**Open question, not yet resolved**: whether this "discoverable" state is a real device-side
-gate that a correctly-addressed mesh command would still need to satisfy regardless of transport,
-or whether the *wake itself* is what puts the device into a mode where it's listening for this
-command family at all (e.g. an advertising/BLE-adjacent state, similar in spirit to the
-Scenes/Schedules transport-uncertainty question elsewhere in this doc). Not yet traced against
-`MotionSensorServiceDefault.java` or the sensor-settings/schedule command classes' calling
-context — worth a follow-up decompiled-source pass if these commands keep no-oping on real
-hardware even after a manual wake.
+Shown by `DeviceSettingsWakeUpFragment.B0()` (`DeviceSettingsWakeUpFragment.java:158-180`), shared
+verbatim by 3 battery/sleep device classes (`DeviceClassification.java`: WirelessSwitch=15,
+Remote=17, MotionSensor=18) - only the Lottie animation differs per device type. **Don't confuse
+with commissioning's separate "setup mode" copy** (`strings.xml:1271-1275`, blinking **blue**,
+shown only during first-time device add) - this is a different flow with different LED color.
+
+**"Discoverable" is not a BLE/GATT state at all — it's the device's ordinary mesh online/offline
+status**, the same `AvailabilityState` StateFlow every device type (lights, switches, sensors)
+already reports. Confirmed via `MotionSensorServiceDefault.isOnline()`
+(`MotionSensorServiceDefault.java:2607-2637`) → `DeviceManager.i(): StateFlow<AvailabilityState>`
+(`DeviceManager.java:60`) → `AvailabilityState.Online` (`AvailabilityState.java:66-89`, a plain
+sealed-class member alongside `Offline`/`Establishing`/`NoLink`/`None` - no special "discoverable"
+variant exists). The wake-up screen's own gating logic
+(`DeviceSettingsWakeUpFragment.java:179`) just reactively watches this same status flow flip to
+connected - it runs no dedicated discovery/BLE-scan routine of its own. **This means cync-lan
+already has the exact equivalent signal**: `bridge.is_online(dev_id)` (driven by the real
+online/offline status packets `CyncLanEntity.available` already reads) is the same underlying
+concept the real app checks before allowing an edit.
+
+**No programmatic wake command exists** - exhaustively searched `com.gelighting.cbygekit` and
+`com.savantsystems.oneapp` (the entire GE/Cync source) for "wake"/"discoverable"/"pairing
+mode"/"config mode"; the only hits are in an unrelated bundled Tuya SDK and generic
+Bluetooth-mesh-provisioning classes, neither wired to Cync/GE motion sensor code.
+`MotionSensorService`'s full interface (`MotionSensorService.java`) has no such method. **A
+previous lead in this doc, `BleDeviceCommissionService.checkMotionSensorOperation`, was
+investigated and is a false lead** - it fires during initial multi-device commissioning to
+re-home a sensor's "smart operation" group mapping, unrelated to wake/discoverability; not worth
+re-investigating.
+
+**A real, load-bearing finding for cync-lan's own behavior**: the real app's
+`MotionSensorServiceDefault.D()`/`.B()` (writeSettings/writeSchedule) check `isOnline()` per
+target device and **silently return `Ok(Unit)` — fake success — without ever transmitting the
+command if the device is offline**, rather than surfacing an error. If cync-lan wants to match
+real-ecosystem behavior (and give better UX than the real app does), an HA-side flow should check
+`bridge.is_online(dev_id)` *before* calling `set_motion_sensor_settings()`/
+`set_motion_sensor_schedule()` and tell the user to wake the device, rather than sending blind and
+getting the same silent no-op the real app itself produces when the target is asleep - see
+[[project_sensor_wake_prerequisite]] (agent memory) and `feedback_opcode_debugging.md`'s general
+"silent mesh-command failures" note, which this confirms applies architecturally, not just as an
+unverified byte-guess risk.
+
+Full research trail: `/private/tmp/claude-501/.../scratchpad/jadx_out/BleDeviceCommissionService_fallback.java`
+and `MotionSensorServiceDefault_fallback.java` (raw `jadx -m fallback --single-class` dumps of two
+methods JADX's normal pass couldn't render) - not committed to this repo, regenerate from
+`/Users/proxy-alt/Downloads/cync_apk`'s `classes*.dex` if needed again.
 
 Not a protocol command at all. `MultiWayMode.java` is a plain boolean
 `SimpleDeviceSpecificProperty`; `SetMultiWayModeGeCommandHandler.java` only mutates the in-memory
