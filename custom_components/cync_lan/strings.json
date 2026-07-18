@@ -41,6 +41,12 @@
   "options": {
     "step": {
       "init": {
+        "menu_options": {
+          "general_settings": "General settings",
+          "motion_sensor_select": "Edit motion sensor settings"
+        }
+      },
+      "general_settings": {
         "title": "Cync LAN options",
         "data": {
           "local_port": "Local TCP port (devices must be redirected here via DNS)",
@@ -48,7 +54,36 @@
           "enable_light_groups": "Create light group entities for Cync device groups",
           "hide_group_members": "Hide each group's individual member lights from dashboards"
         }
+      },
+      "motion_sensor_select": {
+        "title": "Edit motion sensor settings",
+        "description": "Choose which motion or ambient-light sensor to edit.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "motion_sensor_wake": {
+        "title": "Wake up {device_name}",
+        "description": "{device_name} appears to be offline right now. Press and hold its off button for 5 seconds to wake the device & make it discoverable. The LED light will turn green.\n\nMake sure your phone/hub is within 40 feet of the device during this process, then select Submit to check again."
+      },
+      "motion_sensor_settings": {
+        "title": "Motion sensor settings for {device_name}",
+        "description": "{device_name} is online. Choose which sensor to tune and its new settings - this sends the change immediately.",
+        "data": {
+          "sensor_type": "Sensor",
+          "enabled": "Enabled",
+          "sensitivity": "Sensitivity",
+          "delay_seconds": "Delay before triggering (seconds)",
+          "deactivation_seconds": "Deactivation delay after motion stops (seconds)"
+        }
       }
+    },
+    "error": {
+      "still_offline": "Still offline - hold the off button for 5 seconds until the LED turns green, then try again."
+    },
+    "abort": {
+      "no_motion_sensors": "No motion or ambient-light sensors were found on this Cync LAN account, or the integration hasn't finished starting yet.",
+      "motion_sensor_settings_saved": "Settings sent to {device_name}."
     }
   },
   "entity": {

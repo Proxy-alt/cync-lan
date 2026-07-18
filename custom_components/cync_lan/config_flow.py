@@ -21,6 +21,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import selector
 
 from .const import (
     CONF_ACCOUNT_PASSWORD,
@@ -38,6 +39,14 @@ from .const import (
 from .util import configure_environment, get_cloud_api, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
+
+# Matches services.py's _SENSOR_TYPE/_SENSITIVITY exactly - duplicated
+# locally rather than imported since services.py's copies are private
+# (leading underscore) and this is the same small, stable enum mapping
+# used elsewhere in this codebase (e.g. sensor.py's _SLOT_LABELS mirrors
+# services.py's _SCHEDULE_SLOT the same way).
+_MOTION_SENSOR_TYPE = {"motion": 1, "ambient_light": 2}
+_MOTION_SENSOR_SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -214,10 +223,16 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class CyncLanOptionsFlow(config_entries.OptionsFlow):
     """Gold: reconfiguration-flow - lets the user change the local port and
-    export refresh interval without deleting and re-adding the integration."""
+    export refresh interval without deleting and re-adding the integration,
+    and also hosts the "Edit Motion Sensor Settings" guided wizard (device
+    picker -> physical-wake gate -> settings form) reachable from the same
+    "Configure" entry point, mirroring the real Cync app's own guided flow
+    for the same operation (see docs/mesh_opcodes.md's "Operational
+    prerequisite" section for the research this wizard is built on)."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._motion_sensor_dev_id: int | None = None
 
     async def _refresh_and_apply_light_groups(self, hide_members: bool) -> None:
         """Best-effort: refresh the cloud export, reparse groups from it,
@@ -269,6 +284,14 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["general_settings", "motion_sensor_select"],
+        )
+
+    async def async_step_general_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
             if user_input.get(CONF_ENABLE_LIGHT_GROUPS):
                 await self._refresh_and_apply_light_groups(
@@ -280,7 +303,7 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
 
         current = self._config_entry.options
         return self.async_show_form(
-            step_id="init",
+            step_id="general_settings",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -308,4 +331,135 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                     ): bool,
                 }
             ),
+        )
+
+    def _motion_sensor_nodes(self) -> dict[int, Any]:
+        """Every currently-known device capable of motion/ambient-light
+        sensor settings - same filter binary_sensor.py's motion entities
+        use (metadata.supported + has_motion_sensor)."""
+        runtime_data = getattr(self._config_entry, "runtime_data", None)
+        if runtime_data is None:
+            return {}
+        return {
+            node.id: node
+            for node in runtime_data.ncync_server.node_devices.values()
+            if node.metadata is not None
+            and node.metadata.supported
+            and node.has_motion_sensor
+        }
+
+    async def async_step_motion_sensor_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        nodes = self._motion_sensor_nodes()
+        if not nodes:
+            return self.async_abort(reason="no_motion_sensors")
+
+        if user_input is not None:
+            self._motion_sensor_dev_id = int(user_input["device"])
+            return await self.async_step_motion_sensor_wake()
+
+        return self.async_show_form(
+            step_id="motion_sensor_select",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): vol.In(
+                        {
+                            str(dev_id): f"{node.name} (id {dev_id})"
+                            for dev_id, node in sorted(
+                                nodes.items(), key=lambda kv: kv[1].name or ""
+                            )
+                        }
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_motion_sensor_wake(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Gate on the device's ordinary online status - confirmed via
+        decompiled-source research to be exactly what the real Cync app
+        itself checks before allowing a settings edit (there is no
+        separate BLE/GATT "discoverable" state - see
+        docs/mesh_opcodes.md's "Operational prerequisite" section). If
+        submitted while still offline, redisplay the same instructions
+        with an error rather than silently sending a command the real
+        app's own equivalent code path would itself have faked success
+        on without transmitting."""
+        nodes = self._motion_sensor_nodes()
+        node = nodes.get(self._motion_sensor_dev_id)
+        if node is None:
+            return self.async_abort(reason="no_motion_sensors")
+
+        if self._bridge_is_online(node.id):
+            return await self.async_step_motion_sensor_settings()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors["base"] = "still_offline"
+
+        return self.async_show_form(
+            step_id="motion_sensor_wake",
+            data_schema=vol.Schema({}),
+            description_placeholders={"device_name": node.name},
+            errors=errors,
+        )
+
+    def _bridge_is_online(self, dev_id: int) -> bool:
+        runtime_data = getattr(self._config_entry, "runtime_data", None)
+        if runtime_data is None:
+            return False
+        return bool(runtime_data.bridge.is_online(dev_id))
+
+    async def async_step_motion_sensor_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        nodes = self._motion_sensor_nodes()
+        node = nodes.get(self._motion_sensor_dev_id)
+        if node is None:
+            return self.async_abort(reason="no_motion_sensors")
+
+        if user_input is not None:
+            sensitivity = user_input.get("sensitivity")
+            await node.set_motion_sensor_settings(
+                setting_type=_MOTION_SENSOR_TYPE[user_input["sensor_type"]],
+                enabled=user_input.get("enabled"),
+                sensitivity=(
+                    _MOTION_SENSOR_SENSITIVITY[sensitivity] if sensitivity else None
+                ),
+                delay_seconds=user_input.get("delay_seconds", 0),
+                deactivation_seconds=user_input.get("deactivation_seconds", 0),
+            )
+            return self.async_abort(
+                reason="motion_sensor_settings_saved",
+                description_placeholders={"device_name": node.name},
+            )
+
+        return self.async_show_form(
+            step_id="motion_sensor_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("sensor_type"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=list(_MOTION_SENSOR_TYPE),
+                            translation_key="motion_sensor_type",
+                        )
+                    ),
+                    vol.Optional("enabled"): bool,
+                    vol.Optional("sensitivity"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=list(_MOTION_SENSOR_SENSITIVITY),
+                            translation_key="motion_sensor_sensitivity",
+                        )
+                    ),
+                    vol.Optional("delay_seconds", default=0): vol.All(
+                        vol.Coerce(int), vol.Range(min=0)
+                    ),
+                    vol.Optional("deactivation_seconds", default=0): vol.All(
+                        vol.Coerce(int), vol.Range(min=0)
+                    ),
+                }
+            ),
+            description_placeholders={"device_name": node.name},
         )

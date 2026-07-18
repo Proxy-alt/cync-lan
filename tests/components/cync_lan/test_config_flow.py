@@ -7,7 +7,8 @@ invalid credentials, invalid OTP, and the empty-account/no-devices abort.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant import config_entries
@@ -19,6 +20,17 @@ from custom_components.cync_lan.const import DOMAIN
 async def _start_user_step(hass):
     return await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+
+
+async def _start_general_settings(hass, entry_id: str):
+    """Options flow now opens on a menu (general settings vs. the motion
+    sensor wizard) - select "general_settings" to reach the form every
+    pre-existing options test exercises."""
+    result = await hass.config_entries.options.async_init(entry_id)
+    assert result["type"] is FlowResultType.MENU
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "general_settings"}
     )
 
 
@@ -218,7 +230,7 @@ async def test_options_flow(hass, port):
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _start_general_settings(hass, entry.entry_id)
     assert result["type"] is FlowResultType.FORM
 
     result = await hass.config_entries.options.async_configure(
@@ -249,7 +261,7 @@ async def test_options_flow_enabling_light_groups_refreshes_export(
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _start_general_settings(hass, entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -278,7 +290,7 @@ async def test_options_flow_no_valid_token_skips_export(hass, mock_cloud_api):
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _start_general_settings(hass, entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -304,7 +316,7 @@ async def test_options_flow_disabled_light_groups_skips_export(hass, mock_cloud_
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _start_general_settings(hass, entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -332,7 +344,7 @@ async def test_options_flow_export_failure_does_not_block_save(hass, mock_cloud_
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _start_general_settings(hass, entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -371,7 +383,7 @@ async def test_options_flow_applies_groups_without_reload(hass, mock_cloud_api):
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
     ) as mock_add_groups:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
@@ -411,7 +423,7 @@ async def test_options_flow_light_groups_noop_before_initial_setup(
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
     ) as mock_add_groups:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
@@ -453,7 +465,7 @@ async def test_options_flow_applies_stale_groups_when_export_fails(hass, mock_cl
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
     ) as mock_add_groups:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
@@ -498,7 +510,7 @@ async def test_options_flow_parse_groups_failure_does_not_block_save(
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
     ) as mock_add_groups:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
@@ -512,3 +524,241 @@ async def test_options_flow_parse_groups_failure_does_not_block_save(
     # groups left untouched at the cached value since the reparse failed
     assert entry.runtime_data.groups == cached_groups
     mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)
+
+
+def _make_motion_sensor_node(dev_id: int, name: str, has_motion_sensor: bool = True):
+    # MagicMock(name=...) is special-cased by unittest.mock (sets the
+    # mock's repr, not a `.name` attribute) - must be assigned after
+    # construction instead.
+    node = MagicMock(id=dev_id, has_motion_sensor=has_motion_sensor)
+    node.name = name
+    node.metadata = MagicMock(supported=True)
+    node.set_motion_sensor_settings = AsyncMock()
+    return node
+
+
+def _entry_with_nodes(hass, nodes: dict, online_dev_id: int | None = None):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.cync_lan.bridge import CyncLanBridge
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+    bridge = CyncLanBridge(hass, entry.entry_id)
+    entry.runtime_data = SimpleNamespace(
+        ncync_server=SimpleNamespace(node_devices=nodes), bridge=bridge
+    )
+    # BridgeEntityState.online defaults to True (avoids a flash of
+    # "unavailable" before a device's first real status packet) - tests
+    # need deterministic online/offline state, so explicitly set every
+    # node rather than relying on that default.
+    for dev_id in nodes:
+        bridge._set_online(dev_id, dev_id == online_dev_id)
+    return entry
+
+
+async def _open_motion_sensor_menu(hass, entry_id: str):
+    result = await hass.config_entries.options.async_init(entry_id)
+    assert result["type"] is FlowResultType.MENU
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "motion_sensor_select"}
+    )
+
+
+async def test_motion_sensor_wizard_no_devices_aborts(hass):
+    entry = _entry_with_nodes(hass, {})
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_motion_sensors"
+
+
+async def test_motion_sensor_wizard_filters_non_motion_devices(hass):
+    """A device without has_motion_sensor must not appear as pickable."""
+    plain_light = MagicMock(id=1, has_motion_sensor=False)
+    plain_light.name = "Kitchen Light"
+    plain_light.metadata = MagicMock(supported=True)
+    entry = _entry_with_nodes(hass, {1: plain_light})
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_motion_sensors"
+
+
+async def test_motion_sensor_wizard_offline_device_shows_wake_instructions(hass):
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node})
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "motion_sensor_select"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "motion_sensor_wake"
+    assert result["description_placeholders"]["device_name"] == "Hallway Sensor"
+    assert not result.get("errors")
+
+
+async def test_motion_sensor_wizard_wake_retry_still_offline_shows_error(hass):
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node})
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["step_id"] == "motion_sensor_wake"
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "motion_sensor_wake"
+    assert result["errors"] == {"base": "still_offline"}
+    node.set_motion_sensor_settings.assert_not_awaited()
+
+
+async def test_motion_sensor_wizard_online_device_skips_wake_screen(hass):
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node}, online_dev_id=5)
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "motion_sensor_settings"
+    assert result["description_placeholders"]["device_name"] == "Hallway Sensor"
+
+
+async def test_motion_sensor_wizard_wake_then_online_proceeds_to_settings(hass):
+    """The most important regression this wizard exists for: a device that
+    was offline when first selected, then woken by the user physically,
+    must be re-checked and let through on the next submit - not stuck
+    behind a stale offline snapshot."""
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node})
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["step_id"] == "motion_sensor_wake"
+
+    await entry.runtime_data.bridge.pub_online(5, True)
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "motion_sensor_settings"
+
+
+async def test_motion_sensor_wizard_submits_settings(hass):
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node}, online_dev_id=5)
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["step_id"] == "motion_sensor_settings"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "sensor_type": "ambient_light",
+            "sensitivity": "low",
+            "delay_seconds": 30,
+            "deactivation_seconds": 60,
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "motion_sensor_settings_saved"
+    assert result["description_placeholders"]["device_name"] == "Hallway Sensor"
+    node.set_motion_sensor_settings.assert_awaited_once_with(
+        setting_type=2, enabled=None, sensitivity=2, delay_seconds=30,
+        deactivation_seconds=60,
+    )
+
+
+async def test_motion_sensor_wizard_submits_settings_with_enabled_flag(hass):
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node}, online_dev_id=5)
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"sensor_type": "motion", "enabled": True},
+    )
+    assert result["type"] is FlowResultType.ABORT
+    node.set_motion_sensor_settings.assert_awaited_once_with(
+        setting_type=1, enabled=True, sensitivity=None, delay_seconds=0,
+        deactivation_seconds=0,
+    )
+
+
+async def test_motion_sensor_wizard_aborts_before_initial_setup(hass):
+    """Opening options for an entry that hasn't finished async_setup_entry
+    yet (e.g. it failed setup) has no runtime_data to list devices from -
+    must abort cleanly rather than raise."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+        options={"local_port": 23779, "export_refresh_interval": 24},
+    )
+    entry.add_to_hass(hass)
+    # No entry.runtime_data assignment.
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_motion_sensors"
+
+
+async def test_motion_sensor_wizard_device_removed_mid_flow_at_wake_step(hass):
+    """A device that disappears (e.g. removed from the mesh, or a fresh
+    export dropped it) between being picked and the next step must abort
+    instead of KeyError-ing."""
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node})
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["step_id"] == "motion_sensor_wake"
+
+    del entry.runtime_data.ncync_server.node_devices[5]
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_motion_sensors"
+
+
+async def test_motion_sensor_wizard_device_removed_mid_flow_at_settings_step(hass):
+    node = _make_motion_sensor_node(5, "Hallway Sensor")
+    entry = _entry_with_nodes(hass, {5: node}, online_dev_id=5)
+
+    result = await _open_motion_sensor_menu(hass, entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+    assert result["step_id"] == "motion_sensor_settings"
+
+    del entry.runtime_data.ncync_server.node_devices[5]
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"sensor_type": "motion"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_motion_sensors"
+    node.set_motion_sensor_settings.assert_not_awaited()

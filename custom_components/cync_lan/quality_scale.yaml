@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (252 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (263 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -12,9 +12,15 @@ rules:
       services.py's 8 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
-      in test_services.py. Motion/ambient sensor tuning and scene activation
-      stay service-only (cmd_code still predicted, not confirmed - a service
-      call is a more honest fit than an always-on entity). Group power is a
+      in test_services.py. Motion/ambient sensor tuning's raw service is
+      kept for automations, but its primary surface is now the options
+      flow's guided "Edit Motion Sensor Settings" wizard (device picker ->
+      physical-wake gate, checking bridge.is_online() exactly like the real
+      app's own equivalent check -> settings form) - see
+      reconfiguration-flow below. Scene activation stays service-only
+      (cmd_code still predicted, not confirmed - a service call is a more
+      honest fit than an always-on entity/wizard for something unconfirmed
+      end to end). Group power is a
       third kind: its cmd_code is fully confirmed (reuses set_power exactly),
       what's unconfirmed is whether firmware honors a group-range target
       address at all - see docs/mesh_opcodes.md's "Groups control" section.
@@ -324,9 +330,25 @@ rules:
   reconfiguration-flow:
     status: done
     comment: >-
-      CyncLanOptionsFlow lets the user change local_port and
-      export_refresh_interval without removing/re-adding the integration.
-      Tested (test_options_flow).
+      CyncLanOptionsFlow opens on a menu (async_show_menu): "General
+      settings" is the original local_port/export_refresh_interval/light-
+      groups form, unchanged. "Edit motion sensor settings" is a guided
+      wizard mirroring the real Cync app's own flow for the same
+      operation - device picker (filtered to has_motion_sensor, same as
+      binary_sensor.py) -> a wake-gate step that checks
+      bridge.is_online(dev_id) (confirmed via decompiled-source research
+      to be exactly what the real app itself checks - there's no separate
+      BLE "discoverable" state, see docs/mesh_opcodes.md's "Operational
+      prerequisite" section) and shows the real app's own wake
+      instructions if offline, re-checking on each submit -> a settings
+      form that calls node.set_motion_sensor_settings() directly and ends
+      with an abort-as-confirmation screen rather than persisting bogus
+      options data. Unlike the raw experimental_set_motion_sensor_settings
+      service, this wizard can't be pointed at an offline device by
+      accident. Tested (test_config_flow.py's
+      test_motion_sensor_wizard_* tests, 10 covering the device filter,
+      the wake gate in both directions, mid-flow device removal, and the
+      settings payload itself).
   repair-issues:
     status: done
     comment: >-
