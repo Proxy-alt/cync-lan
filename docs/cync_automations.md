@@ -200,14 +200,21 @@ Confirmed payloads for the 3 read this pass (all via `WriteBuffer`'s fixed-width
   quirk, not an assumption) + 26 zero-padding bytes + a redundant zero u16 + `enabled`(1B, 0/1) +
   1 zero byte + 16 zero bytes.
 
-Given the transport question above is unresolved, **none of these 3 are being wired into
-cync-lan yet** despite having exact payload byte layouts now - guessing at whether/how to adapt a
-BLE-flavored HDLC frame into cync-lan's TCP envelope would be a materially bigger and less
-grounded guess than anything else shipped this session. This genuinely needs a live packet
+**UPDATE, wired in as an experiment**: despite the transport question above remaining unresolved,
+these 3 (`delete_scene`/`delete_schedule`/`toggle_automation` in `devices.py`, exposed as
+`cync_lan.experimental_delete_scene`/`experimental_delete_schedule`/
+`experimental_toggle_automation`) are now wired in, sending the confirmed payload bytes through
+cync-lan's own `PacketBuilder`/TCP envelope as a working hypothesis - explicitly at the user's
+request, to be tested against real hardware rather than settled by more static analysis.
+`_warn_experimental_transport_unconfirmed` logs once per command name on first use to keep the
+uncertainty visible at runtime, not just in this doc. This genuinely still needs a live packet
 capture (does a real "delete scene" action from the app produce anything resembling
-`PacketBuilder`'s format at all, over the TCP relay cync-lan intercepts?) rather than more
-decompiled-source reading - the open question is about which transport carries this command in
-practice, which static analysis of the phone app's Kotlin/Java source can't settle on its own.
+`PacketBuilder`'s format at all, over the TCP relay cync-lan intercepts?) to *confirm* rather than
+just hypothesize - the open question is about which transport carries this command in practice,
+which static analysis of the phone app's Kotlin/Java source can't settle on its own. If real
+hardware testing shows these are no-ops or provoke errors, that itself is the answer: the app's
+older HDLC-framed channel and cync-lan's TCP relay are genuinely different paths for this specific
+command family.
 
 `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's captured state
 within a scene) are different and dual-path, branching on the target device's product type: the
@@ -231,17 +238,21 @@ concrete, locally-writable features worth building on their own merits:
 3. **Scenes/Schedules (the "Routines" tab) are also locally writable**, not cloud-only as earlier
    thought - `HUB_CREATE_SCENE`/`HUB_CREATE_SCHEDULE`/`AddDeviceSceneCommand`/etc. (see above).
    **UPDATE: op_code dispatch verified (no `0x8E` bug for the pure Hub commands), exact payloads
-   resolved for 3 of the 5 - but a deeper, unresolved transport question means none are wired in
-   yet.** `DeleteSceneHubCommand`/`DeleteScheduleHubCommand`/`ToggleAutomationHubCommand` build
-   their own complete wire frame via `XlinkTranslatorKt.m14449a()`/`Xlink.m14391a()` - a
-   PPP/HDLC-style, `0x7E`-delimited-and-byte-stuffed frame, structurally unlike cync-lan's own
-   confirmed TCP wire format, and traced to the exact `Xlink`/`XlinkTranslatorKt` code
-   `mesh_opcodes.md` already flagged `@Deprecated` as possibly the phone app's *older* command
-   channel. **Whether these commands ride over the same TCP relay cync-lan intercepts at all, or
-   are BLE-GATT-specific, is genuinely unresolved** - not knowable from static source reading, needs
-   a real packet capture. Confirmed payload byte layouts (see "HA → Cync (writing)" above for exact
-   `WriteBuffer` field widths) exist for the 3 delete/toggle commands regardless, ready to wire in
-   the moment the transport question is settled. `CreateSceneHubCommand`/`CreateScheduleHubCommand`
+   resolved for 3 of the 5, and those 3 are now wired in as a real-hardware experiment despite a
+   deeper, still-unresolved transport question.** `DeleteSceneHubCommand`/
+   `DeleteScheduleHubCommand`/`ToggleAutomationHubCommand` build their own complete wire frame via
+   `XlinkTranslatorKt.m14449a()`/`Xlink.m14391a()` - a PPP/HDLC-style, `0x7E`-delimited-and-
+   byte-stuffed frame, structurally unlike cync-lan's own confirmed TCP wire format, and traced to
+   the exact `Xlink`/`XlinkTranslatorKt` code `mesh_opcodes.md` already flagged `@Deprecated` as
+   possibly the phone app's *older* command channel. **Whether these commands ride over the same
+   TCP relay cync-lan intercepts at all, or are BLE-GATT-specific, is genuinely unresolved** - not
+   knowable from static source reading, needs a real packet capture. Confirmed payload byte
+   layouts (see "HA → Cync (writing)" above for exact `WriteBuffer` field widths) are sent through
+   cync-lan's own confirmed `PacketBuilder` envelope anyway, exposed as
+   `cync_lan.experimental_delete_scene`/`experimental_delete_schedule`/
+   `experimental_toggle_automation`, so real hardware can settle the transport question by
+   observation instead of waiting on a packet capture first.
+   `CreateSceneHubCommand`/`CreateScheduleHubCommand`
    need their own payload research on top of that (not yet done - `String30` name encoding, full
    schedule field layout). `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one
    device's captured state within a scene) are a separate case: dual-path depending on the target
