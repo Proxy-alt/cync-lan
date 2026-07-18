@@ -1,4 +1,4 @@
-"""Tests for services.py's 5 experimental_* services."""
+"""Tests for services.py's 8 experimental_* services."""
 
 from __future__ import annotations
 
@@ -11,11 +11,14 @@ from homeassistant.exceptions import ServiceValidationError
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import DOMAIN
 from custom_components.cync_lan.services import (
+    SERVICE_DELETE_SCENE,
+    SERVICE_DELETE_SCHEDULE,
     SERVICE_EXECUTE_SCENE,
     SERVICE_SET_GROUP_POWER,
     SERVICE_SET_INDICATOR_LED,
     SERVICE_SET_MOTION_SENSOR_SCHEDULE,
     SERVICE_SET_MOTION_SENSOR_SETTINGS,
+    SERVICE_TOGGLE_AUTOMATION,
     async_setup_services,
     async_unload_services,
 )
@@ -60,13 +63,16 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_five_services(hass):
+async def test_setup_registers_all_eight_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
     assert hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SCHEDULE)
+    assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCENE)
+    assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE)
+    assert hass.services.has_service(DOMAIN, SERVICE_TOGGLE_AUTOMATION)
     async_unload_services(hass)
 
 
@@ -86,6 +92,9 @@ async def test_unload_removes_services_when_no_entries_loaded(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SCHEDULE)
+    assert not hass.services.has_service(DOMAIN, SERVICE_DELETE_SCENE)
+    assert not hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE)
+    assert not hass.services.has_service(DOMAIN, SERVICE_TOGGLE_AUTOMATION)
 
 
 async def test_unload_keeps_services_when_other_entries_still_loaded(hass):
@@ -437,6 +446,156 @@ async def test_set_motion_sensor_schedule_raises_for_unknown_device_id(hass):
                 "end_minute": 0,
                 "brightness": 50,
                 "cct": 50,
+            },
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_delete_scene_requires_bridge_device(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_DELETE_SCENE,
+            {"device_id": device.id, "scene_id": 300},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_delete_scene_calls_delete_scene_with_bridge_device(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.delete_scene", new=AsyncMock()
+    ) as mock_delete_scene:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_DELETE_SCENE,
+            {"device_id": bridge_device.id, "scene_id": 300},
+            blocking=True,
+        )
+    mock_delete_scene.assert_awaited_once_with(300)
+    async_unload_services(hass)
+
+
+async def test_delete_scene_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_DELETE_SCENE,
+            {"device_id": "does-not-exist", "scene_id": 300},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_delete_schedule_requires_bridge_device(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_DELETE_SCHEDULE,
+            {"device_id": device.id, "schedule_id": 12},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_delete_schedule_calls_delete_schedule_with_bridge_device(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.delete_schedule", new=AsyncMock()
+    ) as mock_delete_schedule:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_DELETE_SCHEDULE,
+            {"device_id": bridge_device.id, "schedule_id": 12},
+            blocking=True,
+        )
+    mock_delete_schedule.assert_awaited_once_with(12)
+    async_unload_services(hass)
+
+
+async def test_delete_schedule_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_DELETE_SCHEDULE,
+            {"device_id": "does-not-exist", "schedule_id": 12},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_toggle_automation_requires_bridge_device(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TOGGLE_AUTOMATION,
+            {
+                "device_id": device.id,
+                "schedule_id": 12,
+                "scene_id": 300,
+                "enabled": True,
+            },
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_toggle_automation_calls_toggle_automation_with_bridge_device(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.toggle_automation", new=AsyncMock()
+    ) as mock_toggle_automation:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TOGGLE_AUTOMATION,
+            {
+                "device_id": bridge_device.id,
+                "schedule_id": 12,
+                "scene_id": 300,
+                "enabled": False,
+            },
+            blocking=True,
+        )
+    mock_toggle_automation.assert_awaited_once_with(12, 300, False)
+    async_unload_services(hass)
+
+
+async def test_toggle_automation_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TOGGLE_AUTOMATION,
+            {
+                "device_id": "does-not-exist",
+                "schedule_id": 12,
+                "scene_id": 300,
+                "enabled": True,
             },
             blocking=True,
         )

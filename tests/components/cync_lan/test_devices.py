@@ -18,8 +18,11 @@ from cync_lan.devices import (
     _warn_experimental_cmd_code,
     _warn_experimental_group_targeting,
     broadcast_control_command,
+    delete_scene,
+    delete_schedule,
     execute_scene,
     set_group_power,
+    toggle_automation,
 )
 from cync_lan.packet import PacketBuilder
 from cync_lan.structs import GlobalObject
@@ -358,6 +361,117 @@ async def test_execute_scene_rejects_out_of_range_id():
     g.ncync_server = MagicMock()
     g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[])
     await execute_scene(256)
+    g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
+
+
+async def test_delete_scene_payload_shape():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    await delete_scene(300)  # >255, exercises the 2-byte-not-1-byte field
+
+    assert len(fake_bridge.written) == 1
+    inner_payload = struct.pack("<H", 300)
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0, op_code=0x1F, cmd_code=9,
+        command_payload=inner_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_delete_scene_rejects_out_of_range_id():
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[])
+    await delete_scene(70000)
+    g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
+
+
+async def test_delete_schedule_payload_shape():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    await delete_schedule(42)
+
+    assert len(fake_bridge.written) == 1
+    inner_payload = struct.pack("<H", 42)
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0, op_code=0x94, cmd_code=9,
+        command_payload=inner_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_toggle_automation_payload_shape():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    await toggle_automation(42, 300, True)
+
+    assert len(fake_bridge.written) == 1
+    inner_payload = (
+        struct.pack("<H", 42)
+        + struct.pack("<I", 300)
+        + bytes(26)
+        + struct.pack("<H", 0)
+        + b"\x01\x00"
+        + bytes(16)
+    )
+    assert len(inner_payload) == 52
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0, op_code=0x93, cmd_code=7 + 52,
+        command_payload=inner_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_toggle_automation_disabled_flag_byte():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    await toggle_automation(1, 1, False)
+
+    inner_payload = (
+        struct.pack("<H", 1)
+        + struct.pack("<I", 1)
+        + bytes(26)
+        + struct.pack("<H", 0)
+        + b"\x00\x00"
+        + bytes(16)
+    )
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0, op_code=0x93, cmd_code=7 + 52,
+        command_payload=inner_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_toggle_automation_rejects_out_of_range_ids():
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[])
+    await toggle_automation(70000, 1, True)
+    await toggle_automation(1, 2**32, True)
     g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
 
 

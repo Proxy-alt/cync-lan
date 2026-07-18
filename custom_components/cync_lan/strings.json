@@ -301,6 +301,56 @@
           "description": "Exactly one of Color temperature or RGB color must be set."
         }
       }
+    },
+    "experimental_delete_scene": {
+      "name": "Delete a Cync scene (experimental)",
+      "description": "Experimental — the outer command byte is directly confirmed (DeleteSceneHubCommand's own op_code, not the hardcoded-0x8E relay bug), but whether this command's real wire frame even rides over the same connection cync-lan intercepts at all is unconfirmed - the app builds it via a structurally different, separately-flagged-deprecated framer. Sent through cync-lan's own confirmed envelope as an experiment. Please report success or failure with your device model, see docs/cync_automations.md.",
+      "fields": {
+        "device_id": {
+          "name": "Bridge device",
+          "description": "Scenes are home-wide, not per-device - select the \"Cync LAN Bridge\" device, not an individual light/switch."
+        },
+        "scene_id": {
+          "name": "Scene ID",
+          "description": "The numeric ID of the scene to delete, as configured in the Cync app (0-65535)."
+        }
+      }
+    },
+    "experimental_delete_schedule": {
+      "name": "Delete a Cync schedule (experimental)",
+      "description": "Experimental — same situation as the delete-scene service: the outer command byte is directly confirmed, but whether this command's real wire frame rides over the same connection cync-lan intercepts at all is unconfirmed. Sent through cync-lan's own confirmed envelope as an experiment. Please report success or failure with your device model, see docs/cync_automations.md.",
+      "fields": {
+        "device_id": {
+          "name": "Bridge device",
+          "description": "Schedules are home-wide, not per-device - select the \"Cync LAN Bridge\" device, not an individual light/switch."
+        },
+        "schedule_id": {
+          "name": "Schedule ID",
+          "description": "The numeric ID of the schedule to delete, as configured in the Cync app (0-65535)."
+        }
+      }
+    },
+    "experimental_toggle_automation": {
+      "name": "Enable or disable a Cync schedule (experimental)",
+      "description": "Experimental — same situation as the delete-scene/delete-schedule services: the outer command byte is directly confirmed, but whether this command's real wire frame rides over the same connection cync-lan intercepts at all is unconfirmed. Sent through cync-lan's own confirmed envelope as an experiment. Enables or disables a saved Schedule without deleting it. Please report success or failure with your device model, see docs/cync_automations.md.",
+      "fields": {
+        "device_id": {
+          "name": "Bridge device",
+          "description": "Schedules are home-wide, not per-device - select the \"Cync LAN Bridge\" device, not an individual light/switch."
+        },
+        "schedule_id": {
+          "name": "Schedule ID",
+          "description": "The numeric ID of the schedule to toggle, as configured in the Cync app (0-65535)."
+        },
+        "scene_id": {
+          "name": "Scene ID",
+          "description": "The scene this schedule triggers - the app writes this same field with a different byte width than the delete-scene service, per real app-code inconsistency (0-4294967295)."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the schedule should be active."
+        }
+      }
     }
   }
 }

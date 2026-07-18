@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (237 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (252 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,7 +9,7 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 5 experimental_* services are registered idempotently in
+      services.py's 8 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning and scene activation
@@ -22,7 +22,15 @@ rules:
       longer the primary surface - it's confirmed working on real hardware
       now, so it's also exposed as 4 real entities (number.py/select.py/
       switch.py), both routed through the same bridge.py cache so they
-      can't diverge.
+      can't diverge. delete_scene/delete_schedule/toggle_automation are a
+      fourth, riskier kind: their outer command byte is directly confirmed
+      (not the hardcoded-0x8E relay bug), but whether the real command even
+      rides over the same connection cync-lan intercepts at all is
+      unconfirmed (the app builds it via a structurally different framer -
+      see docs/cync_automations.md). Wired in anyway as an explicit
+      real-hardware experiment at the user's request; both
+      _warn_experimental_cmd_code and a new
+      _warn_experimental_transport_unconfirmed log on first use.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -83,12 +91,14 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 5 experimental_*
+      strings.json's "services" block documents all 8 experimental_*
       services and their fields, each description explicitly flagging what's
       actually unconfirmed for that specific command - predicted cmd_code
-      for most, the target address too for scenes, and for group power
+      for most, the target address too for scenes, for group power
       specifically (its cmd_code is confirmed) whether firmware honors a
-      group-range target at all.
+      group-range target at all, and for delete_scene/delete_schedule/
+      toggle_automation specifically (their cmd_code is confirmed) whether
+      the command rides over the same connection cync-lan intercepts at all.
   docs-triggers:
     status: exempt
     comment: No custom triggers defined (standard entity-state triggers apply).
@@ -190,8 +200,8 @@ rules:
   test-coverage:
     status: done
     comment: >-
-      98% overall line coverage on custom_components/cync_lan (1218
-      statements, 27 missed), measured with pytest-cov against a real 237-
+      98% overall line coverage on custom_components/cync_lan (1234
+      statements, 27 missed), measured with pytest-cov against a real 252-
       test run. number.py/select.py/sensor.py/switch.py/entity.py/util.py
       all at 100%. Remaining gaps are in __init__.py's rarely-hit
       background-task error branches, config_flow.py's exception logging

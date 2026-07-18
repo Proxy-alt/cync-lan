@@ -29,6 +29,9 @@ SERVICE_SET_MOTION_SENSOR_SETTINGS = "experimental_set_motion_sensor_settings"
 SERVICE_EXECUTE_SCENE = "experimental_execute_scene"
 SERVICE_SET_GROUP_POWER = "experimental_set_group_power"
 SERVICE_SET_MOTION_SENSOR_SCHEDULE = "experimental_set_motion_sensor_schedule"
+SERVICE_DELETE_SCENE = "experimental_delete_scene"
+SERVICE_DELETE_SCHEDULE = "experimental_delete_schedule"
+SERVICE_TOGGLE_AUTOMATION = "experimental_toggle_automation"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -41,6 +44,7 @@ ATTR_SENSITIVITY = "sensitivity"
 ATTR_DELAY_SECONDS = "delay_seconds"
 ATTR_DEACTIVATION_SECONDS = "deactivation_seconds"
 ATTR_SCENE_ID = "scene_id"
+ATTR_SCHEDULE_ID = "schedule_id"
 ATTR_GROUP_ID = "group_id"
 ATTR_STATE = "state"
 ATTR_SLOT = "slot"
@@ -183,6 +187,31 @@ async def _handle_set_motion_sensor_schedule(hass: HomeAssistant, call: ServiceC
     )
 
 
+async def _handle_delete_scene(hass: HomeAssistant, call: ServiceCall) -> None:
+    from cync_lan.devices import delete_scene
+
+    _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
+    await delete_scene(call.data[ATTR_SCENE_ID])
+
+
+async def _handle_delete_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
+    from cync_lan.devices import delete_schedule
+
+    _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
+    await delete_schedule(call.data[ATTR_SCHEDULE_ID])
+
+
+async def _handle_toggle_automation(hass: HomeAssistant, call: ServiceCall) -> None:
+    from cync_lan.devices import toggle_automation
+
+    _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
+    await toggle_automation(
+        call.data[ATTR_SCHEDULE_ID],
+        call.data[ATTR_SCENE_ID],
+        call.data[ATTR_ENABLED],
+    )
+
+
 _SERVICE_SCHEMAS = {
     SERVICE_SET_INDICATOR_LED: vol.Schema(
         {
@@ -238,6 +267,26 @@ _SERVICE_SCHEMAS = {
             ),
         }
     ),
+    SERVICE_DELETE_SCENE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_SCENE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+        }
+    ),
+    SERVICE_DELETE_SCHEDULE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_SCHEDULE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+        }
+    ),
+    SERVICE_TOGGLE_AUTOMATION: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_SCHEDULE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+            vol.Required(ATTR_SCENE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=0xFFFFFFFF)),
+            vol.Required(ATTR_ENABLED): cv.boolean,
+        }
+    ),
 }
 
 _HANDLERS = {
@@ -246,11 +295,14 @@ _HANDLERS = {
     SERVICE_EXECUTE_SCENE: _handle_execute_scene,
     SERVICE_SET_GROUP_POWER: _handle_set_group_power,
     SERVICE_SET_MOTION_SENSOR_SCHEDULE: _handle_set_motion_sensor_schedule,
+    SERVICE_DELETE_SCENE: _handle_delete_scene,
+    SERVICE_DELETE_SCHEDULE: _handle_delete_schedule,
+    SERVICE_TOGGLE_AUTOMATION: _handle_toggle_automation,
 }
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 5 experimental services - idempotent, so calling this
+    """Register all 8 experimental services - idempotent, so calling this
     from every config entry's async_setup_entry (there's only ever one
     entry per the unique-config-entry design, but this is cheap insurance)
     is safe."""
@@ -266,7 +318,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove all 5 services, but only once no Cync LAN config entry
+    """Remove all 8 services, but only once no Cync LAN config entry
     remains loaded - checked as "<=1" rather than "==0" because this runs
     from async_unload_entry *before* HA has finished marking the entry
     currently being unloaded as unloaded, so that entry itself would

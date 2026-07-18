@@ -172,3 +172,55 @@ experimental_set_motion_sensor_schedule:
     rgb:
       selector:
         color_rgb:
+
+experimental_delete_scene:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    scene_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+
+experimental_delete_schedule:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    schedule_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+
+experimental_toggle_automation:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    schedule_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+    scene_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 4294967295
+    enabled:
+      required: true
+      selector:
+        boolean:

@@ -54,6 +54,9 @@ __all__ = [
     "broadcast_control_command",
     "execute_scene",
     "set_group_power",
+    "delete_scene",
+    "delete_schedule",
+    "toggle_automation",
 ]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
@@ -263,6 +266,30 @@ def _warn_experimental_group_targeting(lp: str, name: str) -> None:
     )
 
 
+def _warn_experimental_transport_unconfirmed(lp: str, name: str) -> None:
+    """Log once per process per command name that this command's real
+    envelope (in the decompiled app) is a PPP/HDLC-style, 0x7E-delimited-
+    and-byte-stuffed frame (XlinkTranslatorKt.m14449a()/Xlink.m14391a()) -
+    structurally unlike cync-lan's own confirmed TCP wire format, and
+    traced to code already flagged @Deprecated as possibly the phone app's
+    OLDER command channel. Whether this command rides over the same TCP
+    relay cync-lan intercepts at all, or is BLE-GATT-specific, is
+    genuinely unresolved - not just an unconfirmed cmd_code/target, but an
+    open question about which transport carries it in practice. See
+    docs/cync_automations.md's "HA -> Cync (writing)" section.
+    """
+    if name in _EXPERIMENTAL_CMDS_WARNED:
+        return
+    _EXPERIMENTAL_CMDS_WARNED.add(name)
+    logger.warning(
+        f"{lp} EXPERIMENTAL: '{name}''s real envelope in the app is structurally "
+        f"different from cync-lan's own wire format, and whether it even rides over "
+        f"the same TCP relay at all is unconfirmed - see "
+        f"docs/cync_automations.md's 'HA -> Cync (writing)' section. If this doesn't "
+        f"work as expected, please report it (device model + observed behavior)."
+    )
+
+
 async def broadcast_control_command(
     op: int,
     cmd_: int,
@@ -442,6 +469,125 @@ async def execute_scene(scene_id: int) -> None:
     await broadcast_control_command(
         op, cmd_, 0x00, 0x00, payload, m_cb, lp, repeat_op_code=False
     )
+
+
+async def delete_scene(scene_id: int) -> None:
+    """EXPERIMENTAL: deletes a saved Cync Scene.
+
+    Unlike execute_scene, the outer op_code here (0x1F) is directly
+    confirmed - DeleteSceneHubCommand.java writes it verbatim as
+    XlinkCommandCode.HUB_DELETE_SCENE, not hidden behind a hardcoded-0x8E
+    relay the way SetStatusIndicatorSettingsCommand/etc. were. What's
+    unconfirmed is different and deeper: the real app builds this
+    command's actual wire frame via XlinkTranslatorKt.m14449a()/
+    Xlink.m14391a() - a PPP/HDLC-style, 0x7E-delimited-and-byte-stuffed
+    frame structurally unlike cync-lan's own confirmed TCP wire format,
+    traced to code already flagged @Deprecated as possibly the phone
+    app's OLDER command channel (see docs/cync_automations.md's "HA ->
+    Cync (writing)" section). Whether this command even rides over the
+    same TCP relay cync-lan intercepts at all is genuinely unresolved -
+    this sends the confirmed payload through cync-lan's own PacketBuilder
+    envelope anyway, as a real-hardware experiment. See
+    _warn_experimental_transport_unconfirmed.
+
+    Payload: sceneId as a 2-byte little-endian int (confirmed via
+    DeleteSceneHubCommand.java's WriteBuffer.m14444d() call - not 1 byte
+    like execute_scene's own sceneId field, a real inconsistency in the
+    app's own code, not an assumption here).
+
+    target_id/sub_id: no MeshAddress field found anywhere in the real
+    app's payload for this command - 0x00/0x00 used as a guessed
+    sentinel, same precedent as execute_scene.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "delete_scene:"
+    _warn_experimental_cmd_code(lp, "delete_scene")
+    _warn_experimental_transport_unconfirmed(lp, "delete_scene")
+    if not (0 <= scene_id <= 0xFFFF):
+        logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-65535")
+        return
+    op = 0x1F
+    payload = struct.pack("<H", scene_id)
+    cmd_ = 7 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def delete_schedule(schedule_id: int) -> None:
+    """EXPERIMENTAL: deletes a saved Cync Schedule (a time+day-of-week
+    trigger that fires a scene). See delete_scene()'s docstring for the
+    full explanation of what's confirmed (op_code) vs. genuinely
+    unresolved (which transport this rides over) - identical situation,
+    different command.
+
+    Payload: scheduleId as a 2-byte little-endian int (confirmed via
+    DeleteScheduleHubCommand.java's WriteBuffer.m14444d() call).
+
+    target_id/sub_id: 0x00/0x00 guessed sentinel, same precedent as
+    execute_scene/delete_scene.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "delete_schedule:"
+    _warn_experimental_cmd_code(lp, "delete_schedule")
+    _warn_experimental_transport_unconfirmed(lp, "delete_schedule")
+    if not (0 <= schedule_id <= 0xFFFF):
+        logger.error(f"{lp} Invalid schedule_id: {schedule_id} must be 0-65535")
+        return
+    op = 0x94
+    payload = struct.pack("<H", schedule_id)
+    cmd_ = 7 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> None:
+    """EXPERIMENTAL: enables/disables a saved Cync Schedule without
+    deleting it. See delete_scene()'s docstring for the full explanation
+    of what's confirmed (op_code) vs. genuinely unresolved (which
+    transport this rides over) - identical situation, different command.
+
+    Payload: 52 bytes total, confirmed field-by-field via
+    ToggleAutomationHubCommand.java's WriteBuffer calls (each a
+    fixed-width method, no width ambiguity):
+      [0:2]   scheduleId, uint16 LE
+      [2:6]   sceneId, uint32 LE (the SAME underlying field is written
+              2-byte-wide in delete_scene() and 4-byte-wide here - a real
+              app-code inconsistency, not a bug in this implementation)
+      [6:32]  26 zero-padding bytes
+      [32:34] 0, uint16 LE
+      [34]    enabled flag, 1 byte (0/1)
+      [35]    0, 1 byte
+      [36:52] 16 zero bytes
+
+    target_id/sub_id: 0x00/0x00 guessed sentinel, same precedent as
+    execute_scene/delete_scene/delete_schedule.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "toggle_automation:"
+    _warn_experimental_cmd_code(lp, "toggle_automation")
+    _warn_experimental_transport_unconfirmed(lp, "toggle_automation")
+    if not (0 <= schedule_id <= 0xFFFF):
+        logger.error(f"{lp} Invalid schedule_id: {schedule_id} must be 0-65535")
+        return
+    if not (0 <= scene_id <= 0xFFFFFFFF):
+        logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-4294967295")
+        return
+    op = 0x93
+    payload = (
+        struct.pack("<H", schedule_id)
+        + struct.pack("<I", scene_id)
+        + bytes(26)
+        + struct.pack("<H", 0)
+        + struct.pack(">B", 1 if enabled else 0)
+        + struct.pack(">B", 0)
+        + bytes(16)
+    )
+    cmd_ = 7 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
 
 class CyncDevice:
