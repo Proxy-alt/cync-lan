@@ -138,6 +138,10 @@ predicted `cmd_code = 0x13` (corrected from an earlier miscounted 9-byte/lower-v
 real payload is 11 bytes, `">BBBHHB"` is 8 bytes not 6). Exposed as the
 `cync_lan.experimental_set_motion_sensor_settings` HA service.
 
+**Operational prerequisite**: the real Cync app requires physically waking the sensor first (hold
+the off button ~5s until the LED turns green) before it accepts settings edits - see "Operational
+prerequisite: motion sensors must be woken before settings/schedule writes" further below.
+
 **UPDATE 2, this session**: the `0xF7` below is **not** cync-lan's outer `op_code` - see the
 "CORRECTION" section further down. The real outer op is `0x8E`; `0xF7` is the payload's own
 leading discriminator byte. Fixed in `devices.py`; `cmd_code` is unchanged (`0x13`).
@@ -443,11 +447,37 @@ model this command writes.
   services.py`) - **never itself tested against real hardware**, unlike indicator LED. The outer
   op/payload-shape confidence transfers from the sibling commands' confirmation, but this specific
   command's own behavior is unverified.
+- **Operational prerequisite**: same physical-wake requirement as motion sensor settings above
+  (hold the off button ~5s until the LED turns green) - see "Operational prerequisite: motion
+  sensors must be woken before settings/schedule writes" further below.
 - **This is a write-side finding that doesn't need a cloud API at all** — it's a local mesh command,
   architecturally identical to every other opcode cync-lan already speaks. See the automations doc
   for why that matters for a HA-automation-to-Cync-device sync feature.
 
-### Multi-way-mode diagnostic — no wire opcode exists
+### Operational prerequisite: motion sensors must be woken before settings/schedule writes — user-reported, not yet traced in source
+
+**User-reported from real Cync app usage** (not yet independently confirmed against decompiled
+source): to edit a motion sensor's settings in the real Cync app, the physical device must first
+be woken up by pressing and holding its off button for 5 seconds until the indicator LED turns
+green, making it "discoverable." Only then does the app's settings-edit UI let you write changes.
+
+This plausibly applies to **both** `set_motion_sensor_settings()` (0x8E/0x13, motion/ambient
+enable+sensitivity+timing) and `set_motion_sensor_schedule()` (0x8E/0x14, the 4 schedule slots)
+above — both are the same `0xF7 0x11 0x02`-prefixed command family and both write persistent
+device configuration, unlike simple state commands like power/brightness. If either
+`cync_lan.experimental_set_motion_sensor_settings` or
+`cync_lan.experimental_set_motion_sensor_schedule` appears to silently no-op on real hardware (no
+error — this transport doesn't ACK), **try physically waking the device first** (hold the off
+button ~5s until the LED goes green) before concluding the command/payload itself is wrong.
+
+**Open question, not yet resolved**: whether this "discoverable" state is a real device-side
+gate that a correctly-addressed mesh command would still need to satisfy regardless of transport,
+or whether the *wake itself* is what puts the device into a mode where it's listening for this
+command family at all (e.g. an advertising/BLE-adjacent state, similar in spirit to the
+Scenes/Schedules transport-uncertainty question elsewhere in this doc). Not yet traced against
+`MotionSensorServiceDefault.java` or the sensor-settings/schedule command classes' calling
+context — worth a follow-up decompiled-source pass if these commands keep no-oping on real
+hardware even after a manual wake.
 
 Not a protocol command at all. `MultiWayMode.java` is a plain boolean
 `SimpleDeviceSpecificProperty`; `SetMultiWayModeGeCommandHandler.java` only mutates the in-memory
