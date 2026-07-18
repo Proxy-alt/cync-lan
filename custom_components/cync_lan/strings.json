@@ -196,7 +196,7 @@
     },
     "experimental_set_motion_sensor_settings": {
       "name": "Set motion/ambient sensor settings (experimental)",
-      "description": "Experimental — the outer command byte is predicted, not confirmed against a real packet capture. Tunes a motion or ambient-light sensor's enabled state, sensitivity, and timing. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "description": "Experimental — the outer command byte is predicted, not confirmed against a real packet capture. Tunes a motion or ambient-light sensor's enabled state, sensitivity, and timing. Please report success or failure with your device model, see docs/mesh_opcodes.md. Note: the real Cync app requires physically waking the sensor first (press and hold its off button for ~5 seconds until the LED turns green/discoverable) before it accepts settings edits - if this call appears to silently do nothing, try that before assuming the command itself is wrong.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -258,7 +258,7 @@
     },
     "experimental_set_motion_sensor_schedule": {
       "name": "Set a motion sensor schedule slot (experimental)",
-      "description": "Experimental — the outer command byte is confirmed (same fix already confirmed working on real hardware for the indicator LED service), but the predicted cmd_code and this specific command have not themselves been tested against real hardware. Writes one of a group's 4 fixed motion-sensor schedule slots. Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "description": "Experimental — the outer command byte is confirmed (same fix already confirmed working on real hardware for the indicator LED service), but the predicted cmd_code and this specific command have not themselves been tested against real hardware. Writes one of a group's 4 fixed motion-sensor schedule slots. Please report success or failure with your device model, see docs/mesh_opcodes.md. Note: the real Cync app requires physically waking the sensor first (press and hold its off button for ~5 seconds until the LED turns green/discoverable) before it accepts settings edits - if this call appears to silently do nothing, try that before assuming the command itself is wrong.",
       "fields": {
         "device_id": {
           "name": "Device",

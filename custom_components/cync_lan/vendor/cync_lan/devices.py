@@ -1471,6 +1471,14 @@ class CyncDevice:
         against a real captured packet (docs/debugging_sessions/3 devices/
         Plug - Toggle Power/Plug.md) - see
         PacketBuilder.build_control_packet's repeat_op_code param.
+
+        User-reported operational prerequisite (not yet traced in source):
+        the real Cync app requires physically waking the sensor first
+        (press and hold its off button ~5s until the LED turns green /
+        discoverable) before it accepts settings edits. If this appears to
+        silently no-op on real hardware, try that before assuming the
+        payload itself is wrong - see docs/mesh_opcodes.md's "Operational
+        prerequisite" section.
         """
         lp = f"{self.lp}set_motion_sensor_settings:"
         _warn_experimental_cmd_code(lp, "set_motion_sensor_settings")
@@ -1537,6 +1545,11 @@ class CyncDevice:
         cct: 0-100 (0=warmest, 100=coolest) - mutually exclusive with rgb.
         rgb: (r, g, b), each 0-255 - mutually exclusive with cct.
         Exactly one of cct/rgb must be given.
+
+        User-reported operational prerequisite (not yet traced in source):
+        same physical-wake requirement as set_motion_sensor_settings above
+        (hold the sensor's off button ~5s until the LED turns green) - see
+        docs/mesh_opcodes.md's "Operational prerequisite" section.
         """
         lp = f"{self.lp}set_motion_sensor_schedule:"
         _warn_experimental_cmd_code(lp, "set_motion_sensor_schedule")
