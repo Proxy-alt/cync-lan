@@ -32,6 +32,7 @@ SERVICE_SET_MOTION_SENSOR_SCHEDULE = "experimental_set_motion_sensor_schedule"
 SERVICE_DELETE_SCENE = "experimental_delete_scene"
 SERVICE_DELETE_SCHEDULE = "experimental_delete_schedule"
 SERVICE_TOGGLE_AUTOMATION = "experimental_toggle_automation"
+SERVICE_SET_GROUP_MEMBERSHIP = "experimental_set_group_membership"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -54,6 +55,8 @@ ATTR_END_HOUR = "end_hour"
 ATTR_END_MINUTE = "end_minute"
 ATTR_CCT = "cct"
 ATTR_RGB = "rgb"
+ATTR_MEMBER = "member"
+ATTR_REACH_FLAG = "reach_flag"
 
 # Confirmed enums - see docs/mesh_opcodes.md
 # (MotionSensorSensitivity.java). Indicator LED's mode/color enums live in
@@ -67,6 +70,9 @@ _SCHEDULE_SLOT = {"morning": 0, "daytime": 1, "evening": 2, "sleep": 3}
 # MotionSensorResponseMode.java ordinals - vacancy exists at the wire level
 # but wasn't traced to a reachable UI path in the app.
 _SCHEDULE_MODE = {"disabled": 0, "occupancy": 1, "vacancy": 2, "simple": 3}
+# GroupReachFlag - ControlDeviceGroupCommand.java, see docs/mesh_opcodes.md's
+# "Groups control" section.
+_REACH_FLAG = {"normal": 0x00, "receive_only": 0x87}
 
 
 def _resolve_device(hass: HomeAssistant, device_id: str):
@@ -212,6 +218,20 @@ async def _handle_toggle_automation(hass: HomeAssistant, call: ServiceCall) -> N
     )
 
 
+async def _handle_set_group_membership(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Unlike experimental_set_group_power, this targets an individual
+    device (the one joining/leaving a group), not the bridge - the group
+    is data in the payload, not the addressing target. See
+    CyncDevice.set_group_membership()'s docstring."""
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    reach_flag = call.data.get(ATTR_REACH_FLAG, "normal")
+    await node.set_group_membership(
+        call.data[ATTR_GROUP_ID],
+        member=call.data[ATTR_MEMBER],
+        reach_flag=_REACH_FLAG[reach_flag],
+    )
+
+
 _SERVICE_SCHEMAS = {
     SERVICE_SET_INDICATOR_LED: vol.Schema(
         {
@@ -287,6 +307,14 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_ENABLED): cv.boolean,
         }
     ),
+    SERVICE_SET_GROUP_MEMBERSHIP: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_GROUP_ID): vol.All(vol.Coerce(int), vol.Range(min=32768, max=65535)),
+            vol.Required(ATTR_MEMBER): cv.boolean,
+            vol.Optional(ATTR_REACH_FLAG, default="normal"): vol.In(_REACH_FLAG),
+        }
+    ),
 }
 
 _HANDLERS = {
@@ -298,11 +326,12 @@ _HANDLERS = {
     SERVICE_DELETE_SCENE: _handle_delete_scene,
     SERVICE_DELETE_SCHEDULE: _handle_delete_schedule,
     SERVICE_TOGGLE_AUTOMATION: _handle_toggle_automation,
+    SERVICE_SET_GROUP_MEMBERSHIP: _handle_set_group_membership,
 }
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 8 experimental services - idempotent, so calling this
+    """Register all 9 experimental services - idempotent, so calling this
     from every config entry's async_setup_entry (there's only ever one
     entry per the unique-config-entry design, but this is cheap insurance)
     is safe."""
@@ -318,7 +347,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove all 8 services, but only once no Cync LAN config entry
+    """Remove all 9 services, but only once no Cync LAN config entry
     remains loaded - checked as "<=1" rather than "==0" because this runs
     from async_unload_entry *before* HA has finished marking the entry
     currently being unloaded as unloaded, so that entry itself would

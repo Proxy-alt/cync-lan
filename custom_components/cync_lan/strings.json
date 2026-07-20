@@ -200,6 +200,12 @@
         "vacancy": "Vacancy",
         "simple": "Simple (time-based)"
       }
+    },
+    "group_reach_flag": {
+      "options": {
+        "normal": "Normal (send and receive)",
+        "receive_only": "Receive-only"
+      }
     }
   },
   "services": {
@@ -384,6 +390,28 @@
         "enabled": {
           "name": "Enabled",
           "description": "Whether the schedule should be active."
+        }
+      }
+    },
+    "experimental_set_group_membership": {
+      "name": "Set a device's group membership (experimental)",
+      "description": "Experimental — the outer command byte and dispatch method are confirmed (ControlDeviceGroupCommand, the same trustworthy envelope builder as the everyday brightness/color commands, not the 0x8E-relay-bug family), but the predicted cmd_code has not itself been captured. Adds or removes ONE device to/from a group's mesh address - this changes group membership, not a group's power/state (see Set a group's power). Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The individual device to add to or remove from the group - this command targets one device, not the bridge."
+        },
+        "group_id": {
+          "name": "Group ID",
+          "description": "The group's numeric mesh address (32768-65535) - find it in your exported cync_mesh.yaml/raw_mesh.cync."
+        },
+        "member": {
+          "name": "Member",
+          "description": "On to add the device to the group, off to remove it."
+        },
+        "reach_flag": {
+          "name": "Reach mode",
+          "description": "Normal (full mesh participation) or receive-only. Leave as Normal unless you have a specific reason to change it."
         }
       }
     }

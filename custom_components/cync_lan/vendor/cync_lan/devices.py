@@ -1381,6 +1381,68 @@ class CyncDevice:
         mode_code, index, nonce = LIGHT_RUN_MODE_EFFECTS[effect]
         await self._send_light_run_mode(mode_code, index, nonce, sub_id)
 
+    async def set_group_membership(
+        self,
+        group_id: int,
+        member: bool,
+        reach_flag: int = 0x00,
+        sub_id: Optional[int] = None,
+    ) -> None:
+        """EXPERIMENTAL: adds/removes THIS device to/from a group's mesh
+        pub/sub address - group MEMBERSHIP management, not group control
+        (see module-level set_group_power() for controlling an existing
+        group's state/power).
+
+        Confirmed via ControlDeviceGroupCommand.java (decompiled app,
+        base class for AddDeviceGroupCommand/RemoveDeviceGroupCommand):
+        op_code array `{-41,17,2}` = `{0xD7,0x11,0x02}` (`:120`),
+        dispatched via the same trustworthy `XlinkCommandDelegate.f()`/
+        `mo14054f()` envelope builder as set_power/set_rgb/set_temperature
+        (NOT the buggy `h()`/`mo14056h` `0x8E`-substitution path used by
+        set_indicator_led/set_motion_sensor_settings/etc.) - the embedded
+        `0xD7` genuinely is the real outer op_code here, no discrepancy.
+        See docs/mesh_opcodes.md's "Groups control" section.
+
+        Payload (`x()` lines 190-214): action byte (ADD=1/REMOVE=0) +
+        2-byte little-endian group address + a GroupReachFlag byte
+        (RX=0x87 for receive-only reachability, RXTX=0x00 for normal full
+        participation - defaults to RXTX, matching how every other
+        already-wired command in this file addresses devices).
+
+        cmd_ is PREDICTED via the length formula (`8 + len(payload)` =
+        `8 + 6` = `0x0E`, see docs/mesh_opcodes.md's "TCP relay envelope
+        research") - not itself confirmed against a live capture, unlike
+        the op_code/dispatch method above. Unlike set_group_power, this
+        targets an individual device's own address (self.id) - the
+        payload's 2-byte group address is data, not the addressing field;
+        it's the app telling one specific device "start/stop listening on
+        this group's pub/sub address," not a broadcast to the group.
+
+        group_id: 32768-65535 (cync-lan's own group-address range, same
+        range as set_group_power's group_id).
+        member: True to add this device to the group, False to remove it.
+        reach_flag: 0x00 (RXTX, default) or 0x87 (RX-only).
+        """
+        lp = f"{self.lp}set_group_membership:"
+        _warn_experimental_cmd_code(lp, "set_group_membership")
+        if not (32768 <= group_id <= 65535):
+            logger.error(f"{lp} Invalid group_id: {group_id} must be 32768-65535")
+            return
+        if reach_flag not in (0x00, 0x87):
+            logger.error(f"{lp} Invalid reach_flag: {reach_flag} must be 0x00 or 0x87")
+            return
+        op = 0xD7
+        cmd_ = 0x0E
+        _sub_id = sub_id if sub_id is not None else 0x00
+        action = 1 if member else 0
+        payload = (
+            struct.pack(">BBB", 0x11, 0x02, action)
+            + struct.pack("<H", group_id)
+            + struct.pack(">B", reach_flag)
+        )
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+
     @staticmethod
     def _build_motion_sensor_settings_payload(
         setting_type: int,

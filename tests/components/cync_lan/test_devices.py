@@ -581,3 +581,48 @@ def test_warn_experimental_cmd_code_fires_once_per_name():
         _warn_experimental_cmd_code("lp:", "test_cmd_unique_name")
         mock_warn.assert_called_once()
     _EXPERIMENTAL_CMDS_WARNED.discard("test_cmd_unique_name")
+
+
+async def test_set_group_membership_add_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_group_membership(32770, member=True)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0xD7  # op - real outer op_code, not a 0x8E-family substitution
+    assert args[1] == 0x0E  # predicted cmd_ (8 + 6-byte payload)
+    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack("<H", 32770) + struct.pack(
+        ">B", 0x00
+    )
+    # no repeat_op_code override - unlike the 0x8E-family commands, this
+    # one's embedded op_code genuinely is the real op, so send_command's
+    # default (repeat it in the mesh payload too) is correct here.
+    assert kwargs == {}
+
+
+async def test_set_group_membership_remove_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_group_membership(32770, member=False, reach_flag=0x87)
+
+    args, kwargs = node.send_command.call_args
+    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 0) + struct.pack("<H", 32770) + struct.pack(
+        ">B", 0x87
+    )
+
+
+async def test_set_group_membership_rejects_invalid_inputs():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.send_command = AsyncMock()
+
+    await node.set_group_membership(70000, member=True)  # out of range
+    await node.set_group_membership(32770, member=True, reach_flag=0x01)  # invalid flag
+    node.send_command.assert_not_awaited()

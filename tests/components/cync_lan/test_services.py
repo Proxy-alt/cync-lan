@@ -1,4 +1,4 @@
-"""Tests for services.py's 8 experimental_* services."""
+"""Tests for services.py's 9 experimental_* services."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from custom_components.cync_lan.services import (
     SERVICE_DELETE_SCENE,
     SERVICE_DELETE_SCHEDULE,
     SERVICE_EXECUTE_SCENE,
+    SERVICE_SET_GROUP_MEMBERSHIP,
     SERVICE_SET_GROUP_POWER,
     SERVICE_SET_INDICATOR_LED,
     SERVICE_SET_MOTION_SENSOR_SCHEDULE,
@@ -56,6 +57,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
         node.set_indicator_led = AsyncMock()
         node.set_motion_sensor_settings = AsyncMock()
         node.set_motion_sensor_schedule = AsyncMock()
+        node.set_group_membership = AsyncMock()
     entry.runtime_data = SimpleNamespace(
         ncync_server=SimpleNamespace(node_devices=nodes),
         bridge=CyncLanBridge(hass, entry.entry_id),
@@ -63,7 +65,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_eight_services(hass):
+async def test_setup_registers_all_nine_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
@@ -73,6 +75,7 @@ async def test_setup_registers_all_eight_services(hass):
     assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCENE)
     assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE)
     assert hass.services.has_service(DOMAIN, SERVICE_TOGGLE_AUTOMATION)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_MEMBERSHIP)
     async_unload_services(hass)
 
 
@@ -95,6 +98,7 @@ async def test_unload_removes_services_when_no_entries_loaded(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_DELETE_SCENE)
     assert not hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE)
     assert not hass.services.has_service(DOMAIN, SERVICE_TOGGLE_AUTOMATION)
+    assert not hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_MEMBERSHIP)
 
 
 async def test_unload_keeps_services_when_other_entries_still_loaded(hass):
@@ -597,6 +601,80 @@ async def test_toggle_automation_raises_for_unknown_device_id(hass):
                 "scene_id": 300,
                 "enabled": True,
             },
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_group_membership_targets_individual_device(hass):
+    """Unlike execute_scene/set_group_power/delete_*/toggle_automation,
+    this command targets one device (the one joining/leaving), not the
+    bridge - must be reachable via a normal device_id, and must raise if
+    the bridge device is passed instead."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_GROUP_MEMBERSHIP,
+        {"device_id": device.id, "group_id": 32770, "member": True},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_group_membership.assert_awaited_once_with(
+        32770, member=True, reach_flag=0x00
+    )
+    async_unload_services(hass)
+
+
+async def test_set_group_membership_maps_reach_flag(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_GROUP_MEMBERSHIP,
+        {
+            "device_id": device.id,
+            "group_id": 32770,
+            "member": False,
+            "reach_flag": "receive_only",
+        },
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_group_membership.assert_awaited_once_with(
+        32770, member=False, reach_flag=0x87
+    )
+    async_unload_services(hass)
+
+
+async def test_set_group_membership_raises_for_bridge_device(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_GROUP_MEMBERSHIP,
+            {"device_id": bridge_device.id, "group_id": 32770, "member": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_group_membership_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_GROUP_MEMBERSHIP,
+            {"device_id": "does-not-exist", "group_id": 32770, "member": True},
             blocking=True,
         )
     async_unload_services(hass)

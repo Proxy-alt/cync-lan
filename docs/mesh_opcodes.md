@@ -392,6 +392,18 @@ plumbing, but whether real device firmware actually *honors* it as "respond as t
 never been tested - that's what `cync_lan.experimental_set_group_power` (`custom_components/
 cync_lan/services.py`) exists to find out.
 
+**Group MEMBERSHIP itself, WIRED IN, EXPERIMENTAL** — the actual `0xD7` `ControlDeviceGroupCommand`
+described at the top of this section (add/remove a device to/from a group's pub/sub address, not
+"control the group's state") is now implemented: `devices.py`'s `CyncDevice.set_group_membership
+(group_id, member, reach_flag=0x00)`, exposed as `cync_lan.experimental_set_group_membership`.
+Unlike `set_group_power`, the `0xD7` op_code/dispatch method are confirmed but the `cmd_code` is a
+PREDICTION (via the length formula: `8 + 6-byte payload = 0x0E`), and unlike every other command in
+this doc it targets an individual device's own address - the group address is payload data, telling
+one specific device "start/stop listening on this group's address," not a broadcast. This is
+genuinely new functionality cync-lan didn't have before (creating/managing group membership, not
+just controlling an existing group's power) - a real step toward managing structure, not just
+runtime state, from HA.
+
 ### Scenes control — real `op_code = 0x8E` (was wrongly `0xEF`, see CORRECTION above)
 
 **WIRED IN, EXPERIMENTAL — the riskiest of the wired-in commands.** `devices.py`'s

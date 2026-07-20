@@ -224,3 +224,28 @@ experimental_toggle_automation:
       required: true
       selector:
         boolean:
+
+experimental_set_group_membership:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    group_id:
+      required: true
+      selector:
+        number:
+          min: 32768
+          max: 65535
+    member:
+      required: true
+      selector:
+        boolean:
+    reach_flag:
+      selector:
+        select:
+          options:
+            - normal
+            - receive_only
+          translation_key: group_reach_flag

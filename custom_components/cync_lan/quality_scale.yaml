@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (263 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (270 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,7 +9,7 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 8 experimental_* services are registered idempotently in
+      services.py's 9 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning's raw service is
@@ -37,6 +37,12 @@ rules:
       real-hardware experiment at the user's request; both
       _warn_experimental_cmd_code and a new
       _warn_experimental_transport_unconfirmed log on first use.
+      set_group_membership is a fifth kind: op_code/dispatch method
+      confirmed (the trustworthy f()/mo14054f envelope, not the 0x8E
+      family), cmd_code predicted via the length formula - genuinely new
+      functionality (group membership management, not just control of an
+      existing group), targeting an individual device rather than the
+      bridge/a group address.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -97,14 +103,16 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 8 experimental_*
+      strings.json's "services" block documents all 9 experimental_*
       services and their fields, each description explicitly flagging what's
       actually unconfirmed for that specific command - predicted cmd_code
       for most, the target address too for scenes, for group power
       specifically (its cmd_code is confirmed) whether firmware honors a
-      group-range target at all, and for delete_scene/delete_schedule/
+      group-range target at all, for delete_scene/delete_schedule/
       toggle_automation specifically (their cmd_code is confirmed) whether
-      the command rides over the same connection cync-lan intercepts at all.
+      the command rides over the same connection cync-lan intercepts at all,
+      and for set_group_membership (op_code/dispatch confirmed, cmd_code
+      predicted, same caveat class as most others).
   docs-triggers:
     status: exempt
     comment: No custom triggers defined (standard entity-state triggers apply).
@@ -206,8 +214,8 @@ rules:
   test-coverage:
     status: done
     comment: >-
-      98% overall line coverage on custom_components/cync_lan (1234
-      statements, 27 missed), measured with pytest-cov against a real 252-
+      98% overall line coverage on custom_components/cync_lan (1287
+      statements, 27 missed), measured with pytest-cov against a real 270-
       test run. number.py/select.py/sensor.py/switch.py/entity.py/util.py
       all at 100%. Remaining gaps are in __init__.py's rarely-hit
       background-task error branches, config_flow.py's exception logging
