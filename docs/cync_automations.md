@@ -223,6 +223,19 @@ misread as an op_code, same fix class as indicator LED - not yet applied); a "sp
 path calls the explicit-op_code method directly with the real op `0xEE`, no bug. See
 `mesh_opcodes.md`'s "CORRECTION" section for the general bug pattern this partially replicates.
 
+**UPDATE, follow-up pass**: full payload resolved, prompted by researching the Schedule "fade"
+feature (a gradual-brightness-transition option in the app's Schedule UI) - it turns out fade
+lives entirely inside `AddDeviceSceneCommand`'s own payload, not on the Schedule command itself.
+See `mesh_opcodes.md`'s "Full light-run-mode"-adjacent section for the exact byte layout (13-byte
+non-hub-routed payload ending in `[fadeByte, 0xFF]`; a structurally different manually-built
+`WriteBuffer`+`FrameCode` payload for hub-routed devices) and `ScheduleFade.java`'s 8-value coded
+duration enum. Confirmed hardware-side (the bulb fades autonomously using the byte it received at
+scene-programming time) via `ExecuteSceneCommand` never resending color/fade data when a scene
+actually fires. This means implementing fade requires implementing `AddDeviceSceneCommand` itself
+first (full per-device scene-slot programming: mode/brightness/color, not just the fade byte) -
+still unblocked by the Hub-commands transport question per the reasoning below, but a materially
+bigger feature than "add a field."
+
 ## Recommendation
 
 The "sync an HA automation back to Cync" theory, as generally framed, doesn't hold up - there's no
