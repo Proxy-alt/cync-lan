@@ -272,7 +272,25 @@ concrete, locally-writable features worth building on their own merits:
    device's product type, and the "regular" path **does** have the exact `0x8E`-relay bug (payload
    `0xEE,0x11,0x02,...` misread as an op_code) - same fix class as indicator LED, not yet applied,
    and not blocked by the transport question above since it's confirmed to go through the same
-   `mo14054f`/`mo14056h` methods already proven to carry real TCP-relay traffic.
+   `mo14054f`/`mo14056h` methods already proven to carry real TCP-relay traffic. Full payload
+   (including the Schedule "fade" feature) since resolved - see `mesh_opcodes.md`'s follow-up on
+   this section.
+4. **Read Scenes/Schedules from the cloud export** and expose them in HA - **done**: `scene.py`'s
+   activatable scene entities and `switch.py`'s schedule enable/disable switches, replacing the raw
+   `experimental_execute_scene`/`experimental_toggle_automation` services as the primary surface
+   (both services remain registered for existing automations/scripts). Raw JSON field names
+   resolved via `LocationProperties`'s kotlinx.serialization descriptor (not the internal Kotlin
+   domain model's field names, which differ - same lesson as `groupsArray`): top-level
+   `properties.sceneArray`/`properties.schedules` (confirmed exact keys, not `scenesArray`/
+   `schedulesArray`); a scene entry's `sceneID`/`displayName`; a schedule entry's `scheduleID`
+   (falling back to the sibling `id` field - both present with no confirmed distinction) /
+   `displayName` / `trigger.action.sceneID` (the scene it triggers) / `state` (inferred, not
+   confirmed, to be the enabled flag - the closest boolean field on the DTO). **UNVALIDATED against
+   a real populated export** - the one real account sampled for this research has zero scenes/
+   schedules configured, so none of this has been cross-checked against real captured JSON the way
+   `groupsArray` was. See `cloud_api.py`'s `parse_scenes()`/`parse_schedules()` docstrings.
 
-Motion-sensor schedule writing is implemented; Scenes/Schedules writing is not yet - this doc
-establishes what's confirmed and buildable for the remaining piece, not a finished feature.
+Motion-sensor schedule writing, Scenes/Schedules *writing* (delete/toggle, wired as an experiment),
+and Scenes/Schedules *reading* (as real entities) are all implemented now - Scene/Schedule
+*creation* from HA (`CreateSceneHubCommand`/`CreateScheduleHubCommand`/`AddDeviceSceneCommand`'s
+full payload) is the one piece from this doc's original research still unbuilt.

@@ -407,9 +407,11 @@ runtime state, from HA.
 ### Scenes control — real `op_code = 0x8E` (was wrongly `0xEF`, see CORRECTION above)
 
 **WIRED IN, EXPERIMENTAL — the riskiest of the wired-in commands.** `devices.py`'s
-`execute_scene()`, exposed via the `cync_lan.experimental_execute_scene` HA service, targeting the
-"Cync LAN Bridge" device (identifiers=(DOMAIN, entry_id), no per-device target - Scenes are
-home-wide) rather than an individual device. **Not yet real-hardware tested after the `0x8E`
+`execute_scene()`, exposed via the `cync_lan.experimental_execute_scene` HA service AND (newer)
+`scene.py`'s `CyncLanScene` entities (one per Cync Scene, sourced from `parse_scenes()` - see
+`cync_automations.md`'s "Recommendation" item 4), targeting the "Cync LAN Bridge" device
+(identifiers=(DOMAIN, entry_id), no per-device target - Scenes are home-wide) rather than an
+individual device. **Not yet real-hardware tested after the `0x8E`
 correction** (only `set_indicator_led`, its sibling in the same command family, has been tested and
 confirmed broken/now-fixed - see CORRECTION above). Two independent guesses still compound here:
 `cmd_code = 0x0C` (predicted via the length formula) *and* `target_id = 0x00` (guessed as

@@ -314,6 +314,62 @@ async def parse_groups(cfg_file: Path) -> Dict[int, dict]:
     return groups
 
 
+async def parse_scenes(cfg_file: Path) -> Dict[int, dict]:
+    """Read the "scenes" section of the exported Cync config file (written
+    by cloud_api.py's _parse_raw_export), across all homes. Same rationale
+    as parse_groups() for being kept separate from parse_config().
+
+    Returns {scene_id: {"name": str}}.
+
+    UNVALIDATED against a real populated export - the one real account
+    export available for this codebase's research had zero scenes
+    configured (see docs/cync_automations.md). Field names (sceneID,
+    displayName) are confirmed via SceneItem's kotlinx.serialization
+    descriptor (SceneItem$$serializer.java), not cross-checked against
+    real data the way groupsArray's fields were.
+    """
+    lp = "parse_scenes:"
+    raw_config = await asyncio.get_event_loop().run_in_executor(
+        None, _read_and_parse_yaml, cfg_file
+    )
+    scenes: Dict[int, dict] = {}
+    main_key = "account data" if "account data" in raw_config else "exported_homes"
+    for home_cfg in raw_config.get(main_key, {}).values():
+        for scene_id, scene in home_cfg.get("scenes", {}).items():
+            scenes[scene_id] = scene
+    logger.debug(f"{lp} found {len(scenes)} scene(s) across all homes")
+    return scenes
+
+
+async def parse_schedules(cfg_file: Path) -> Dict[int, dict]:
+    """Read the "schedules" section of the exported Cync config file
+    (written by cloud_api.py's _parse_raw_export), across all homes. Same
+    rationale as parse_groups() for being kept separate from
+    parse_config().
+
+    Returns {schedule_id: {"name": str, "scene_id": int, "enabled": bool}}.
+
+    UNVALIDATED against a real populated export - same caveat as
+    parse_scenes() above, doubly so here: ScheduleItem's raw JSON has two
+    ID-shaped fields (`id` and `scheduleID`) whose relationship isn't
+    confirmed from source alone (cloud_api.py prefers `scheduleID`,
+    falling back to `id`), and `state` is inferred - not source-confirmed
+    - to be the enabled/disabled flag (the closest boolean field on the
+    DTO, nothing more definitive found). See docs/cync_automations.md.
+    """
+    lp = "parse_schedules:"
+    raw_config = await asyncio.get_event_loop().run_in_executor(
+        None, _read_and_parse_yaml, cfg_file
+    )
+    schedules: Dict[int, dict] = {}
+    main_key = "account data" if "account data" in raw_config else "exported_homes"
+    for home_cfg in raw_config.get(main_key, {}).values():
+        for schedule_id, schedule in home_cfg.get("schedules", {}).items():
+            schedules[schedule_id] = schedule
+    logger.debug(f"{lp} found {len(schedules)} schedule(s) across all homes")
+    return schedules
+
+
 def check_python_version():
     if sys.version_info >= (3, 9):
         pass

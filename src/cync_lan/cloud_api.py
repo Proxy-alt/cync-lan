@@ -660,6 +660,46 @@ class CyncCloudAPI:
                     ),
                 }
 
+            # Cync Scenes (named multi-device state snapshots) and
+            # Schedules (time/day triggers that fire a scene) - the
+            # "Routines" tab, see docs/cync_automations.md. Field names
+            # (sceneArray/sceneID/displayName, schedules/id-or-scheduleID/
+            # trigger.action.sceneID/state) confirmed via decompiled
+            # kotlinx.serialization descriptors, but UNVALIDATED against a
+            # real populated export - the one real account sampled for
+            # this research had zero scenes/schedules configured. Purely
+            # additive, same as groups above.
+            new_home["scenes"] = {}
+            for raw_scene in raw_home["properties"].get("sceneArray", []):
+                if "sceneID" not in raw_scene:
+                    continue
+                scene_id = raw_scene["sceneID"]
+                new_home["scenes"][scene_id] = {
+                    "name": raw_scene.get("displayName") or f"Scene {scene_id}",
+                }
+
+            new_home["schedules"] = {}
+            for raw_schedule in raw_home["properties"].get("schedules", []):
+                # scheduleID preferred over the sibling `id` field - both
+                # are present on the DTO with no confirmed distinction,
+                # see parse_schedules()'s docstring.
+                schedule_id = raw_schedule.get("scheduleID", raw_schedule.get("id"))
+                trigger = raw_schedule.get("trigger") or {}
+                action = trigger.get("action") or {}
+                if schedule_id is None or "sceneID" not in action:
+                    continue
+                new_home["schedules"][schedule_id] = {
+                    "name": raw_schedule.get("displayName") or f"Schedule {schedule_id}",
+                    "scene_id": action["sceneID"],
+                    # `state` is the closest boolean field on the DTO to
+                    # an enabled/disabled flag - inferred, not confirmed,
+                    # see parse_schedules()'s docstring. Defaults to
+                    # enabled=True (matches every other "assume normal
+                    # unless told otherwise" default in this codebase)
+                    # when absent.
+                    "enabled": bool(raw_schedule.get("state", True)),
+                }
+
         # END OF HOME PARSING LOOP
         # write raw exported config to file for debugging, only if export source is None
         if CYNC_EXPORT_SOURCE is None:
