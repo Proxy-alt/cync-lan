@@ -19,6 +19,15 @@
           "off": "mdi:wifi-off"
         }
       }
+    },
+    "light": {
+      "cync_light_group": {
+        "default": "mdi:lightbulb-group",
+        "state": {
+          "off": "mdi:lightbulb-group-off",
+          "unavailable": "mdi:lightbulb-group-off"
+        }
+      }
     }
   }
 }

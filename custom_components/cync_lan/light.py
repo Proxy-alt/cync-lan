@@ -340,9 +340,24 @@ class CyncLanLightGroup(LightGroup):
 
     No _attr_device_info: like HA's own native "Light Group" helper, this
     is a virtual aggregate, not tied to a physical device.
+
+    icon-translations (gold): translation_key (not a static _attr_icon)
+    drives icons.json's entity.light.cync_light_group block, which gives
+    "off" a proper mdi:lightbulb-group-off instead of showing the "on"
+    icon at all times regardless of state. Also declares an icon for
+    "unavailable" (same off glyph) - included defensively since it's
+    harmless if the frontend doesn't honor it, but unlike the "off" case
+    (which mirrors this codebase's already-proven binary_sensor pattern),
+    HA's icon-translation state lookup for "unavailable" specifically
+    isn't confirmed/documented anywhere; the frontend may just dim
+    whatever icon is already showing instead. Safe to set translation_key
+    here despite _attr_name also being set below - Entity._name_internal
+    checks _attr_name first and never falls through to translation_key
+    for naming, so this only affects icon resolution, not the group's
+    display name (e.g. "Living Room").
     """
 
-    _attr_icon = "mdi:lightbulb-group"
+    _attr_translation_key = "cync_light_group"
 
     def __init__(self, unique_id: str, name: str, entity_ids: list[str]) -> None:
         super().__init__(unique_id, name, entity_ids, mode=False)

@@ -313,9 +313,31 @@ def test_light_group_uses_or_based_mode():
     assert group.mode is any
 
 
-def test_light_group_uses_light_groups_icon():
+def test_light_group_uses_icon_translation_not_static_icon():
+    """icon-translations (gold): the group's icon (default + state-based
+    "off"/"unavailable" overrides) comes from icons.json via
+    translation_key, not a static _attr_icon - see
+    test_icons_json_light_group_entry in this file for the actual icon
+    string assertions, since Entity.icon only ever returns _attr_icon/
+    entity_description.icon, never a translation-resolved value (that
+    resolution happens in the frontend)."""
     group = CyncLanLightGroup("entry1_group_1", "Test Group", ["light.a", "light.b"])
-    assert group.icon == "mdi:lightbulb-group"
+    assert group.translation_key == "cync_light_group"
+    assert group.icon is None
+    assert group.name == "Test Group"  # _attr_name still wins, unaffected
+
+
+def test_icons_json_light_group_entry():
+    import json
+    from pathlib import Path
+
+    icons = json.loads(
+        (Path(__file__).parents[3] / "custom_components/cync_lan/icons.json").read_text()
+    )
+    entry = icons["entity"]["light"]["cync_light_group"]
+    assert entry["default"] == "mdi:lightbulb-group"
+    assert entry["state"]["off"] == "mdi:lightbulb-group-off"
+    assert entry["state"]["unavailable"] == "mdi:lightbulb-group-off"
 
 
 def _make_group_entry(entry_id: str, **options):

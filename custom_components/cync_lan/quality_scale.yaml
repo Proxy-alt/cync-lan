@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (292 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (293 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -230,7 +230,7 @@ rules:
     status: done
     comment: >-
       98% overall line coverage on custom_components/cync_lan (1352
-      statements, 27 missed), measured with pytest-cov against a real 292-
+      statements, 27 missed), measured with pytest-cov against a real 293-
       test run. number.py/select.py/sensor.py/switch.py/scene.py/entity.py/
       util.py all at 100%. Remaining gaps are in __init__.py's rarely-hit
       background-task error branches, config_flow.py's exception logging
@@ -346,10 +346,15 @@ rules:
   icon-translations:
     status: done
     comment: >-
-      icons.json provides state-based icon overrides (on/off) for both
-      binary_sensor entities that have a translation_key
-      (motion, app_mesh_active), resolved through the same translation_key
-      mechanism verified end-to-end for entity-translations above.
+      icons.json provides state-based icon overrides for binary_sensor
+      entities with a translation_key (motion, app_mesh_active,
+      app_wifi_active: on/off) and light.py's CyncLanLightGroup
+      (cync_light_group: off/unavailable), resolved through the same
+      translation_key mechanism verified end-to-end for entity-translations
+      above. The "unavailable" state icon is included defensively (harmless
+      if unsupported) - unlike "off", HA's icon-translation state lookup
+      for "unavailable" specifically isn't confirmed/documented; the
+      frontend may just dim whatever icon is already showing instead.
   reconfiguration-flow:
     status: done
     comment: >-
