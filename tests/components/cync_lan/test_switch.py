@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.switch import (
     CyncLanIndicatorLedWifiBlinkSwitch,
+    CyncLanScheduleSwitch,
     CyncLanSwitch,
     async_setup_entry,
 )
@@ -220,3 +221,93 @@ async def test_indicator_led_wifi_blink_full_restore_lifecycle(hass):
         await entity.async_added_to_hass()
     assert entity.is_on is False  # unrecognized - cache unchanged from prior "off"
     node.set_indicator_led.assert_not_awaited()
+
+
+async def test_setup_entry_creates_one_schedule_switch_per_schedule(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.schedules = {
+        7: {"name": "Weekday Morning", "scene_id": 3, "enabled": True},
+        9: {"name": "Weekend", "scene_id": 4, "enabled": False},
+    }
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    schedule_switches = [e for e in added if isinstance(e, CyncLanScheduleSwitch)]
+    assert len(schedule_switches) == 2
+    assert {e.unique_id for e in schedule_switches} == {
+        "entry1_schedule_7",
+        "entry1_schedule_9",
+    }
+    assert {e.name for e in schedule_switches} == {"Weekday Morning", "Weekend"}
+
+
+async def test_setup_entry_no_schedules_creates_no_schedule_switches(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.schedules = {}
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert [e for e in added if isinstance(e, CyncLanScheduleSwitch)] == []
+
+
+async def test_schedule_switch_is_assumed_state_seeded_from_export():
+    entity = CyncLanScheduleSwitch("entry1", 7, 3, "Weekday Morning", enabled=True)
+    assert entity.is_on is True
+    assert entity.assumed_state is True
+    assert entity.device_info["identifiers"] == {("cync_lan", "entry1")}
+
+
+async def test_schedule_switch_turn_on_calls_toggle_automation():
+    entity = CyncLanScheduleSwitch("entry1", 7, 3, "Weekday Morning", enabled=False)
+    entity.async_write_ha_state = MagicMock()
+
+    with patch(
+        "cync_lan.devices.toggle_automation", new=AsyncMock()
+    ) as mock_toggle:
+        await entity.async_turn_on()
+
+    mock_toggle.assert_awaited_once_with(7, 3, True)
+    assert entity.is_on is True
+
+
+async def test_schedule_switch_turn_off_calls_toggle_automation():
+    entity = CyncLanScheduleSwitch("entry1", 7, 3, "Weekday Morning", enabled=True)
+    entity.async_write_ha_state = MagicMock()
+
+    with patch(
+        "cync_lan.devices.toggle_automation", new=AsyncMock()
+    ) as mock_toggle:
+        await entity.async_turn_off()
+
+    mock_toggle.assert_awaited_once_with(7, 3, False)
+    assert entity.is_on is False
+
+
+async def test_schedule_switch_restores_last_state(hass):
+    entity = CyncLanScheduleSwitch("entry1", 7, 3, "Weekday Morning", enabled=True)
+    entity.hass = hass
+    entity.entity_id = "switch.test_schedule"
+
+    last_state = MagicMock(state="off")
+    with patch.object(entity, "async_get_last_state", AsyncMock(return_value=last_state)):
+        await entity.async_added_to_hass()
+
+    assert entity.is_on is False

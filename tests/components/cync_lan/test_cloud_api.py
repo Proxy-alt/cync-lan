@@ -145,3 +145,121 @@ async def test_parse_raw_export_group_without_schedules_gets_empty_dict():
 
     group = result["exported_homes"]["Our Home"]["groups"][32770]
     assert group["sensor_schedules"] == {}
+
+
+def _home_with_scenes_and_schedules(scenes=None, schedules=None) -> dict:
+    home = _minimal_home()
+    home["properties"]["sceneArray"] = scenes or []
+    home["properties"]["schedules"] = schedules or []
+    return home
+
+
+async def test_parse_raw_export_scenes():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _home_with_scenes_and_schedules(
+        scenes=[{"sceneID": 3, "displayName": "Movie Night", "isReal": True}]
+    )
+
+    result = await api._parse_raw_export([home])
+
+    scenes = result["exported_homes"]["Our Home"]["scenes"]
+    assert scenes == {3: {"name": "Movie Night"}}
+
+
+async def test_parse_raw_export_scene_without_display_name_gets_fallback():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _home_with_scenes_and_schedules(scenes=[{"sceneID": 3, "displayName": ""}])
+
+    result = await api._parse_raw_export([home])
+
+    assert result["exported_homes"]["Our Home"]["scenes"][3]["name"] == "Scene 3"
+
+
+async def test_parse_raw_export_scene_without_id_is_skipped():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _home_with_scenes_and_schedules(scenes=[{"displayName": "No ID"}])
+
+    result = await api._parse_raw_export([home])
+
+    assert result["exported_homes"]["Our Home"]["scenes"] == {}
+
+
+async def test_parse_raw_export_no_scenes_key_gets_empty_dict():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _minimal_home()  # no sceneArray key at all
+
+    result = await api._parse_raw_export([home])
+
+    assert result["exported_homes"]["Our Home"]["scenes"] == {}
+
+
+async def test_parse_raw_export_schedules():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _home_with_scenes_and_schedules(
+        schedules=[
+            {
+                "scheduleID": 7,
+                "displayName": "Weekday Morning",
+                "state": True,
+                "trigger": {"action": {"sceneID": 3}, "startTime": "07:00"},
+            }
+        ]
+    )
+
+    result = await api._parse_raw_export([home])
+
+    schedules = result["exported_homes"]["Our Home"]["schedules"]
+    assert schedules == {
+        7: {"name": "Weekday Morning", "scene_id": 3, "enabled": True}
+    }
+
+
+async def test_parse_raw_export_schedule_falls_back_to_id_field():
+    """scheduleID and id both exist on the real DTO with no confirmed
+    distinction - scheduleID is preferred but id must work as a fallback."""
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _home_with_scenes_and_schedules(
+        schedules=[
+            {
+                "id": 9,
+                "displayName": "Fallback",
+                "trigger": {"action": {"sceneID": 4}},
+            }
+        ]
+    )
+
+    result = await api._parse_raw_export([home])
+
+    schedules = result["exported_homes"]["Our Home"]["schedules"]
+    assert 9 in schedules
+    assert schedules[9]["scene_id"] == 4
+    # state absent -> defaults to enabled
+    assert schedules[9]["enabled"] is True
+
+
+async def test_parse_raw_export_schedule_without_scene_id_is_skipped():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _home_with_scenes_and_schedules(
+        schedules=[{"scheduleID": 7, "displayName": "Broken", "trigger": {}}]
+    )
+
+    result = await api._parse_raw_export([home])
+
+    assert result["exported_homes"]["Our Home"]["schedules"] == {}
+
+
+async def test_parse_raw_export_no_schedules_key_gets_empty_dict():
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    home = _minimal_home()  # no schedules key at all
+
+    result = await api._parse_raw_export([home])
+
+    assert result["exported_homes"]["Our Home"]["schedules"] == {}

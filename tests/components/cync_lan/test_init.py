@@ -414,6 +414,85 @@ async def test_setup_entry_parses_groups_even_when_light_groups_disabled(hass, t
     assert entry.runtime_data.groups == fake_groups
 
 
+async def test_setup_entry_parses_scenes_and_schedules(hass, tmp_path):
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    fake_scenes = {3: {"name": "Movie Night"}}
+    fake_schedules = {7: {"name": "Morning", "scene_id": 3, "enabled": True}}
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "cync_lan.utils.parse_scenes", new=AsyncMock(return_value=fake_scenes)
+    ), patch(
+        "cync_lan.utils.parse_schedules", new=AsyncMock(return_value=fake_schedules)
+    ), patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ):
+        from custom_components.cync_lan import async_setup_entry
+
+        await async_setup_entry(hass, entry)
+
+    assert entry.runtime_data.scenes == fake_scenes
+    assert entry.runtime_data.schedules == fake_schedules
+
+
+async def test_setup_entry_scene_parse_failure_does_not_block_setup(hass, tmp_path):
+    """Scenes are optional - a failure parsing them must not prevent the
+    rest of setup from succeeding."""
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "cync_lan.utils.parse_scenes",
+        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+    ), patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ):
+        from custom_components.cync_lan import async_setup_entry
+
+        result = await async_setup_entry(hass, entry)
+
+    assert result is True
+    assert entry.runtime_data.scenes == {}
+
+
+async def test_setup_entry_schedule_parse_failure_does_not_block_setup(hass, tmp_path):
+    """Schedules are optional - a failure parsing them must not prevent the
+    rest of setup from succeeding."""
+    cfg_file = tmp_path / "cync_mesh.yaml"
+    cfg_file.write_text("devices: {}")
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    server = _mock_server(running_after_start=True)
+    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
+        "cync_lan.server.nCyncServer", return_value=server
+    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
+        "cync_lan.utils.parse_schedules",
+        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+    ), patch(
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
+    ):
+        from custom_components.cync_lan import async_setup_entry
+
+        result = await async_setup_entry(hass, entry)
+
+    assert result is True
+    assert entry.runtime_data.schedules == {}
+
+
 async def test_setup_entry_parses_groups_when_enabled(hass, tmp_path):
     cfg_file = tmp_path / "cync_mesh.yaml"
     cfg_file.write_text("devices: {}")

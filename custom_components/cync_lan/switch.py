@@ -14,9 +14,11 @@ from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .const import DOMAIN, MANUFACTURER
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +47,21 @@ async def async_setup_entry(
         # entity above (the indicator LED is a whole-device feature, see
         # select.py/number.py for its sibling mode/color/brightness entities).
         entities.append(CyncLanIndicatorLedWifiBlinkSwitch(bridge, entry.entry_id, node))
+
+    # Schedule enable/disable - home-wide, not tied to any device, attached
+    # to the bridge device like scene.py's scene entities. See
+    # CyncLanScheduleSwitch's docstring.
+    schedules = getattr(entry.runtime_data, "schedules", None) or {}
+    for schedule_id, schedule in schedules.items():
+        entities.append(
+            CyncLanScheduleSwitch(
+                entry.entry_id,
+                schedule_id,
+                schedule["scene_id"],
+                schedule["name"],
+                schedule.get("enabled", True),
+            )
+        )
     async_add_entities(entities)
 
 
@@ -106,3 +123,62 @@ class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, RestoreEntit
 
     async def async_turn_off(self, **kwargs) -> None:
         await self._bridge.set_indicator_led_field(self._node, wifi_disconnect_blink=False)
+
+
+class CyncLanScheduleSwitch(RestoreEntity, SwitchEntity):
+    """Enable/disable a saved Cync Schedule, replacing the raw
+    experimental_toggle_automation service (which requires knowing both a
+    numeric schedule_id AND the scene_id it triggers) with a plain on/off
+    entity. Home-wide, not tied to any device - attached to the "Cync LAN
+    Bridge" device like scene.py's scene entities, same has_entity_name
+    reasoning (a schedule's name is its own identity, not a facet of the
+    bridge).
+
+    No live readback exists for a schedule's enabled state (same situation
+    as the indicator LED entities before real-hardware confirmation) -
+    seeded once from the cloud export's parsed "enabled" field at startup,
+    then RestoreEntity-backed and updated optimistically on toggle.
+    _attr_assumed_state=True signals this to the UI, same convention as
+    CyncLanIndicatorLedWifiBlinkSwitch above.
+
+    UNVALIDATED against a real populated export - see cloud_api.py's
+    parse_schedules() docstring. toggle_automation() itself is also
+    EXPERIMENTAL (predicted cmd_code, unresolved transport question) - see
+    docs/cync_automations.md.
+    """
+
+    _attr_should_poll = False
+    _attr_assumed_state = True
+
+    def __init__(
+        self, entry_id: str, schedule_id: int, scene_id: int, name: str, enabled: bool
+    ) -> None:
+        self._schedule_id = schedule_id
+        self._scene_id = scene_id
+        self._attr_name = name
+        self._attr_unique_id = f"{entry_id}_schedule_{schedule_id}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
+        self._attr_is_on = enabled
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            self._attr_is_on = last_state.state == "on"
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._set_enabled(False)
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        from cync_lan.devices import toggle_automation
+
+        await toggle_automation(self._schedule_id, self._scene_id, enabled)
+        self._attr_is_on = enabled
+        self.async_write_ha_state()

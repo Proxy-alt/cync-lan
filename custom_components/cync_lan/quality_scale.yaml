@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (270 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (292 tests, 98% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -17,10 +17,7 @@ rules:
       flow's guided "Edit Motion Sensor Settings" wizard (device picker ->
       physical-wake gate, checking bridge.is_online() exactly like the real
       app's own equivalent check -> settings form) - see
-      reconfiguration-flow below. Scene activation stays service-only
-      (cmd_code still predicted, not confirmed - a service call is a more
-      honest fit than an always-on entity/wizard for something unconfirmed
-      end to end). Group power is a
+      reconfiguration-flow below. Group power is a
       third kind: its cmd_code is fully confirmed (reuses set_power exactly),
       what's unconfirmed is whether firmware honors a group-range target
       address at all - see docs/mesh_opcodes.md's "Groups control" section.
@@ -42,7 +39,17 @@ rules:
       family), cmd_code predicted via the length formula - genuinely new
       functionality (group membership management, not just control of an
       existing group), targeting an individual device rather than the
-      bridge/a group address.
+      bridge/a group address. Scene activation (execute_scene) and
+      schedule enable/disable (toggle_automation) are unusual: their own
+      cmd_code caveats are unchanged, but they're now ALSO exposed as real
+      entities (scene.py's CyncLanScene, switch.py's CyncLanScheduleSwitch)
+      rather than staying service-only - unlike motion-sensor tuning
+      (which needs a multi-field form the wizard exists to walk through),
+      activating a scene or toggling a schedule has no fields to fill out
+      beyond "which one," so a real entity is a strict UX improvement with
+      no added risk over the raw service - same command, same caveats,
+      reachable without knowing a numeric ID. The raw services remain
+      registered for existing automations/scripts built against them.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -140,7 +147,15 @@ rules:
     comment: Every entity sets unique_id in CyncLanEntity.__init__.
   has-entity-name:
     status: done
-    comment: _attr_has_entity_name = True on CyncLanEntity and the diagnostic sensor.
+    comment: >-
+      _attr_has_entity_name = True on CyncLanEntity and the diagnostic
+      sensor. Deliberate exception: scene.py's CyncLanScene and switch.py's
+      CyncLanScheduleSwitch do NOT set has_entity_name - a scene/schedule's
+      own name (e.g. "Movie Night") is its complete identity, not a facet
+      of the "Cync LAN Bridge" device it's attached to for grouping;
+      combining them would read as "Cync LAN Bridge Movie Night" in the
+      scene picker, which doesn't match how scene platforms from other
+      integrations behave.
   runtime-data:
     status: done
     comment: CyncLanRuntimeData dataclass stored on entry.runtime_data.
@@ -203,9 +218,9 @@ rules:
     status: done
     comment: >-
       PARALLEL_UPDATES = 0 declared and explicitly justified in each
-      platform module (light/switch/fan/binary_sensor/number/select/sensor) -
-      the protocol layer serializes its own commands per bridge connection,
-      so entities don't need HA-side throttling.
+      platform module (light/switch/fan/binary_sensor/number/select/sensor/
+      scene) - the protocol layer serializes its own commands per bridge
+      connection, so entities don't need HA-side throttling.
   reauthentication-flow:
     status: done
     comment: >-
@@ -214,10 +229,10 @@ rules:
   test-coverage:
     status: done
     comment: >-
-      98% overall line coverage on custom_components/cync_lan (1287
-      statements, 27 missed), measured with pytest-cov against a real 270-
-      test run. number.py/select.py/sensor.py/switch.py/entity.py/util.py
-      all at 100%. Remaining gaps are in __init__.py's rarely-hit
+      98% overall line coverage on custom_components/cync_lan (1352
+      statements, 27 missed), measured with pytest-cov against a real 292-
+      test run. number.py/select.py/sensor.py/switch.py/scene.py/entity.py/
+      util.py all at 100%. Remaining gaps are in __init__.py's rarely-hit
       background-task error branches, config_flow.py's exception logging
       branches, and binary_sensor.py's setup-entry edge cases.
 

@@ -128,11 +128,24 @@ Supported entity types in this integration specifically:
 - **Sensor (diagnostic)** - one entity per native Cync motion-sensor
   schedule slot (morning/daytime/evening/sleep), for devices that belong to
   a Cync app group with schedules configured. Read-only.
+- **Scene** - one activatable entity per saved Cync Scene ("Routines ->
+  Scenes"), reachable from HA's own scene picker instead of a raw service
+  call. EXPERIMENTAL - see [Known limitations](#known-limitations).
+- **Switch (schedule)** - one entity per saved Cync Schedule to
+  enable/disable it without deleting it. Write-only/`assumed_state` (no
+  live readback exists), seeded from your account's exported schedule
+  data and restored across HA restarts. EXPERIMENTAL - see
+  [Known limitations](#known-limitations).
+
+Motion-sensor settings tuning also has a guided options-flow wizard
+("Configure" -> "Edit motion sensor settings") that walks through waking
+the physical sensor first, rather than requiring the raw service alone.
 
 Not yet supported in this integration (present in some form in the
 underlying package, not yet exposed as HA entities here): motion/ambient
-sensor sensitivity and timing tuning, and OTA firmware update triggering -
-see [Known limitations](#known-limitations).
+sensor sensitivity and timing tuning as an entity (service + guided wizard
+only, not a bare entity), and OTA firmware update triggering - see
+[Known limitations](#known-limitations).
 
 ## Use cases
 
@@ -224,6 +237,14 @@ automation:
   connection (depending on device type), not through this integration's
   local TCP listener - there's nothing for Home Assistant to trigger or
   monitor here.
+- **Scene/Schedule entities are unvalidated against a real populated
+  account.** The exact cloud-export field names they're parsed from were
+  confirmed by decompiling the Cync app's own JSON deserialization code,
+  not by cross-checking against a real account that actually has scenes
+  or schedules configured (the one account available for this project's
+  research has neither). If scene/schedule entities don't appear, or show
+  the wrong scene/enabled state, please open an issue with (redacted)
+  export data - see the parent project's `docs/cync_automations.md`.
 
 ## Troubleshooting
 

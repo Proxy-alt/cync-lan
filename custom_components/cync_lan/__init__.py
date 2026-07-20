@@ -45,6 +45,7 @@ PLATFORMS = [
     Platform.FAN,
     Platform.LIGHT,
     Platform.NUMBER,
+    Platform.SCENE,
     Platform.SELECT,
     # Platform.SENSOR: read-only diagnostic entities only (motion-sensor
     # native schedule slots, sensor.py) - not a general-purpose sensor
@@ -58,7 +59,13 @@ PLATFORMS = [
     # service is more honest than an entity" reasoning no longer applies to
     # it specifically. Motion-sensor tuning stays service-only
     # (services.py's experimental_set_motion_sensor_settings) since *that*
-    # cmd_code is still unconfirmed on real hardware.
+    # cmd_code is still unconfirmed on real hardware. Scene activation
+    # (Platform.SCENE, scene.py) and schedule enable/disable (switch.py's
+    # CyncLanScheduleSwitch) moved to real entities despite their own
+    # predicted cmd_codes - unlike motion-sensor tuning, there's no
+    # multi-field form to fill out first, so a real entity is a strict UX
+    # improvement over the raw service with no added risk (same command,
+    # same caveats, just reachable without knowing a numeric scene_id).
 ]
 
 # How long to wait for the TCP listener to either bind or fail before
@@ -82,6 +89,8 @@ class CyncLanRuntimeData:
     ncync_server: "object"  # cync_lan.server.nCyncServer
     server_task: asyncio.Task
     groups: dict = None  # {group_id: {"name", "device_ids", "is_subgroup"}}
+    scenes: dict = None  # {scene_id: {"name"}}
+    schedules: dict = None  # {schedule_id: {"name", "scene_id", "enabled"}}
     unsub_refresh: object = None
     unsub_no_devices_check: object = None
     # Stashed by light.py's async_setup_entry so light groups can be added
@@ -112,9 +121,17 @@ def _import_cync_lan_symbols():
     from cync_lan.const import CYNC_CONFIG_FILE_PATH
     from cync_lan.server import nCyncServer
     from cync_lan.structs import GlobalObject
-    from cync_lan.utils import parse_config, parse_groups
+    from cync_lan.utils import parse_config, parse_groups, parse_schedules, parse_scenes
 
-    return CYNC_CONFIG_FILE_PATH, nCyncServer, GlobalObject, parse_config, parse_groups
+    return (
+        CYNC_CONFIG_FILE_PATH,
+        nCyncServer,
+        GlobalObject,
+        parse_config,
+        parse_groups,
+        parse_scenes,
+        parse_schedules,
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -134,6 +151,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         GlobalObject,
         parse_config,
         parse_groups,
+        parse_scenes,
+        parse_schedules,
     ) = await hass.async_add_executor_job(_import_cync_lan_symbols)
 
     cfg_file = Path(CYNC_CONFIG_FILE_PATH)
@@ -166,6 +185,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         groups = await parse_groups(cfg_file)
     except Exception:  # noqa: BLE001 - groups are optional, must not block setup
         _LOGGER.exception("Failed to parse Cync device groups, continuing without them")
+
+    # Scenes/Schedules ("Routines") - same best-effort, non-fatal pattern as
+    # groups above. Source for scene.py's activatable scene entities and
+    # switch.py's schedule-enable switches - see docs/cync_automations.md.
+    scenes: dict = {}
+    try:
+        scenes = await parse_scenes(cfg_file)
+    except Exception:  # noqa: BLE001 - scenes are optional, must not block setup
+        _LOGGER.exception("Failed to parse Cync scenes, continuing without them")
+
+    schedules: dict = {}
+    try:
+        schedules = await parse_schedules(cfg_file)
+    except Exception:  # noqa: BLE001 - schedules are optional, must not block setup
+        _LOGGER.exception("Failed to parse Cync schedules, continuing without them")
 
     async def _on_unknown_device_confirmed() -> None:
         # dynamic-devices (gold): a real new device was seen in a MeshInfo
@@ -212,7 +246,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     runtime_data = CyncLanRuntimeData(
-        bridge=bridge, ncync_server=ncync_server, server_task=server_task, groups=groups
+        bridge=bridge,
+        ncync_server=ncync_server,
+        server_task=server_task,
+        groups=groups,
+        scenes=scenes,
+        schedules=schedules,
     )
     entry.runtime_data = runtime_data
 
