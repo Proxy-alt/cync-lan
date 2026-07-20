@@ -256,6 +256,21 @@ Source: `SetLightRunModeCommand.java` (opcode `q = {-30,17,2,7}`), `x()` lines 1
 `LightShow.java`, `MusicShow.java`, `Reveal.java`, `MultiColor.java` (index-range constants via
 `super(N)`/`IntRange(...)`).
 
+**UPDATE, follow-up pass on "Reveal" specifically** - re-confirmed `set_light_effect("reveal")`
+(modeCode `0x03`) is the real app's dedicated Reveal toggle button
+(`RevealFragment.i0()`→`LightControlViewModel.p()`→`Command.SetLightRunMode`), already fully wired
+in `devices.py`, nothing further needed for it. **A second, separate, real code path exists that
+is NOT wired in** and is redundant with the above: selecting Reveal via the app's color-tab picker
+sends it through the everyday `SetComboCommand` (op `0xF0`) instead, with a 2-byte (not 4-byte)
+color-type sentinel `[0xFF, 0xF0]` in place of the usual CCT `[pct,0,0,0]`/RGB `[0xFE,r,g,b]` shape
+(`SetComboCommand.java:816-818`; the singleton `RevealColor` object carries no Full-Color-vs-
+Soft-White distinction - that's purely the bulb's own SKU/firmware, not a wire field, per
+`ProductModel.java:137-171`'s per-SKU Reveal entries). `SetComboCommand` explicitly rejects
+`RevealColor` for hub-relayed devices (`"RevealColor is not supported by hubs"`,
+`SetComboCommand.java:339,421,532,614,705`) - only works over direct XLink mesh. Since this path
+produces the same end-user effect as the already-wired `set_light_effect("reveal")`, it's
+documented here for completeness but not worth implementing as a second way to do the same thing.
+
 **Custom MultiColor scheme creation** (uploading arbitrary per-segment RGB data, not just
 activating a saved one) is a **separate, unrelated opcode**: `SetMultiColorSegmentsCommand.java`,
 `{0xF7, 0x11, 0x02, 0x4E}` — payload is a gradient-mode toggle, segment count, or up to 2 segments
@@ -267,6 +282,46 @@ extension — a materially bigger feature with its own data model.
 Related for a future scene-export feature: `AddDeviceSceneCommand.java` (`{-18,17,2}` =
 `0xEE 0x11 0x02`) documents the 6-byte per-device state block scenes store
 (`mode, brightness/param, color-temp-or-254-for-RGB, R, G, B`).
+
+**UPDATE, follow-up pass - full payload including the Schedule "fade" feature resolved.**
+`AddDeviceSceneCommand` is what actually programs a device's on-device scene-slot state -
+called once when a scene (or the implicit per-device scene backing a simple Schedule) is
+created/edited, not at trigger time. Two payload shapes depending on device routing:
+
+- **Non-hub-routed devices** (`AddDeviceSceneCommand.java:186-192,279-284`): `[0xEE,0x11,0x02] +
+  [actionTypeByte, sceneNum] + [mode, param, colorType, R, G, B] (the 6-byte block above) +
+  [fadeByte, 0xFF]` - 13 bytes. **This is the same `0x8E`-relay bug class as indicator LED/motion
+  settings**: dispatched via `XlinkCommandDelegate.DefaultImpls.c` → `h()` →
+  `XlinkDeviceManager.CommandDelegate.h()` (`XlinkDeviceManager.java:1050-1053`), which hardcodes
+  outer op `(byte)-114` = `0x8E` - the embedded `0xEE` is not the real outer op_code, exactly like
+  the already-confirmed siblings. Not yet applied/wired into `devices.py`.
+- **Hub-routed devices** (`AddDeviceSceneCommand.java:193-251`): a manually-built `WriteBuffer`
+  frame with `FrameCode` headers + an explicit little-endian `MeshAddress` target, dispatched via
+  the raw pre-framed `e()` method (same dispatch class as the pure Hub Scenes/Schedules commands
+  elsewhere in this doc) - a structurally different payload from the non-hub path above, not just
+  a different op_code.
+
+**The fade byte** (`ScheduleFade.java:25-32`, 1-byte signed enum): `NO_FADE=-1(0xFF)`,
+`FADE_10_SECONDS=1`, `FADE_30_SECONDS=2`, `FADE_1_MINUTE=3`, `FADE_5_MINUTES=4`,
+`FADE_10_MINUTES=5`, `FADE_20_MINUTES=6`, `FADE_30_MINUTES=7` - a coded duration bucket, not raw
+seconds. It's a field on `SceneModel` (`SceneModel.java:47-48`), not on the Schedule command
+itself - `CreateScheduleHubCommand`'s own payload has no fade byte at all
+(`CreateScheduleHubCommand.java:59-68`); every Schedule (even a single-device one) is internally
+an implicit `SceneModel` under the hood (`ScheduleServiceDefault$createDevicesSchedule*` classes),
+so this mechanism does cover schedules despite living on the Scene side. **Confirmed hardware-side,
+not a software ramp**: `ExecuteSceneCommand` (what a schedule trigger actually fires) never resends
+color or fade data for real scenes (`ExecuteSceneCommand.java:137-144,198-207`) - it just
+references the `SceneId`, meaning the bulb's own firmware executes the fade autonomously using the
+byte it received once at scene-programming time. Not general-purpose: `SetComboCommand.y()` (the
+everyday brightness/color-set command) has no fade field anywhere in its payload - fade only
+exists via the Scene/Schedule-programming path above.
+
+Not yet implemented in `devices.py` - would require building `AddDeviceSceneCommand` (per-device
+scene-action programming) from scratch with the `0x8E` fix applied, which is unblocked by the
+Hub-commands transport question (`docs/cync_automations.md`) since it's confirmed to ride the same
+`mo14054f`/`mo14056h` methods already proven to carry real TCP-relay traffic - but it is a
+materially bigger feature than "add one field," since fade can't be set independently of writing
+a full scene-slot entry (mode/brightness/color included).
 
 Also relevant: `SetLightRunModeUseCase.java` shows the app validates custom show/scheme existence
 via the cloud before sending, and for multi-device groups allocates a temporary index (129-255)
