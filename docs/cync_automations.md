@@ -344,9 +344,41 @@ concrete, locally-writable features worth building on their own merits:
    implemented in `devices.py` - this is new protocol knowledge, not a shipped feature.
 
 Motion-sensor schedule writing, Scenes/Schedules *writing* (delete/toggle, wired as an experiment),
-and Scenes/Schedules *reading* (as real entities) are all implemented now - Scene/Schedule
-*creation* from HA (`CreateSceneHubCommand`/`CreateScheduleHubCommand`/`AddAutomationHubCommand`/
-`AddDeviceSceneCommand`'s full payload) is the one piece from this doc's original research still
-unbuilt, though as of the follow-up research above every relevant payload is now fully decoded -
-what's left is implementation and the same real-hardware validation every other Hub command in
-this family is still waiting on, not further research.
+Scenes/Schedules *reading* (as real entities), and Scene/Schedule *creation* are all implemented
+now. `devices.py` ships `create_scene(name)` / `CyncDevice.add_to_scene(scene_id, cct=, rgb=)` /
+`create_schedule(scene_id, enabled=)` / `add_automation(schedule_id, scene_id, day_mask, hour,
+minute, second)`, using the exact payloads this doc traced above (`CreateSceneHubCommand`'s 50-byte
+name+iconId+padding, `AddDeviceSceneCommand`'s 13-byte non-hub-routed actionType/sceneId/color/fade
+payload - confirmed no brightness field exists in it, so a captured Scene entry is color-only,
+`CreateScheduleHubCommand`'s 50-byte sceneId+enabled allocator, `AddAutomationHubCommand`'s 11-byte
+scheduleId/sceneId/day-bitmask/time payload). `create_scene`/`create_schedule` are the first
+commands in this codebase that read a response back off the wire at all: the Hub allocates the
+scene_id/schedule_id and reports it asynchronously via `HubCreateSceneNotification`/
+`HubCreateScheduleNotification`, over the same HDLC/PPP-framed notification channel flagged above -
+decoded by the new `src/cync_lan/packet/xlink_legacy.py` (`decode_xlink_frame()`, 0x7E-delimited,
+byte-stuffed, checksummed) and correlated by op_code via a new per-op_code `asyncio.Lock`+`Future`
+registry (`_await_xlink_notification()`), hooked into the existing "unknown ctrl_bytes" fallback
+inside `_handle_83_packet`/`_handle_73_mesh_control` - a decoder only, since cync-lan's outgoing
+sends still use its own confirmed `PacketBuilder` envelope, not a genuine Xlink/Frame HDLC frame.
+**This inherits the exact same transport-unconfirmed status as the rest of this command family** -
+whether the Hub's notification response rides the same TCP relay cync-lan intercepts at all is
+still unconfirmed, so `create_scene()`/`create_schedule()` return `None` on a 10-second timeout
+(a normal, expected outcome pending real-hardware validation, not necessarily a bug) rather than
+raising.
+
+Built on top of all four: `custom_components/cync_lan/services.py`'s
+`cync_lan.experimental_push_automation_to_hardware` service reads an *existing* HA automation's own
+`trigger`/`condition`/`action` config (via `AutomationEntity.raw_config`) and pushes it onto the Cync
+hub as a native Scene+Schedule, chaining `create_scene` → `add_to_scene` (once per resolved action
+target) → `create_schedule` → `add_automation`. Strictly validated to the "time/day trigger, Cync
+devices only" scope this feature was built for: exactly one plain `time` trigger (a fixed `at:`
+string, no entity/template - Cync has no way to track a dynamic time source), at most one `time`
+condition with only `weekday:` set (no before/after range - defaults to all 7 days if omitted), and
+one or more `light.turn_on` actions each targeting a Cync LAN light directly (light *groups*
+rejected - a Scene entry is per-device state, so there's no single state for a group to hand over)
+with exactly one color (`rgb_color` or `color_temp_kelvin` - matching `light.py`'s own established
+convention of treating `color_temp_kelvin` as a raw passthrough value, not a real Kelvin
+conversion). Brightness, effects, and transitions are rejected outright rather than silently
+dropped, since `add_to_scene()`'s wire format has no field for them at all. The pushed automation
+keeps running as a normal HA automation afterward - this only *additionally* copies its logic onto
+the hub, so the same schedule keeps firing even if HA or the network goes down.

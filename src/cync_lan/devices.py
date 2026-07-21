@@ -57,6 +57,10 @@ __all__ = [
     "delete_scene",
     "delete_schedule",
     "toggle_automation",
+    "create_scene",
+    "create_schedule",
+    "add_automation",
+    "try_resolve_xlink_notification",
 ]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
@@ -288,6 +292,84 @@ def _warn_experimental_transport_unconfirmed(lp: str, name: str) -> None:
         f"docs/cync_automations.md's 'HA -> Cync (writing)' section. If this doesn't "
         f"work as expected, please report it (device model + observed behavior)."
     )
+
+
+# ============================================================================
+# Legacy Xlink/Frame HDLC notification correlation (create_scene/
+# create_schedule's hub-allocated-ID response) - see
+# src/cync_lan/packet/xlink_legacy.py's module docstring for full context.
+#
+# cync-lan's OUTGOING side for this whole command family (delete_scene,
+# delete_schedule, toggle_automation, and now create_scene/create_schedule)
+# does NOT emit a genuine Xlink/Frame HDLC frame - it sends the confirmed
+# inner-payload bytes through cync-lan's own PacketBuilder envelope instead,
+# per established precedent. That means there is no real msgId field cync-lan
+# controls for the hub to echo back if it responds in its own native format.
+# Correlation here is therefore by op_code ONLY, serialized per op_code via a
+# lock (so a second concurrent create_scene() call simply waits its turn
+# rather than racing to claim an ambiguous response) - not the (op_code,
+# msgId) pairing the real app itself uses, since cync-lan has no msgId of its
+# own to match against.
+_PENDING_XLINK_RESPONSES: Dict[int, "asyncio.Future"] = {}
+_XLINK_RESPONSE_LOCKS: Dict[int, asyncio.Lock] = {}
+
+
+def _get_xlink_response_lock(op_code: int) -> asyncio.Lock:
+    lock = _XLINK_RESPONSE_LOCKS.get(op_code)
+    if lock is None:
+        lock = _XLINK_RESPONSE_LOCKS[op_code] = asyncio.Lock()
+    return lock
+
+
+def try_resolve_xlink_notification(packet_data: bytes) -> bool:
+    """Called from the receive loop's "unknown ctrl_bytes" fallback (both
+    CyncTCPSession._handle_83_packet and _handle_73_mesh_control - the two
+    places cync-lan's own confirmed 0x7E-bound-inner-data convention lands
+    content it doesn't recognize). Attempts to decode `packet_data` as a
+    legacy Xlink/Frame HDLC notification (see decode_xlink_frame) and, if
+    its op_code matches an outstanding create_scene()/create_schedule()
+    call, resolves that call's pending future with the raw notification
+    payload.
+
+    Returns True if the frame was successfully decoded AND consumed by a
+    pending request - the caller should treat the packet as handled, not
+    fall through to its existing unknown-packet logging. Returns False for
+    every other case (not a well-formed Xlink frame at all, or a
+    well-formed frame whose op_code nobody is currently waiting for) -
+    callers fall through to their existing logging unchanged in that case,
+    so this is purely additive and never suppresses real diagnostic
+    visibility into genuinely unrecognized traffic.
+    """
+    from cync_lan.packet import decode_xlink_frame
+
+    frame = decode_xlink_frame(packet_data)
+    if frame is None:
+        return False
+    fut = _PENDING_XLINK_RESPONSES.get(frame.op_code)
+    if fut is None or fut.done():
+        return False
+    fut.set_result(frame.payload)
+    return True
+
+
+async def _await_xlink_notification(op_code: int, timeout: float = 10.0) -> Optional[bytes]:
+    """Register a pending wait for a legacy Xlink/Frame HDLC notification
+    with this op_code, then wait up to `timeout` seconds (10s matches the
+    real app's own StatusNotificationQueryCommand default). Returns the raw
+    notification payload, or None on timeout - a timeout is a normal,
+    expected outcome here (not an error) given the still-unconfirmed
+    question of whether this notification channel rides the same TCP relay
+    cync-lan intercepts at all; see _warn_experimental_transport_unconfirmed.
+    """
+    async with _get_xlink_response_lock(op_code):
+        fut = asyncio.get_event_loop().create_future()
+        _PENDING_XLINK_RESPONSES[op_code] = fut
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+        finally:
+            _PENDING_XLINK_RESPONSES.pop(op_code, None)
 
 
 async def broadcast_control_command(
@@ -602,6 +684,217 @@ async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> N
         + struct.pack(">B", 1 if enabled else 0)
         + struct.pack(">B", 0)
         + bytes(16)
+    )
+    cmd_ = 7 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def create_scene(name: str, timeout: float = 10.0) -> Optional[int]:
+    """EXPERIMENTAL: creates a new, empty Cync Scene, returning the
+    Hub-allocated scene_id - or None if no response arrives within
+    `timeout` seconds (see below; a normal, expected outcome, not an
+    error). Use CyncDevice.add_to_scene() afterward to give the new scene
+    per-device state.
+
+    Confirmed via CreateSceneHubCommand.java: real op_code
+    HUB_CREATE_SCENE = 0x10 (XlinkCommandCode.java) - not the 0x8E-relay
+    family. Payload (CreateSceneRequest.getF38055a() via PackKt.m14453a()):
+    a String30-encoded name (UTF-8 bytes, truncated/zero-padded to exactly
+    30 bytes - Java's Arrays.copyOf semantics: shorter names are
+    zero-padded, longer names silently truncated at the byte level, which
+    can split a multi-byte UTF-8 character if the name is long - matches
+    the real app's own behavior exactly, not a bug here) + a 2-byte
+    little-endian iconId (always 0 - the real app never sets a non-zero
+    icon via this path) + 18 zero-padding bytes = 50 bytes total.
+
+    Unlike delete_scene/delete_schedule/toggle_automation, this command's
+    whole purpose is to get an ID cync-lan doesn't get to choose - the Hub
+    allocates one and reports it back asynchronously via
+    HubCreateSceneNotification. This is the first command in this file
+    that reads a response back off the wire at all - see
+    src/cync_lan/packet/xlink_legacy.py and _await_xlink_notification()
+    for the (also experimental, also transport-unconfirmed) decoder this
+    relies on. Confirmed response payload
+    (HubCreateSceneNotification.XlinkParser): 1-byte errorCode + 2-byte
+    little-endian scene_id.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "create_scene:"
+    _warn_experimental_cmd_code(lp, "create_scene")
+    _warn_experimental_transport_unconfirmed(lp, "create_scene")
+    name_bytes = name.encode("utf-8")[:30].ljust(30, b"\x00")
+    op = 0x10
+    payload = name_bytes + struct.pack("<H", 0) + bytes(18)
+    cmd_ = 7 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+    response = await _await_xlink_notification(op, timeout=timeout)
+    if response is None:
+        logger.warning(
+            f"{lp} No response received within {timeout}s - either this "
+            f"notification channel doesn't ride the TCP relay cync-lan "
+            f"intercepts (see docstring), or the create itself failed silently."
+        )
+        return None
+    if len(response) < 3:
+        logger.error(f"{lp} Malformed response (expected >=3 bytes, got {len(response)})")
+        return None
+    error_code = response[0]
+    scene_id = struct.unpack_from("<H", response, 1)[0]
+    if error_code != 0:
+        logger.error(f"{lp} Hub reported errorCode={error_code} for scene {name!r}")
+        return None
+    logger.info(f"{lp} Created scene {name!r} -> scene_id={scene_id}")
+    return scene_id
+
+
+async def create_schedule(
+    scene_id: int, enabled: bool = True, timeout: float = 10.0
+) -> Optional[int]:
+    """EXPERIMENTAL: allocates a new Cync Schedule bound to an existing
+    scene_id, returning the Hub-allocated schedule_id - or None on timeout,
+    same shape/caveats as create_scene() (read that docstring first).
+
+    This command ONLY allocates a bare schedule_id and records the target
+    scene_id + enabled flag - it does NOT set a day-of-week/time trigger.
+    Confirmed via CreateScheduleHubCommand.java
+    (RoutinesService.m14800Q(), "getNextScheduleId") - call
+    add_automation() immediately after this to give the schedule an
+    actual trigger; without that follow-up call the schedule exists but
+    never fires (matches the real app's own two-command sequence exactly
+    - see docs/cync_automations.md's Recommendation item 5).
+
+    Payload: 50 bytes, confirmed field-by-field via
+    CreateScheduleHubCommand.java's WriteBuffer calls: sceneId (4-byte LE,
+    offset 0-3) + 26 zero-padding bytes (offset 4-29) + a zero uint16
+    (offset 30-31) + the enabled flag (1 byte, offset 32) + a zero byte
+    (offset 33) + 16 zero-padding bytes (offset 34-49).
+
+    Confirmed response payload (HubCreateScheduleNotification.XlinkParser,
+    identical shape to create_scene()'s): 1-byte errorCode + 2-byte
+    little-endian schedule_id.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "create_schedule:"
+    _warn_experimental_cmd_code(lp, "create_schedule")
+    _warn_experimental_transport_unconfirmed(lp, "create_schedule")
+    if not (0 <= scene_id <= 0xFFFFFFFF):
+        logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-4294967295")
+        return None
+    op = 0x92
+    payload = (
+        struct.pack("<I", scene_id)
+        + bytes(26)
+        + struct.pack("<H", 0)
+        + struct.pack(">B", 1 if enabled else 0)
+        + struct.pack(">B", 0)
+        + bytes(16)
+    )
+    cmd_ = 7 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+    response = await _await_xlink_notification(op, timeout=timeout)
+    if response is None:
+        logger.warning(
+            f"{lp} No response received within {timeout}s - either this "
+            f"notification channel doesn't ride the TCP relay cync-lan "
+            f"intercepts (see create_scene()'s docstring), or the create "
+            f"itself failed silently."
+        )
+        return None
+    if len(response) < 3:
+        logger.error(f"{lp} Malformed response (expected >=3 bytes, got {len(response)})")
+        return None
+    error_code = response[0]
+    schedule_id = struct.unpack_from("<H", response, 1)[0]
+    if error_code != 0:
+        logger.error(f"{lp} Hub reported errorCode={error_code} for scene_id={scene_id}")
+        return None
+    logger.info(
+        f"{lp} Created schedule -> schedule_id={schedule_id} (scene_id={scene_id})"
+    )
+    return schedule_id
+
+
+async def add_automation(
+    schedule_id: int,
+    scene_id: int,
+    day_mask: int,
+    hour: int,
+    minute: int,
+    second: int = 0,
+) -> None:
+    """EXPERIMENTAL: sets a Schedule's actual trigger - which days it runs
+    on, at what local time, and which Scene it fires. Must be called
+    after create_schedule() has allocated a schedule_id; a schedule with
+    no add_automation() call never fires (see create_schedule()'s
+    docstring). No response is expected for this command (unlike
+    create_scene()/create_schedule()) - confirmed via
+    AddAutomationHubCommand.java extending UnitDeviceCommand, not
+    StatusNotificationQueryCommand<T> like its two siblings.
+
+    Confirmed via AddAutomationHubCommand.java (real op_code (byte)-107 =
+    0x95, XlinkCommandCode.java): 11-byte WriteBuffer payload: scheduleId
+    (2-byte LE) + sceneId (2-byte LE - the SAME underlying field
+    execute_scene writes 1-byte-wide and toggle_automation writes
+    4-byte-wide; yet another real app-code width inconsistency across
+    this command family, not a bug here) + a day-of-week bitmask (1 byte:
+    Sunday=bit0(0x01) through Saturday=bit6(0x40), OR'd together) + a
+    4-byte little-endian time value + sceneId again (2-byte LE).
+
+    The time value here only supports a FIXED local time-of-day - matches
+    this feature's intended scope (time/day triggers only). The real
+    app's own ScheduleTime.Local case computes
+    LocalDateTime.toEpochSecond(UTC) against the schedule's actual
+    calendar date, but the receiving side is confirmed to only care about
+    the time-of-day component (day-of-week is already separately encoded
+    via the bitmask byte) - so this implementation always uses the Unix
+    epoch (1970-01-01 UTC) as the reference date, making the encoded
+    value exactly `hour*3600 + minute*60 + second`. Sunrise/Sunset
+    triggers use a completely different, offset-less encoding in the real
+    app (fixed sentinel bytes -15/-16, sign-extended into the same 4-byte
+    field - no configurable before/after offset found anywhere in this
+    payload) - NOT implemented here, out of scope for a time/day-only
+    feature.
+
+    day_mask: 0-127 (7 bits, Sunday=bit0 through Saturday=bit6).
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "add_automation:"
+    _warn_experimental_cmd_code(lp, "add_automation")
+    _warn_experimental_transport_unconfirmed(lp, "add_automation")
+    if not (0 <= schedule_id <= 0xFFFF):
+        logger.error(f"{lp} Invalid schedule_id: {schedule_id} must be 0-65535")
+        return
+    if not (0 <= scene_id <= 0xFFFF):
+        logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-65535")
+        return
+    if not (0 <= day_mask <= 0x7F):
+        logger.error(f"{lp} Invalid day_mask: {day_mask} must be 0-127 (Sun..Sat bits)")
+        return
+    if not (0 <= hour <= 23):
+        logger.error(f"{lp} Invalid hour: {hour} must be 0-23")
+        return
+    if not (0 <= minute <= 59):
+        logger.error(f"{lp} Invalid minute: {minute} must be 0-59")
+        return
+    if not (0 <= second <= 59):
+        logger.error(f"{lp} Invalid second: {second} must be 0-59")
+        return
+    op = 0x95
+    time_value = hour * 3600 + minute * 60 + second
+    payload = (
+        struct.pack("<H", schedule_id)
+        + struct.pack("<H", scene_id)
+        + struct.pack(">B", day_mask)
+        + struct.pack("<i", time_value)
+        + struct.pack("<H", scene_id)
     )
     cmd_ = 7 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
@@ -1492,6 +1785,103 @@ class CyncDevice:
             )
             cmd_ = 7 + len(payload)
             await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+
+    async def add_to_scene(
+        self,
+        scene_id: int,
+        cct: Optional[int] = None,
+        rgb: Optional[Tuple[int, int, int]] = None,
+        fade: int = 0xFF,
+        sub_id: Optional[int] = None,
+    ) -> None:
+        """EXPERIMENTAL: adds/updates THIS device's captured state within
+        an existing scene (by scene_id, from module-level create_scene()).
+        Call once per device you want the scene to control.
+
+        Confirmed via AddDeviceSceneCommand.java's non-hub-routed path -
+        the common case, gated the same way as set_group_membership()'s
+        `is_sol_lamp` branch (this command uses the identical
+        `getProductType().f31219d` "is this a Hub product" flag). The rare
+        Sol/C-Reach path uses a structurally DIFFERENT WriteBuffer/
+        FrameCode payload with a real MeshAddress target, not just a
+        different op_code/discriminator swap like set_group_membership's
+        two branches - not implemented here (logs an error instead of
+        guessing at an unconfirmed format).
+
+        Payload (non-hub-routed, m14018x()/Companion.m14019a()):
+        `[0xEE,0x11,0x02]` (misread-as-op-code discriminator - real op is
+        the same `0x8E` mesh-relay substitution as set_indicator_led/
+        set_motion_sensor_settings/etc.) + actionType (1 byte, always 1 =
+        "ADD_ACTION"/regular here - the 17="Show" variant used for
+        LightShow/MusicShow/MultiColor scene actions is not implemented)
+        + sceneId (1 byte - this command truncates to 1 byte, unlike
+        delete_scene's 2-byte/toggle_automation's 4-byte sceneId fields,
+        yet another real width inconsistency confirmed directly from
+        AddDeviceSceneCommand.java, not assumed) + mode (1 byte, always 0
+        = "regular/static color" here) + param (1 byte, always 0 for
+        non-Show actions) + colorType (1 byte: CCT percentage 0-100, or
+        0xFE for RGB) + R/G/B (3 bytes, 0 unless RGB) + fade (1 byte,
+        ScheduleFade enum - NO_FADE=0xFF default) + a fixed trailing 0xFF
+        byte = 13 bytes total.
+
+        KNOWN LIMITATION, confirmed by tracing the wire format rather than
+        assumed: this action shape has NO brightness field anywhere in
+        it - only a CCT-or-RGB color. A Cync Scene captured this way
+        always implies "device on, at whatever brightness it was last
+        set to," not a specific captured brightness level. This is a real
+        property of the wire format as traced, not an oversight in this
+        implementation. Device-off states within a scene were not traced/
+        confirmed and are not supported here.
+
+        Exactly one of cct/rgb must be given.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}add_to_scene:"
+        _warn_experimental_cmd_code(lp, "add_to_scene")
+        _warn_experimental_transport_unconfirmed(lp, "add_to_scene")
+        if self.is_sol_lamp:
+            logger.error(
+                f"{lp} Not implemented for this device's product family "
+                f"(Sol/C-Reach 'Hub product' devices use a structurally "
+                f"different payload - see docstring)."
+            )
+            return
+        if not (0 <= scene_id <= 0xFF):
+            logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-255 (1-byte field)")
+            return
+        if (cct is None) == (rgb is None):
+            logger.error(f"{lp} Exactly one of cct or rgb must be given")
+            return
+        if cct is not None and not (0 <= cct <= 100):
+            logger.error(f"{lp} Invalid cct: {cct} must be 0-100")
+            return
+        if rgb is not None:
+            r, g, b = rgb
+            if not all(0 <= c <= 255 for c in (r, g, b)):
+                logger.error(f"{lp} Invalid rgb: {rgb}, each channel must be 0-255")
+                return
+        else:
+            r = g = b = 0
+        if not (0 <= fade <= 0xFF):
+            logger.error(f"{lp} Invalid fade: {fade} must be 0-255")
+            return
+        op = 0x8E
+        action_type = 1  # ADD_ACTION (regular color state, not a Show/MultiColor)
+        mode = 0  # regular/static color
+        param = 0
+        color_type = cct if cct is not None else 0xFE
+        payload = (
+            struct.pack(">B", 0xEE)
+            + struct.pack(">BBB", 0x11, 0x02, action_type)
+            + struct.pack(">B", scene_id)
+            + struct.pack(">BBBBBB", mode, param, color_type, r, g, b)
+            + struct.pack(">BB", fade, 0xFF)
+        )
+        cmd_ = 7 + len(payload)
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
 
     @staticmethod
     def _build_motion_sensor_settings_payload(
@@ -2664,6 +3054,16 @@ class CyncTCPSession:
                             f"{checksum == calc_chksum}), safe to ignore\n\nHEX: "
                             f"{packet_data[1:-1].hex(' ')}\nINT: {list(packet_data[1:-1])}"
                         )
+                elif try_resolve_xlink_notification(packet_data):
+                    # A legacy Xlink/Frame HDLC notification (see
+                    # try_resolve_xlink_notification's docstring) - e.g. the
+                    # hub-allocated scene_id/schedule_id response to
+                    # create_scene()/create_schedule(). Structurally
+                    # unrelated to this function's own 0x7E-bound-inner-data
+                    # convention above; just happens to share the same
+                    # leading 0x7E byte, which is why it lands here rather
+                    # than a dedicated branch.
+                    pass
                 else:
                     if CYNC_RAW:
                         logger.warning(
@@ -2887,6 +3287,12 @@ class CyncTCPSession:
                         except Exception as e:
                             logger.debug(f"{lp} Exception during firmware parsing: {e}")
 
+                elif try_resolve_xlink_notification(packet_data):
+                    # See the identical branch in _handle_83_packet - a
+                    # legacy Xlink/Frame HDLC notification landed here
+                    # instead (same 0x7E-bound outer wrapper, unrelated
+                    # inner format).
+                    pass
                 else:
                     # Unlike _handle_83_packet, this had no catch-all at all - an
                     # unrecognized 0x73 ctrl_bytes pattern was previously silently
