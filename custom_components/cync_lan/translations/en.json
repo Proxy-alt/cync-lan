@@ -414,6 +414,16 @@
           "description": "Normal (full mesh participation) or receive-only. Leave as Normal unless you have a specific reason to change it."
         }
       }
+    },
+    "experimental_push_automation_to_hardware": {
+      "name": "Push an automation to Cync hardware (experimental)",
+      "description": "Experimental — reads an existing HA automation's own trigger/condition/action config and pushes it onto the Cync hub as a native Scene + Schedule (create_scene, add_to_scene, create_schedule, add_automation), so it keeps running even if Home Assistant or your network goes down. Requires the automation to have exactly one plain time trigger ('at:' a fixed HH:MM:SS, no entity/template), at most one day-of-week condition (a Time condition with only 'Days' set, no before/after range), and one or more light.turn_on actions, each targeting a Cync LAN light directly (not a light group) with exactly one color set (rgb_color or color_temp_kelvin) - a Cync Scene entry has no brightness field and can't capture any other action type. The command bytes for create_scene/create_schedule/add_automation are directly confirmed from decompiled app source, but whether their real wire frame (a distinct HDLC/PPP-style framing, not this integration's usual envelope) rides over the same TCP connection cync-lan intercepts at all is UNCONFIRMED - see docs/cync_automations.md. If the hub doesn't respond to the scene or schedule step within 10 seconds, nothing (or a partial, orphaned scene) is left behind; the error message explains what to clean up. Please report success or failure with your device model.",
+      "fields": {
+        "automation_entity_id": {
+          "name": "Automation",
+          "description": "The Home Assistant automation to push - it keeps working as a normal HA automation afterward; this only ALSO copies its trigger/action logic onto the Cync hub itself."
+        }
+      }
     }
   }
 }

@@ -249,3 +249,11 @@ experimental_set_group_membership:
             - normal
             - receive_only
           translation_key: group_reach_flag
+
+experimental_push_automation_to_hardware:
+  fields:
+    automation_entity_id:
+      required: true
+      selector:
+        entity:
+          domain: automation

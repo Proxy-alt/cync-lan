@@ -294,7 +294,10 @@ created/edited, not at trigger time. Two payload shapes depending on device rout
   settings**: dispatched via `XlinkCommandDelegate.DefaultImpls.c` → `h()` →
   `XlinkDeviceManager.CommandDelegate.h()` (`XlinkDeviceManager.java:1050-1053`), which hardcodes
   outer op `(byte)-114` = `0x8E` - the embedded `0xEE` is not the real outer op_code, exactly like
-  the already-confirmed siblings. Not yet applied/wired into `devices.py`.
+  the already-confirmed siblings. **Shipped**: `devices.py`'s `CyncDevice.add_to_scene(scene_id,
+  cct=, rgb=, fade=, sub_id=)` implements this exact path with the `0x8E` fix applied; the
+  Hub-routed shape below is not implemented (logs an error instead of guessing at an unconfirmed
+  format).
 - **Hub-routed devices** (`AddDeviceSceneCommand.java:193-251`): a manually-built `WriteBuffer`
   frame with `FrameCode` headers + an explicit little-endian `MeshAddress` target, dispatched via
   the raw pre-framed `e()` method (same dispatch class as the pure Hub Scenes/Schedules commands
@@ -316,12 +319,10 @@ byte it received once at scene-programming time. Not general-purpose: `SetComboC
 everyday brightness/color-set command) has no fade field anywhere in its payload - fade only
 exists via the Scene/Schedule-programming path above.
 
-Not yet implemented in `devices.py` - would require building `AddDeviceSceneCommand` (per-device
-scene-action programming) from scratch with the `0x8E` fix applied, which is unblocked by the
-Hub-commands transport question (`docs/cync_automations.md`) since it's confirmed to ride the same
-`mo14054f`/`mo14056h` methods already proven to carry real TCP-relay traffic - but it is a
-materially bigger feature than "add one field," since fade can't be set independently of writing
-a full scene-slot entry (mode/brightness/color included).
+**Shipped** as `add_to_scene()`'s `fade` parameter (default `0xFF`/`NO_FADE`) - not blocked by the
+Hub-commands transport question (`docs/cync_automations.md`) since this non-hub-routed path is
+confirmed to ride the same `mo14054f`/`mo14056h` methods already proven to carry real TCP-relay
+traffic.
 
 Also relevant: `SetLightRunModeUseCase.java` shows the app validates custom show/scheme existence
 via the cloud before sending, and for multi-device groups allocates a temporary index (129-255)

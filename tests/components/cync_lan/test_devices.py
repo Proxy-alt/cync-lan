@@ -8,6 +8,7 @@ test_cloud_api.py), living alongside the rest of the suite so the same
 
 from __future__ import annotations
 
+import asyncio
 import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,14 +16,20 @@ from cync_lan.const import FACTORY_EFFECTS_BYTES, LIGHT_RUN_MODE_EFFECTS
 from cync_lan.devices import (
     CyncDevice,
     _EXPERIMENTAL_CMDS_WARNED,
+    _PENDING_XLINK_RESPONSES,
+    _await_xlink_notification,
     _warn_experimental_cmd_code,
     _warn_experimental_group_targeting,
+    add_automation,
     broadcast_control_command,
+    create_schedule,
+    create_scene,
     delete_scene,
     delete_schedule,
     execute_scene,
     set_group_power,
     toggle_automation,
+    try_resolve_xlink_notification,
 )
 from cync_lan.packet import PacketBuilder
 from cync_lan.structs import GlobalObject
@@ -669,4 +676,370 @@ async def test_set_group_membership_rejects_invalid_inputs():
 
     await node.set_group_membership(70000, member=True)  # out of range
     await node.set_group_membership(32770, member=True, reach_flag=0x01)  # invalid flag
+    node.send_command.assert_not_awaited()
+
+
+def _build_xlink_frame(msg_id: int, direction: int, op_code: int, payload: bytes) -> bytes:
+    """Reference encoder for tests only - cync-lan itself never emits a
+    genuine Xlink/Frame frame, see xlink_legacy.py's module docstring."""
+    body = struct.pack("<BH", op_code, len(payload)) + payload
+    checksum = sum(body) % 256
+    inner = struct.pack("<I", msg_id) + struct.pack("B", direction) + body + struct.pack(
+        "B", checksum
+    )
+    stuffed = bytearray()
+    for b in inner:
+        if b in (0x7E, 0x7D):
+            stuffed.append(0x7D)
+            stuffed.append(b ^ 0x20)
+        else:
+            stuffed.append(b)
+    return bytes([0x7E]) + bytes(stuffed) + bytes([0x7E])
+
+
+async def test_try_resolve_xlink_notification_resolves_pending_future():
+    from cync_lan.packet.xlink_legacy import Direction
+
+    fut = asyncio.get_event_loop().create_future()
+    _PENDING_XLINK_RESPONSES[0x10] = fut
+    try:
+        payload = struct.pack(">B", 0) + struct.pack("<H", 7)
+        frame_bytes = _build_xlink_frame(1, Direction.RSP, 0x10, payload)
+
+        handled = try_resolve_xlink_notification(frame_bytes)
+
+        assert handled is True
+        assert fut.done()
+        assert fut.result() == payload
+    finally:
+        _PENDING_XLINK_RESPONSES.pop(0x10, None)
+
+
+async def test_try_resolve_xlink_notification_ignores_unrelated_op_code():
+    """No one is waiting for op_code 0x92 - must return False so the caller
+    falls through to its existing unknown-packet logging, not silently
+    swallow real diagnostic traffic."""
+    from cync_lan.packet.xlink_legacy import Direction
+
+    payload = struct.pack(">B", 0) + struct.pack("<H", 7)
+    frame_bytes = _build_xlink_frame(1, Direction.RSP, 0x92, payload)
+
+    assert try_resolve_xlink_notification(frame_bytes) is False
+
+
+async def test_try_resolve_xlink_notification_returns_false_for_non_frame_bytes():
+    assert try_resolve_xlink_notification(b"\xfa\xdb\x13\x00\x00\x00\x00\x00\x01") is False
+
+
+async def test_await_xlink_notification_returns_payload_when_resolved():
+    async def _resolve_soon():
+        await asyncio.sleep(0.01)
+        fut = _PENDING_XLINK_RESPONSES[0x10]
+        fut.set_result(b"\x00\x07\x00")
+
+    asyncio.create_task(_resolve_soon())
+    result = await _await_xlink_notification(0x10, timeout=1.0)
+
+    assert result == b"\x00\x07\x00"
+    assert 0x10 not in _PENDING_XLINK_RESPONSES  # cleaned up after resolving
+
+
+async def test_await_xlink_notification_times_out_gracefully():
+    """A timeout must be a normal None return, not an exception - the
+    transport question for this whole notification channel is genuinely
+    unresolved, so "nothing ever arrived" is an expected outcome."""
+    result = await _await_xlink_notification(0x99, timeout=0.05)
+
+    assert result is None
+    assert 0x99 not in _PENDING_XLINK_RESPONSES  # cleaned up after timeout
+
+
+async def test_await_xlink_notification_serializes_concurrent_calls():
+    """Two concurrent calls for the SAME op_code must not race/clobber each
+    other's pending future - the lock forces the second to wait its turn."""
+    results = []
+
+    async def _resolve_after(op_code: int, value: bytes, delay: float):
+        await asyncio.sleep(delay)
+        fut = _PENDING_XLINK_RESPONSES.get(op_code)
+        if fut and not fut.done():
+            fut.set_result(value)
+
+    async def _caller(tag: str):
+        result = await _await_xlink_notification(0x55, timeout=2.0)
+        results.append((tag, result))
+
+    task_a = asyncio.create_task(_caller("first"))
+    await asyncio.sleep(0.01)  # let the first call register its pending future
+    asyncio.create_task(_resolve_after(0x55, b"first-response", 0.02))
+    task_b = asyncio.create_task(_caller("second"))
+    await asyncio.sleep(0.05)
+    asyncio.create_task(_resolve_after(0x55, b"second-response", 0.02))
+
+    await asyncio.gather(task_a, task_b)
+
+    assert dict(results) == {"first": b"first-response", "second": b"second-response"}
+
+
+async def test_create_scene_payload_shape_and_success_response():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    with patch(
+        "cync_lan.devices._await_xlink_notification",
+        new=AsyncMock(return_value=struct.pack(">B", 0) + struct.pack("<H", 42)),
+    ):
+        scene_id = await create_scene("Movie Night")
+
+    assert scene_id == 42
+    assert len(fake_bridge.written) == 1
+    expected_payload = "Movie Night".encode("utf-8").ljust(30, b"\x00") + struct.pack(
+        "<H", 0
+    ) + bytes(18)
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0x10, cmd_code=7 + len(expected_payload),
+        command_payload=expected_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_create_scene_truncates_and_pads_name():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    with patch(
+        "cync_lan.devices._await_xlink_notification", new=AsyncMock(return_value=None)
+    ):
+        await create_scene("x" * 40)  # longer than 30 bytes
+
+    args_payload = PacketBuilder  # sanity import check only
+    sent_name = fake_bridge.written[0]
+    # Confirm the 30-byte name field is exactly 30 'x' bytes, not 40.
+    assert (b"x" * 30) in sent_name
+    assert (b"x" * 31) not in sent_name
+
+
+async def test_create_scene_returns_none_on_timeout():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    with patch(
+        "cync_lan.devices._await_xlink_notification", new=AsyncMock(return_value=None)
+    ):
+        scene_id = await create_scene("Movie Night")
+
+    assert scene_id is None
+
+
+async def test_create_scene_returns_none_on_error_code():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    with patch(
+        "cync_lan.devices._await_xlink_notification",
+        new=AsyncMock(return_value=struct.pack(">B", 1) + struct.pack("<H", 0)),
+    ):
+        scene_id = await create_scene("Movie Night")
+
+    assert scene_id is None
+
+
+async def test_create_scene_end_to_end_via_real_notification_resolution():
+    """Exercises the REAL _await_xlink_notification/try_resolve_xlink_notification
+    path (not mocked) for full confidence in the actual correlation plumbing,
+    not just create_scene()'s own response-handling logic."""
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    async def _deliver_response():
+        await asyncio.sleep(0.01)
+        payload = struct.pack(">B", 0) + struct.pack("<H", 7)
+        frame = _build_xlink_frame(1, 0xF9, 0x10, payload)
+        assert try_resolve_xlink_notification(frame) is True
+
+    asyncio.create_task(_deliver_response())
+    scene_id = await create_scene("Movie Night", timeout=2.0)
+
+    assert scene_id == 7
+
+
+async def test_create_schedule_payload_shape_and_success_response():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    with patch(
+        "cync_lan.devices._await_xlink_notification",
+        new=AsyncMock(return_value=struct.pack(">B", 0) + struct.pack("<H", 13)),
+    ):
+        schedule_id = await create_schedule(300, enabled=True)
+
+    assert schedule_id == 13
+    expected_payload = (
+        struct.pack("<I", 300)
+        + bytes(26)
+        + struct.pack("<H", 0)
+        + struct.pack(">B", 1)
+        + struct.pack(">B", 0)
+        + bytes(16)
+    )
+    assert len(expected_payload) == 50
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0x92, cmd_code=7 + len(expected_payload),
+        command_payload=expected_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_create_schedule_rejects_invalid_scene_id():
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[])
+
+    result = await create_schedule(-1)
+
+    assert result is None
+    g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
+
+
+async def test_create_schedule_returns_none_on_timeout():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    with patch(
+        "cync_lan.devices._await_xlink_notification", new=AsyncMock(return_value=None)
+    ):
+        result = await create_schedule(300)
+
+    assert result is None
+
+
+async def test_add_automation_payload_shape():
+    g = GlobalObject()
+    fake_bridge = _FakeBridgeDevice()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[fake_bridge])
+
+    # Monday(0x02)+Wednesday(0x08)+Friday(0x20) = 0x2A, 07:30:00 = 27000s
+    await add_automation(schedule_id=13, scene_id=300, day_mask=0x2A, hour=7, minute=30)
+
+    expected_payload = (
+        struct.pack("<H", 13)
+        + struct.pack("<H", 300)
+        + struct.pack(">B", 0x2A)
+        + struct.pack("<i", 7 * 3600 + 30 * 60)
+        + struct.pack("<H", 300)
+    )
+    assert len(expected_payload) == 11
+    expected_inner = PacketBuilder.build_control_packet(
+        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0x95, cmd_code=7 + len(expected_payload),
+        command_payload=expected_payload,
+    )
+    expected_outer = PacketBuilder.build_outer_packet(
+        packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
+    )
+    assert fake_bridge.written[0] == expected_outer
+
+
+async def test_add_automation_rejects_invalid_inputs():
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.get_dev_tcp_pool = AsyncMock(return_value=[])
+
+    await add_automation(70000, 300, 0x01, 7, 30)  # bad schedule_id
+    await add_automation(13, 300, 0x80, 7, 30)  # bad day_mask (bit 7 set)
+    await add_automation(13, 300, 0x01, 24, 30)  # bad hour
+    await add_automation(13, 300, 0x01, 7, 60)  # bad minute
+    await add_automation(13, 300, 0x01, 7, 30, second=60)  # bad second
+
+    g.ncync_server.get_dev_tcp_pool.assert_not_awaited()
+
+
+async def test_add_to_scene_cct_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = None  # is_sol_lamp -> False
+    node.send_command = AsyncMock()
+
+    await node.add_to_scene(scene_id=3, cct=80)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E
+    expected_payload = (
+        struct.pack(">B", 0xEE)
+        + struct.pack(">BBB", 0x11, 0x02, 1)
+        + struct.pack(">B", 3)
+        + struct.pack(">BBBBBB", 0, 0, 80, 0, 0, 0)
+        + struct.pack(">BB", 0xFF, 0xFF)
+    )
+    assert len(expected_payload) == 13
+    assert args[3] == expected_payload
+    assert kwargs == {"repeat_op_code": False}
+
+
+async def test_add_to_scene_rgb_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = None
+    node.send_command = AsyncMock()
+
+    await node.add_to_scene(scene_id=3, rgb=(255, 128, 0), fade=0x02)
+
+    args, kwargs = node.send_command.call_args
+    expected_payload = (
+        struct.pack(">B", 0xEE)
+        + struct.pack(">BBB", 0x11, 0x02, 1)
+        + struct.pack(">B", 3)
+        + struct.pack(">BBBBBB", 0, 0, 0xFE, 255, 128, 0)
+        + struct.pack(">BB", 0x02, 0xFF)
+    )
+    assert args[3] == expected_payload
+
+
+async def test_add_to_scene_rejects_sol_lamp_device():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = MagicMock(opcodes=MagicMock(sol_lamp=True))
+    node.send_command = AsyncMock()
+
+    await node.add_to_scene(scene_id=3, cct=80)
+
+    node.send_command.assert_not_awaited()
+
+
+async def test_add_to_scene_rejects_invalid_inputs():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = None
+    node.send_command = AsyncMock()
+
+    await node.add_to_scene(scene_id=300, cct=80)  # scene_id out of 1-byte range
+    await node.add_to_scene(scene_id=3)  # neither cct nor rgb
+    await node.add_to_scene(scene_id=3, cct=80, rgb=(1, 2, 3))  # both given
+    await node.add_to_scene(scene_id=3, cct=150)  # cct out of range
+    await node.add_to_scene(scene_id=3, rgb=(1, 2, 300))  # rgb channel out of range
+
     node.send_command.assert_not_awaited()

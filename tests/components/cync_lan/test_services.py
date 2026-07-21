@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import DOMAIN
@@ -14,6 +14,7 @@ from custom_components.cync_lan.services import (
     SERVICE_DELETE_SCENE,
     SERVICE_DELETE_SCHEDULE,
     SERVICE_EXECUTE_SCENE,
+    SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
     SERVICE_SET_GROUP_MEMBERSHIP,
     SERVICE_SET_GROUP_POWER,
     SERVICE_SET_INDICATOR_LED,
@@ -47,6 +48,66 @@ def _register_bridge_device(hass, entry):
     )
 
 
+def _register_light_entity(hass, entry, dev_id: int, *, name: str = "Test Light") -> str:
+    """Registers a light entity_id in the entity registry the way
+    light.py's CyncLanLight would - domain "light", platform=DOMAIN,
+    unique_id f"{entry_id}_{dev_id}" - so _resolve_cync_light_entity()
+    can resolve it back to (entry, node) without needing the real
+    light.py entity classes loaded."""
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    reg_entry = registry.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{entry.entry_id}_{dev_id}",
+        config_entry=entry,
+        suggested_object_id=name.lower().replace(" ", "_"),
+    )
+    return reg_entry.entity_id
+
+
+def _register_light_group_entity(hass, entry, group_id: int) -> str:
+    """Same as _register_light_entity, but with a group's own unique_id
+    shape (f"{entry_id}_group_{group_id}", see light.py's
+    CyncLanLightGroup) - used to confirm groups are rejected as scene
+    action targets."""
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    reg_entry = registry.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{entry.entry_id}_group_{group_id}",
+        config_entry=entry,
+        suggested_object_id=f"group_{group_id}",
+    )
+    return reg_entry.entity_id
+
+
+def _register_automation_entity(hass, entity_id: str, raw_config: dict, name: str = "Test Automation"):
+    """Installs a fake AutomationEntity-like object (just the
+    .raw_config/.name attributes _handle_push_automation_to_hardware
+    actually reads) into hass.data[automation.DATA_COMPONENT], standing
+    in for the real automation integration's EntityComponent so these
+    tests don't need to load/validate a real automation config - only
+    the RAW, as-authored config dict (pre schema-normalization) matters
+    here, which is exactly what AutomationEntity.raw_config holds."""
+    from homeassistant.components import automation as automation_component
+
+    fake_entity = SimpleNamespace(raw_config=raw_config, name=name)
+    component = hass.data.get(automation_component.DATA_COMPONENT)
+    entities = getattr(component, "_entities", None) if component is not None else None
+    if entities is None:
+        entities = {}
+        hass.data[automation_component.DATA_COMPONENT] = SimpleNamespace(
+            get_entity=lambda eid, _entities=entities: _entities.get(eid),
+            _entities=entities,
+        )
+    entities[entity_id] = fake_entity
+    return fake_entity
+
+
 def _make_entry(hass, dev_ids: list[int] = ()):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -58,6 +119,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
         node.set_motion_sensor_settings = AsyncMock()
         node.set_motion_sensor_schedule = AsyncMock()
         node.set_group_membership = AsyncMock()
+        node.add_to_scene = AsyncMock()
     entry.runtime_data = SimpleNamespace(
         ncync_server=SimpleNamespace(node_devices=nodes),
         bridge=CyncLanBridge(hass, entry.entry_id),
@@ -65,7 +127,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_nine_services(hass):
+async def test_setup_registers_all_ten_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
@@ -76,6 +138,7 @@ async def test_setup_registers_all_nine_services(hass):
     assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE)
     assert hass.services.has_service(DOMAIN, SERVICE_TOGGLE_AUTOMATION)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_MEMBERSHIP)
+    assert hass.services.has_service(DOMAIN, SERVICE_PUSH_AUTOMATION_TO_HARDWARE)
     async_unload_services(hass)
 
 
@@ -675,6 +738,583 @@ async def test_set_group_membership_raises_for_unknown_device_id(hass):
             DOMAIN,
             SERVICE_SET_GROUP_MEMBERSHIP,
             {"device_id": "does-not-exist", "group_id": 32770, "member": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+def _automation_config(
+    *,
+    at="07:30:00",
+    trigger_extra=None,
+    weekday=None,
+    condition_extra=None,
+    no_condition_key=False,
+    actions=None,
+    trigger_platform="time",
+):
+    """Builds a raw automation config dict shaped like AutomationEntity.raw_config
+    (pre schema-normalization - "trigger"/"condition"/"action", singular,
+    exactly as a user would author it) for
+    _extract_time_trigger/_extract_day_mask/_extract_scene_actions to validate."""
+    trigger = {"trigger": trigger_platform, "at": at}
+    if trigger_extra:
+        trigger.update(trigger_extra)
+    config = {
+        "alias": "Test Automation",
+        "trigger": [trigger],
+        "action": actions if actions is not None else [],
+    }
+    if not no_condition_key and weekday is not None:
+        condition = {"condition": "time", "weekday": weekday}
+        if condition_extra:
+            condition.update(condition_extra)
+        config["condition"] = [condition]
+    return config
+
+
+async def test_push_automation_creates_scene_schedule_and_automation_rgb(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        at="07:30:15",
+        weekday=["mon", "wed"],
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [255, 0, 0]},
+            }
+        ],
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with (
+        patch("cync_lan.devices.create_scene", new=AsyncMock(return_value=42)) as mock_create_scene,
+        patch("cync_lan.devices.create_schedule", new=AsyncMock(return_value=99)) as mock_create_schedule,
+        patch("cync_lan.devices.add_automation", new=AsyncMock()) as mock_add_automation,
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+
+    mock_create_scene.assert_awaited_once_with("Test Automation")
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.add_to_scene.assert_awaited_once_with(42, cct=None, rgb=(255, 0, 0))
+    mock_create_schedule.assert_awaited_once_with(42)
+    mock_add_automation.assert_awaited_once_with(99, 42, 0x02 | 0x08, 7, 30, 15)
+    async_unload_services(hass)
+
+
+async def test_push_automation_supports_color_temp_kelvin(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"color_temp_kelvin": 50},
+            }
+        ],
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with (
+        patch("cync_lan.devices.create_scene", new=AsyncMock(return_value=1)),
+        patch("cync_lan.devices.create_schedule", new=AsyncMock(return_value=2)),
+        patch("cync_lan.devices.add_automation", new=AsyncMock()),
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.add_to_scene.assert_awaited_once_with(1, cct=50, rgb=None)
+    async_unload_services(hass)
+
+
+async def test_push_automation_defaults_to_all_days_when_no_condition(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [1, 2, 3]},
+            }
+        ],
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with (
+        patch("cync_lan.devices.create_scene", new=AsyncMock(return_value=1)),
+        patch("cync_lan.devices.create_schedule", new=AsyncMock(return_value=2)),
+        patch("cync_lan.devices.add_automation", new=AsyncMock()) as mock_add_automation,
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+
+    mock_add_automation.assert_awaited_once_with(2, 1, 0x7F, 7, 30, 0)
+    async_unload_services(hass)
+
+
+async def test_push_automation_expands_multiple_entity_ids_in_one_action(hass):
+    entry = _make_entry(hass, dev_ids=[5, 6])
+    entity_id_5 = _register_light_entity(hass, entry, 5, name="Light Five")
+    entity_id_6 = _register_light_entity(hass, entry, 6, name="Light Six")
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": [entity_id_5, entity_id_6]},
+                "data": {"rgb_color": [10, 20, 30]},
+            }
+        ],
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with (
+        patch("cync_lan.devices.create_scene", new=AsyncMock(return_value=1)),
+        patch("cync_lan.devices.create_schedule", new=AsyncMock(return_value=2)),
+        patch("cync_lan.devices.add_automation", new=AsyncMock()),
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+
+    entry.runtime_data.ncync_server.node_devices[5].add_to_scene.assert_awaited_once_with(
+        1, cct=None, rgb=(10, 20, 30)
+    )
+    entry.runtime_data.ncync_server.node_devices[6].add_to_scene.assert_awaited_once_with(
+        1, cct=None, rgb=(10, 20, 30)
+    )
+    async_unload_services(hass)
+
+
+async def test_push_automation_raises_for_unknown_automation_entity(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.does_not_exist"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_raises_when_raw_config_empty(hass):
+    async_setup_services(hass)
+    _register_automation_entity(hass, "automation.test", {})
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_multiple_triggers(hass):
+    async_setup_services(hass)
+    config = _automation_config()
+    config["trigger"].append({"trigger": "time", "at": "08:00:00"})
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="exactly one trigger"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_non_time_trigger(hass):
+    async_setup_services(hass)
+    config = _automation_config(trigger_platform="state")
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="not 'time'"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_entity_referenced_at_value(hass):
+    async_setup_services(hass)
+    config = _automation_config()
+    config["trigger"][0]["at"] = "input_datetime.wake_up"
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="references an entity"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_multiple_conditions(hass):
+    async_setup_services(hass)
+    config = _automation_config(weekday=["mon"])
+    config["condition"].append({"condition": "time", "weekday": ["tue"]})
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="zero or one condition"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_non_time_condition(hass):
+    async_setup_services(hass)
+    config = _automation_config()
+    config["condition"] = [{"condition": "state", "entity_id": "sun.sun", "state": "above_horizon"}]
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="not 'time'"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_time_range_condition(hass):
+    async_setup_services(hass)
+    config = _automation_config(weekday=["mon"], condition_extra={"after": "06:00:00"})
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="unsupported option"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_empty_weekday(hass):
+    async_setup_services(hass)
+    config = _automation_config(weekday=[])
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="no days selected"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_non_light_turn_on_action(hass):
+    async_setup_services(hass)
+    config = _automation_config(actions=[{"action": "light.turn_off", "target": {"entity_id": "light.x"}}])
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="light.turn_on"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_action_with_no_color(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[{"action": "light.turn_on", "target": {"entity_id": entity_id}, "data": {}}]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="no rgb_color or color_temp_kelvin"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_action_with_both_colors(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [1, 2, 3], "color_temp_kelvin": 50},
+            }
+        ]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="only be one or the other"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_action_with_brightness(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [1, 2, 3], "brightness": 128},
+            }
+        ]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="brightness"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_light_group_target(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_group_entity(hass, entry, 32770)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [1, 2, 3]},
+            }
+        ]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="light group"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_non_cync_entity_target(hass):
+    async_setup_services(hass)
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": "light.some_other_integration"},
+                "data": {"rgb_color": [1, 2, 3]},
+            }
+        ]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="not a Cync LAN entity"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_raises_home_assistant_error_when_scene_creation_times_out(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [1, 2, 3]},
+            }
+        ]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with patch("cync_lan.devices.create_scene", new=AsyncMock(return_value=None)):
+        with pytest.raises(HomeAssistantError, match="did not respond"):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+                {"automation_entity_id": "automation.test"},
+                blocking=True,
+            )
+    async_unload_services(hass)
+
+
+async def test_push_automation_raises_home_assistant_error_when_schedule_creation_times_out(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    entity_id = _register_light_entity(hass, entry, 5)
+    async_setup_services(hass)
+
+    config = _automation_config(
+        actions=[
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": entity_id},
+                "data": {"rgb_color": [1, 2, 3]},
+            }
+        ]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with (
+        patch("cync_lan.devices.create_scene", new=AsyncMock(return_value=7)),
+        patch("cync_lan.devices.create_schedule", new=AsyncMock(return_value=None)),
+    ):
+        with pytest.raises(HomeAssistantError, match="scene_id=7"):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+                {"automation_entity_id": "automation.test"},
+                blocking=True,
+            )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_trigger_with_unsupported_option(hass):
+    async_setup_services(hass)
+    config = _automation_config(trigger_extra={"for": {"minutes": 5}})
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="unsupported option"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_multiple_at_times(hass):
+    async_setup_services(hass)
+    config = _automation_config()
+    config["trigger"][0]["at"] = ["07:00:00", "19:00:00"]
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="multiple times"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_unrecognized_weekday(hass):
+    async_setup_services(hass)
+    config = _automation_config(weekday=["someday"])
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="Unrecognized weekday"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_no_actions(hass):
+    async_setup_services(hass)
+    config = _automation_config(actions=[])
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="no actions"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_push_automation_rejects_action_missing_entity_id(hass):
+    async_setup_services(hass)
+    config = _automation_config(
+        actions=[{"action": "light.turn_on", "data": {"rgb_color": [1, 2, 3]}}]
+    )
+    _register_automation_entity(hass, "automation.test", config)
+
+    with pytest.raises(ServiceValidationError, match="no target entity_id"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+            {"automation_entity_id": "automation.test"},
             blocking=True,
         )
     async_unload_services(hass)

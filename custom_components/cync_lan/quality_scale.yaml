@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (293 tests, 98% line coverage on
+# pytest-homeassistant-custom-component (347 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,7 +9,7 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 9 experimental_* services are registered idempotently in
+      services.py's 10 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning's raw service is
@@ -50,6 +50,19 @@ rules:
       no added risk over the raw service - same command, same caveats,
       reachable without knowing a numeric ID. The raw services remain
       registered for existing automations/scripts built against them.
+      experimental_push_automation_to_hardware is a sixth, orchestration
+      kind: it doesn't send one predicted command, it validates an
+      existing HA automation's own trigger/condition/action config (time
+      trigger + optional day-of-week condition + light.turn_on actions
+      targeting Cync lights only) and then chains four of the functions
+      above (create_scene/add_to_scene/create_schedule/add_automation) to
+      recreate it natively on the hub, so the same schedule keeps running
+      even if HA itself is offline. Inherits every one of those
+      functions' own experimental-transport caveats, plus its own new one:
+      the Hub notification channel used to learn the allocated
+      scene_id/schedule_id is a distinct HDLC/PPP-style frame format
+      (src/cync_lan/packet/xlink_legacy.py) whose presence on cync-lan's
+      TCP connection at all is unconfirmed (see docs/cync_automations.md).
   appropriate-polling:
     status: exempt
     comment: >-
@@ -110,7 +123,7 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 9 experimental_*
+      strings.json's "services" block documents all 10 experimental_*
       services and their fields, each description explicitly flagging what's
       actually unconfirmed for that specific command - predicted cmd_code
       for most, the target address too for scenes, for group power
