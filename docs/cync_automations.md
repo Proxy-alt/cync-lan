@@ -216,6 +216,24 @@ hardware testing shows these are no-ops or provoke errors, that itself is the an
 older HDLC-framed channel and cync-lan's TCP relay are genuinely different paths for this specific
 command family.
 
+**UPDATE, follow-up research on `toggle_automation` specifically**: traced its one real call site,
+`RoutinesService.applyScheduleEnabled()` - it picks between `ToggleAutomationHubCommand` (the
+payload `toggle_automation()` implements) and a sibling `ToggleAutomationCommand` based on whether
+a WiFi hub device controller exists for the schedule's location, not a version/feature gate. The
+Hub-command branch dispatches through `hubDeviceController.mo14149i()` - the exact same call path
+already used by `CreateSceneHubCommand`/`CreateScheduleHubCommand`/`DeleteSceneHubCommand`/
+`DeleteScheduleHubCommand` elsewhere in that same file. Since cync-lan's own target hardware (WiFi
+bulbs/plugs bridging BLE mesh devices) always has a WiFi hub in this sense, `ToggleAutomationHubCommand`
+is confirmed to be the branch that applies - `ToggleAutomationCommand` (a different, simpler,
+`0x8E`-bug-family command with a 5-byte payload, not the ambiguous-transport family) is only reached
+when there's no WiFi hub for a location, a topology cync-lan never sits in front of, so it isn't
+worth implementing separately. This raises confidence in `toggle_automation()`'s payload by
+structural analogy to the other 2 already-wired Hub commands sharing the identical dispatch path -
+**it does not independently confirm the actual wire bytes** (still built via the PPP/HDLC-style
+`Xlink.a()` framer, still not proven to ride the same TCP relay cync-lan intercepts). Treat this as
+the same confidence level as `delete_scene`/`delete_schedule`, not as a fully resolved transport
+question.
+
 `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's captured state
 within a scene) are different and dual-path, branching on the target device's product type: the
 "regular" product path **does** have the exact `0x8E`-relay bug (the `0xEE,0x11,0x02,...` array
