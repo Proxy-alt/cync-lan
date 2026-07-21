@@ -283,9 +283,11 @@ concrete, locally-writable features worth building on their own merits:
    `cync_lan.experimental_delete_scene`/`experimental_delete_schedule`/
    `experimental_toggle_automation`, so real hardware can settle the transport question by
    observation instead of waiting on a packet capture first.
-   `CreateSceneHubCommand`/`CreateScheduleHubCommand`
-   need their own payload research on top of that (not yet done - `String30` name encoding, full
-   schedule field layout). `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one
+   `CreateSceneHubCommand`/`CreateScheduleHubCommand` payloads and transport are now both resolved
+   too (follow-up research, see item 5 below for the full picture) - `CreateScheduleHubCommand`
+   itself turned out to just be a bare 50-byte scheduleId allocator (sceneId + enabled flag,
+   confirmed no name/trigger-time fields hidden in it); the actual day/time/scene trigger data is
+   a separate, previously-unknown command. `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one
    device's captured state within a scene) are a separate case: dual-path depending on the target
    device's product type, and the "regular" path **does** have the exact `0x8E`-relay bug (payload
    `0xEE,0x11,0x02,...` misread as an op_code) - same fix class as indicator LED, not yet applied,
@@ -307,8 +309,44 @@ concrete, locally-writable features worth building on their own merits:
    a real populated export** - the one real account sampled for this research has zero scenes/
    schedules configured, so none of this has been cross-checked against real captured JSON the way
    `groupsArray` was. See `cloud_api.py`'s `parse_scenes()`/`parse_schedules()` docstrings.
+5. **Schedule *creation* is genuinely closer to buildable than previously thought** - follow-up
+   research resolved where a Schedule's actual day-of-week/time/scene trigger data gets set, since
+   `CreateScheduleHubCommand`'s own 50-byte payload (sceneId + enabled flag only) has no room for
+   it. Traced end-to-end via `RoutinesService.java`: `CreateScheduleHubCommand` (op `0x92`) is just
+   a bare scheduleId allocator - `RoutinesService.m14800Q()` ("getNextScheduleId") sends it purely
+   to get an ID back via `HubCreateScheduleNotification`. The actual trigger metadata is a
+   **previously-unknown, separate command**, sent immediately after ID allocation by
+   `RoutinesService.m14788D()` ("addScheduleToDevices"), picked based on whether the location has a
+   Hub:
+   - **`AddAutomationHubCommand`** (Hub/xlink path, op `(byte)-107` = `0x95`) - 11-byte `WriteBuffer`
+     payload: `scheduleId` (u16) + `sceneId` (u16) + a day-of-week bitmask (1 byte, `Sun=0x01` ...
+     `Sat=0x40`, packed from `ScheduleModel`'s `Set<ScheduleDay>`) + either an epoch-seconds-since-
+     midnight time value (for a fixed local time) or a signed sunrise/sunset offset byte + `sceneId`
+     again. Built via the same `XlinkTranslatorKt.m14449a()` raw-frame path as
+     `CreateScheduleHubCommand` itself - same transport-confidence tier (plausible, not
+     independently confirmed).
+   - **`AddAutomationCommand`** (non-Hub/direct BLE-mesh path) - fixed 4-byte prefix
+     `{0xE5,0x11,0x02,0x00}` + a 9-byte tail (scheduleId low byte, an enabled/flag byte, a zero
+     byte, the same day-bitmask encoding, hour/minute/second - or sunrise/sunset sentinel hours
+     `-15`/`-16` + a signed offset in the minute slot - and sceneId low byte) - a different,
+     BLE-mesh-native frame shape, dispatched through the normal `TelinkCommandDelegate`/
+     `XlinkCommandDelegate` path, unrelated to the Hub commands' HDLC framing.
+
+   "Schedule" (ID + enabled only) and "Automation" (day/time/scene trigger) are two **distinct
+   wire-level concepts** on the real Hub, even though the app UI and cloud DTOs (`ScheduleItem`/
+   `ScheduleTrigger`) present them as one merged entity. Neither command carries the schedule's
+   human-readable `displayName` - confirmed nowhere on the wire in any of the three commands traced
+   here; it's purely a local-app (Room DB) + cloud-sync display field, which makes sense since
+   embedded devices have no use for a label to fire a scene on a timer. **The practical upshot**:
+   local, cloud-independent Schedule creation is plausible - `CreateScheduleHubCommand` (`0x92`) to
+   allocate an ID, then `AddAutomationHubCommand` (`0x95`) with the day/time/sceneId, gives the Hub
+   everything it needs to fire on its own clock with no cloud round-trip at runtime. Not yet
+   implemented in `devices.py` - this is new protocol knowledge, not a shipped feature.
 
 Motion-sensor schedule writing, Scenes/Schedules *writing* (delete/toggle, wired as an experiment),
 and Scenes/Schedules *reading* (as real entities) are all implemented now - Scene/Schedule
-*creation* from HA (`CreateSceneHubCommand`/`CreateScheduleHubCommand`/`AddDeviceSceneCommand`'s
-full payload) is the one piece from this doc's original research still unbuilt.
+*creation* from HA (`CreateSceneHubCommand`/`CreateScheduleHubCommand`/`AddAutomationHubCommand`/
+`AddDeviceSceneCommand`'s full payload) is the one piece from this doc's original research still
+unbuilt, though as of the follow-up research above every relevant payload is now fully decoded -
+what's left is implementation and the same real-hardware validation every other Hub command in
+this family is still waiting on, not further research.
