@@ -396,13 +396,32 @@ cync_lan/services.py`) exists to find out.
 described at the top of this section (add/remove a device to/from a group's pub/sub address, not
 "control the group's state") is now implemented: `devices.py`'s `CyncDevice.set_group_membership
 (group_id, member, reach_flag=0x00)`, exposed as `cync_lan.experimental_set_group_membership`.
-Unlike `set_group_power`, the `0xD7` op_code/dispatch method are confirmed but the `cmd_code` is a
-PREDICTION (via the length formula: `8 + 6-byte payload = 0x0E`), and unlike every other command in
-this doc it targets an individual device's own address - the group address is payload data, telling
-one specific device "start/stop listening on this group's address," not a broadcast. This is
-genuinely new functionality cync-lan didn't have before (creating/managing group membership, not
-just controlling an existing group's power) - a real step toward managing structure, not just
-runtime state, from HA.
+Unlike every other command in this doc it targets an individual device's own address - the group
+address is payload data, telling one specific device "start/stop listening on this group's
+address," not a broadcast. This is genuinely new functionality cync-lan didn't have before
+(creating/managing group membership, not just controlling an existing group's power) - a real step
+toward managing structure, not just runtime state, from HA.
+
+**UPDATE, corrected after follow-up research - the command is genuinely dual-path, not always
+real-0xD7.** `ControlDeviceGroupCommand.mo14013g()` branches on
+`xlinkCommandDelegate.getDeviceType().getProductType().f31219d` (`ControlDeviceGroupCommand.java:192`).
+Traced this flag to its source: it means "is this device's `ProductType` `Sol` or `C-Reach`" -
+the SDK's own internal "is this a Hub product" flag (`ProductType.java:195-199`;
+`XlinkHubDeviceController`'s constructor literally asserts `if (!productType.f31219d) throw
+UnsupportedDeviceTypeException(... "is not a hub")`) - **not** a generic hub-relay/BLE-vs-WiFi
+distinction as originally assumed when this command was first wired in. cync-lan already tracks
+the exact same distinction via `is_sol_lamp` (`metadata.opcodes.sol_lamp`, true only for device
+type 80 in cync-lan's current catalog - see `is_sol_lamp`'s own docstring for the sibling
+`set_brightness`/`set_temperature` special-casing this same product family already uses). The
+initial implementation always took the confirmed-real-`0xD7` branch - correct only for that rare
+Sol/C-Reach family. For every other real device (`is_sol_lamp=False`, virtually all real Cync
+hardware), the SDK instead routes through the same `0x8E` "mesh-relay" substitution bug as
+`set_indicator_led`/`set_motion_sensor_settings`/etc. - `0xD7` moves from "outer op" to "payload's
+leading discriminator byte." **Now fixed**: `set_group_membership()` branches on `self.is_sol_lamp`
+and sends the correct shape for either case - `op=0xD7` directly (unconfirmed `cmd_code = 8 +
+6-byte payload = 0x0E`) for the rare Sol/C-Reach family, `op=0x8E` with `0xD7` prepended into a
+7-byte payload (unconfirmed `cmd_code = 7 + 7 = 0x0E`, `repeat_op_code=False`) for everything else.
+Neither branch's `cmd_code` has been captured against a live packet.
 
 ### Scenes control — real `op_code = 0x8E` (was wrongly `0xEF`, see CORRECTION above)
 

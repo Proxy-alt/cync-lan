@@ -395,7 +395,7 @@
     },
     "experimental_set_group_membership": {
       "name": "Set a device's group membership (experimental)",
-      "description": "Experimental — the outer command byte and dispatch method are confirmed (ControlDeviceGroupCommand, the same trustworthy envelope builder as the everyday brightness/color commands, not the 0x8E-relay-bug family), but the predicted cmd_code has not itself been captured. Adds or removes ONE device to/from a group's mesh address - this changes group membership, not a group's power/state (see Set a group's power). Please report success or failure with your device model, see docs/mesh_opcodes.md.",
+      "description": "Experimental — this command is dual-path depending on your device's product family: for the rare Sol/C-Reach family it uses a confirmed real op_code (the trustworthy envelope builder, same as everyday brightness/color commands); for virtually every other real device it instead uses the same 0x8E-relay-bug substitution as several other experimental commands in this integration. Either way the predicted cmd_code has not itself been captured. Adds or removes ONE device to/from a group's mesh address - this changes group membership, not a group's power/state (see Set a group's power). Please report success or failure with your device model, see docs/mesh_opcodes.md.",
       "fields": {
         "device_id": {
           "name": "Device",

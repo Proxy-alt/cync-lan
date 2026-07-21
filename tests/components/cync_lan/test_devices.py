@@ -583,35 +583,79 @@ def test_warn_experimental_cmd_code_fires_once_per_name():
     _EXPERIMENTAL_CMDS_WARNED.discard("test_cmd_unique_name")
 
 
-async def test_set_group_membership_add_payload_shape():
+async def test_set_group_membership_add_payload_shape_common_case():
+    """The common case - virtually every real device (is_sol_lamp=False) -
+    takes the 0x8E-relay-bug path, NOT the direct-0xD7 path. This is the
+    branch that was missing before the is_sol_lamp fix; get it wrong and
+    the command silently no-ops against nearly all real hardware."""
     node = CyncDevice.__new__(CyncDevice)
     node.lp = "test:"
     node.id = 5
+    node.metadata = None  # is_sol_lamp -> False
     node.send_command = AsyncMock()
 
     await node.set_group_membership(32770, member=True)
 
     args, kwargs = node.send_command.call_args
-    assert args[0] == 0xD7  # op - real outer op_code, not a 0x8E-family substitution
-    assert args[1] == 0x0E  # predicted cmd_ (8 + 6-byte payload)
-    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack("<H", 32770) + struct.pack(
-        ">B", 0x00
-    )
-    # no repeat_op_code override - unlike the 0x8E-family commands, this
-    # one's embedded op_code genuinely is the real op, so send_command's
-    # default (repeat it in the mesh payload too) is correct here.
-    assert kwargs == {}
+    assert args[0] == 0x8E  # op - 0x8E-relay substitution, not the embedded 0xD7
+    payload = struct.pack(">B", 0xD7) + struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack(
+        "<H", 32770
+    ) + struct.pack(">B", 0x00)
+    assert args[3] == payload
+    assert args[1] == 7 + len(payload)  # predicted cmd_
+    assert kwargs == {"repeat_op_code": False}
 
 
-async def test_set_group_membership_remove_payload_shape():
+async def test_set_group_membership_remove_payload_shape_common_case():
     node = CyncDevice.__new__(CyncDevice)
     node.lp = "test:"
     node.id = 5
+    node.metadata = None  # is_sol_lamp -> False
     node.send_command = AsyncMock()
 
     await node.set_group_membership(32770, member=False, reach_flag=0x87)
 
     args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E
+    assert args[3] == struct.pack(">B", 0xD7) + struct.pack(
+        ">BBB", 0x11, 0x02, 0
+    ) + struct.pack("<H", 32770) + struct.pack(">B", 0x87)
+    assert kwargs == {"repeat_op_code": False}
+
+
+async def test_set_group_membership_add_payload_shape_sol_lamp():
+    """The rare case - is_sol_lamp=True (e.g. device type 80) - is the only
+    device family confirmed to use the direct, trustworthy 0xD7 op_code
+    path (no repeat_op_code override, since the embedded op_code genuinely
+    is the real one here)."""
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = MagicMock(opcodes=MagicMock(sol_lamp=True))
+    node.send_command = AsyncMock()
+
+    await node.set_group_membership(32770, member=True)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0xD7
+    assert args[1] == 0x0E  # predicted cmd_ (8 + 6-byte payload)
+    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack("<H", 32770) + struct.pack(
+        ">B", 0x00
+    )
+    assert kwargs == {}
+
+
+async def test_set_group_membership_remove_payload_shape_sol_lamp():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = MagicMock(opcodes=MagicMock(sol_lamp=True))
+    node.send_command = AsyncMock()
+
+    await node.set_group_membership(32770, member=False, reach_flag=0x87)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0xD7
     assert args[3] == struct.pack(">BBB", 0x11, 0x02, 0) + struct.pack("<H", 32770) + struct.pack(
         ">B", 0x87
     )

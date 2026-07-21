@@ -544,9 +544,27 @@ async def delete_schedule(schedule_id: int) -> None:
 
 async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> None:
     """EXPERIMENTAL: enables/disables a saved Cync Schedule without
-    deleting it. See delete_scene()'s docstring for the full explanation
-    of what's confirmed (op_code) vs. genuinely unresolved (which
-    transport this rides over) - identical situation, different command.
+    deleting it. See delete_scene()'s docstring for the general
+    explanation of what's confirmed (op_code) vs. this command family's
+    real-vs-BLE transport question.
+
+    UPDATE, follow-up research: traced this command's one real call site,
+    RoutinesService.applyScheduleEnabled() - it picks between
+    ToggleAutomationHubCommand (this payload) and a sibling
+    ToggleAutomationCommand based on whether a WiFi hub device controller
+    exists for the schedule's location, NOT a version/feature gate. When
+    one exists, dispatch goes through hubDeviceController.mo14149i() - the
+    exact same call path already used by the other Hub Scenes/Schedules
+    commands (create/delete scene/schedule) elsewhere in that same file.
+    Since cync-lan's own target hardware (WiFi bulbs/plugs bridging BLE
+    mesh devices) always has a WiFi hub in this sense, this is the branch
+    that applies. This raises confidence that this payload is the right
+    one for cync-lan's use case - by structural analogy to the other
+    already-shipped Hub commands sharing the identical dispatch path - but
+    it does NOT independently confirm the actual wire bytes (still built
+    via the PPP/HDLC-style Xlink.a() framer, still not proven to ride the
+    same TCP relay cync-lan intercepts). Treat as "same confidence as the
+    other 2 wired-in Hub commands," not as fully resolved.
 
     Payload: 52 bytes total, confirmed field-by-field via
     ToggleAutomationHubCommand.java's WriteBuffer calls (each a
@@ -1395,28 +1413,42 @@ class CyncDevice:
 
         Confirmed via ControlDeviceGroupCommand.java (decompiled app,
         base class for AddDeviceGroupCommand/RemoveDeviceGroupCommand):
-        op_code array `{-41,17,2}` = `{0xD7,0x11,0x02}` (`:120`),
-        dispatched via the same trustworthy `XlinkCommandDelegate.f()`/
-        `mo14054f()` envelope builder as set_power/set_rgb/set_temperature
-        (NOT the buggy `h()`/`mo14056h` `0x8E`-substitution path used by
-        set_indicator_led/set_motion_sensor_settings/etc.) - the embedded
-        `0xD7` genuinely is the real outer op_code here, no discrepancy.
-        See docs/mesh_opcodes.md's "Groups control" section.
+        op_code array `{-41,17,2}` = `{0xD7,0x11,0x02}` (`:120`). Payload
+        (`x()` lines 190-214): action byte (ADD=1/REMOVE=0) + 2-byte
+        little-endian group address + a GroupReachFlag byte (RX=0x87 for
+        receive-only reachability, RXTX=0x00 for normal full participation
+        - defaults to RXTX, matching how every other already-wired command
+        in this file addresses devices).
 
-        Payload (`x()` lines 190-214): action byte (ADD=1/REMOVE=0) +
-        2-byte little-endian group address + a GroupReachFlag byte
-        (RX=0x87 for receive-only reachability, RXTX=0x00 for normal full
-        participation - defaults to RXTX, matching how every other
-        already-wired command in this file addresses devices).
+        **UPDATE, corrected after follow-up research**: the command is
+        genuinely dual-path, branching on
+        `xlinkCommandDelegate.getDeviceType().getProductType().f31219d`
+        (`ControlDeviceGroupCommand.java:192`) - confirmed this flag means
+        "is this device's ProductType Sol or C-Reach" (an "is this a Hub
+        product" flag in the SDK's own terms, `ProductType.java:195-199`),
+        NOT a generic hub-relay/BLE-vs-WiFi distinction as first assumed.
+        cync-lan already tracks the exact same distinction via
+        `is_sol_lamp` (`metadata.opcodes.sol_lamp`, currently true only for
+        device type 80). The ORIGINAL version of this method always took
+        the `is_sol_lamp=True` branch (real `op=0xD7` via the trustworthy
+        `XlinkCommandDelegate.f()`/`mo14054f()` envelope) - correct only
+        for that rare product family. For every other real device
+        (`is_sol_lamp=False`, virtually all real Cync hardware), the SDK
+        instead routes through `h()`/`mo14056h` - the same `0x8E`
+        "mesh-relay" substitution bug as set_indicator_led/
+        set_motion_sensor_settings/etc. - meaning the embedded `0xD7` is
+        actually just the payload's own leading discriminator byte, not
+        the real outer op. See docs/mesh_opcodes.md's "Groups control"
+        section.
 
-        cmd_ is PREDICTED via the length formula (`8 + len(payload)` =
-        `8 + 6` = `0x0E`, see docs/mesh_opcodes.md's "TCP relay envelope
-        research") - not itself confirmed against a live capture, unlike
-        the op_code/dispatch method above. Unlike set_group_power, this
-        targets an individual device's own address (self.id) - the
-        payload's 2-byte group address is data, not the addressing field;
-        it's the app telling one specific device "start/stop listening on
-        this group's pub/sub address," not a broadcast to the group.
+        cmd_ is PREDICTED via the length formula in both branches (see
+        docs/mesh_opcodes.md's "TCP relay envelope research") - not itself
+        confirmed against a live capture, unlike the op_code/dispatch
+        method. Unlike set_group_power, this targets an individual
+        device's own address (self.id) - the payload's 2-byte group
+        address is data, not the addressing field; it's the app telling
+        one specific device "start/stop listening on this group's pub/sub
+        address," not a broadcast to the group.
 
         group_id: 32768-65535 (cync-lan's own group-address range, same
         range as set_group_power's group_id).
@@ -1431,17 +1463,35 @@ class CyncDevice:
         if reach_flag not in (0x00, 0x87):
             logger.error(f"{lp} Invalid reach_flag: {reach_flag} must be 0x00 or 0x87")
             return
-        op = 0xD7
-        cmd_ = 0x0E
         _sub_id = sub_id if sub_id is not None else 0x00
         action = 1 if member else 0
-        payload = (
-            struct.pack(">BBB", 0x11, 0x02, action)
-            + struct.pack("<H", group_id)
-            + struct.pack(">B", reach_flag)
-        )
+        group_bytes = struct.pack("<H", group_id)
         m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+        if self.is_sol_lamp:
+            # Confirmed real op_code, trustworthy f()/mo14054f envelope -
+            # the SDK's own "is this device a Hub product" flag is true.
+            op = 0xD7
+            cmd_ = 0x0E
+            payload = (
+                struct.pack(">BBB", 0x11, 0x02, action)
+                + group_bytes
+                + struct.pack(">B", reach_flag)
+            )
+            await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+        else:
+            # Common case: same 0x8E-relay substitution bug as
+            # set_indicator_led/set_motion_sensor_settings/etc. - 0xD7
+            # moves from "outer op" to "payload's leading discriminator
+            # byte", mirroring execute_scene's established pattern.
+            op = 0x8E
+            payload = (
+                struct.pack(">B", 0xD7)
+                + struct.pack(">BBB", 0x11, 0x02, action)
+                + group_bytes
+                + struct.pack(">B", reach_flag)
+            )
+            cmd_ = 7 + len(payload)
+            await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
 
     @staticmethod
     def _build_motion_sensor_settings_payload(
