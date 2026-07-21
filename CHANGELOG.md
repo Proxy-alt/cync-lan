@@ -1,3 +1,96 @@
+### 0.0.6b45
+- Fix sol-lamp brightness changes not updating in HA immediately: the ack-matching allow-list was missing the `0xD2` op sol-lamp devices use for brightness, so their acks went unrecognized and HA's brightness slider stayed stale until an unrelated status update happened to correct it. Confirmed against the real Cync Android app's decompiled command encoding
+- Fix the "fireworks" light-show effect sending the wrong effect ID (`0x3A`/58, not valid anywhere in the real app's effect scheme) instead of the correct ID (`3`) - likely silently rejected by real hardware before this fix
+- Reclassify every 4-wire wired switch type (dimmer, toggle, circle, paddle, motion-sensing, keypad, no-neutral and TCO variants) from `light` to `switch`, and remove incorrectly-claimed color/tunable-white (and in some cases dimmable) capabilities - cross-referenced against the real Cync Android app's device-type data, which confirmed none of these switch types actually support color, and several don't dim at all. Also corrected two swapped model names (types 52/53 Toggle vs Circle, and the "Paddle" label between types 48/125)
+- Recognize 54 additional Cync device types that were completely missing from the device-type table (newer-generation bulbs, switch Gen2/Gen3/TCO variants, outdoor/TCO plugs, a second fan controller and thermostat variant, dynamic-effects fixtures, wafer downlights, wire-free remotes, and cameras) - sourced from the full real Cync Android app device-type catalog
+
+### 0.0.6b43
+- Support deviceType 112 "Wireless Switch" for real. Previously marked unsupported after a toggle test showed nothing in the debug log, but that was a false negative - a real capture confirms it sends a normal status packet when pressed (recently_seen goes 1->0 ~19s later, same shape as the type-96 motion sensor's trigger flag). Now exposed as an `occupancy` binary_sensor via the existing motion-sensor pipeline
+
+### 0.0.6b42
+- Fix every entity showing a blank Entity ID in HASS. HASS deprecated using `object_id` to set an entity's ID and now requires `default_entity_id` to be the *full* domain-prefixed entity_id (e.g. `light.cync_lan_...`), not a bare slug - this project was sending the bare slug for every entity, which HASS silently rejected. **Existing entities won't rename themselves** - delete them from the HA entity registry (or delete the Cync-LAN Bridge device and your Cync devices, then let discovery republish) to pick up a valid entity_id
+
+### 0.0.6b41
+- Fix the raw-debug broadcast status decoder silently dropping a device from its output whenever a `0x2e` byte happened to appear anywhere in the packet (an incorrect heuristic bumped the per-device chunk size from 19 to 20 bytes). Confirmed via a real 2-device broadcast capture where only the first device decoded; the fix always uses the correct 19-byte size. Debug-output only - doesn't affect live device state or MQTT, but it's the exact tool used to read raw captures for bug reports
+
+### 0.0.6b40
+- Recognize deviceType 112 "Wireless Switch" (battery-powered BTLE scene remote with a status LED ring) instead of reporting it as never-seen-before. It's now known but marked unsupported - a live capture test showed pressing it produces no packet visible to the bridge, so it likely drives its paired light directly over the BTLE mesh; nothing to implement yet without real packet data
+
+### 0.0.6b39
+- Fix a silent data-loss bug found via the unsupported-device capture tool: a stray/misaligned leading byte in a TCP read caused the entire rest of that read - which could be a large, fully valid burst of real device data - to be discarded instead of just the bad byte(s). Confirmed via a real capture where 4 junk bytes preceded a legitimate MeshInfo update covering ~40 devices; now resyncs to the next recognized packet instead of dropping everything after the bad byte
+
+### 0.0.6b38
+- Fix standalone BTLE-only accessories (e.g. motion sensors, type 96) being silently dropped from the exported config entirely. The cloud export required a `wifiMac` for every device, but these accessories have no WiFi radio and never have one - confirmed via a real export showing a motion sensor's raw entry with no `wifiMac` field at all. Now optional; devices that lack WiFi already route around it downstream
+- Fix motion sensor `binary_sensor` entities showing "Unknown" in HASS until their first real detection ever fired. State publishes are now retained, and a retained OFF is seeded at discovery time if nothing has been published yet
+
+### 0.0.6b37
+- Real motion sensor support, from two independently-confirmed real-world captures: standalone Cync motion sensor accessories (type 96) now show up as a proper `binary_sensor` (occupancy), and light/switch models with a built-in occupancy sensor ("...with Motion and Ambient Light", types 37/49/56) get an extra motion `binary_sensor` alongside their existing light entity
+
+### 0.0.6b36
+- Handle `f9 af` mesh-status-ack confirmations: the device's response to the server's `f8 af` ack after each MeshInfo page was unrecognized, causing `capture_unknown_packet` entries in the unsupported-devices log. Now silently consumed (the packet is just an acknowledgment, nothing actionable)
+- Fix `capture_unsupported_device` flooding the unsupported-devices log with hundreds of `dev_id=0` false-positives per minute. Root cause: the function had no concept of mesh broadcast pseudo-IDs. In the Cync BTLE mesh protocol, device IDs 1–255 are addressable nodes; ID 0 is the reserved broadcast/group address that every bridge re-broadcasts on every state-change cycle. The filter lives in the gatekeeper function itself so all callers benefit
+
+### 0.0.6b35
+- Fix another silently-dropped case found by the same capture tool: a full mesh-wide status dump (covering many devices at once) delivered via `0x83` instead of the usual `0x73` was never parsed either. Same inner format as the already-working `0x73` case, now recognized on both
+
+### 0.0.6b34
+- Fix a substantial source of silently-dropped device state updates: devices sometimes deliver their status wrapped in a `0x73` packet instead of the usual `0x83`, using the exact same inner format - nothing recognized this variant, so it was only ever acknowledged, never parsed. Found via the new debug capture tool (97% of one capture session was this single pattern); confirmed by hand-decoding a real sample back to a known device with sensible values
+
+### 0.0.6b33
+- New "Unsupported Device Debug Capture" option: logs raw packets from never-seen or unsupported device types to a dedicated file (`unsupported_devices.log`), independent of Raw Debug. Safe to leave on for an extended/overnight capture without the noise of full raw debugging - useful for gathering data to get a new device type properly supported
+- The capture also now covers packets that don't resolve to a device ID at all (an unrecognized top-level packet header, or unrecognized control bytes on a `0x83`/`0x73` packet) - not something most people will ever need, but useful if you're gathering data to report a new/unimplemented device type to the maintainer
+
+### 0.0.6b32
+- Fix "Unknown packet header" warnings and the real device status updates they were silently discarding. Root-caused via a real capture: when a TCP read boundary split a packet's header across two reads, the short fragment got processed as "complete" instead of buffered, misaligning everything that followed in the next read
+
+### 0.0.6b31
+- Fix a crash that could permanently kill MQTT (state updates and commands both stop working until a manual restart) when a command was sent to a bridge device that hadn't finished identifying itself yet. Found via a real capture with raw_debug enabled; TCP device traffic kept working the whole time, only MQTT was affected
+
+### 0.0.6b30
+- Temporary diagnostic logging (raw_debug only) added to investigate a suspicious "unknown device ID: 0" status pattern with non-boolean field values (possibly a motion sensor or other unrecognized device type); no user-facing change
+
+### 0.0.6b29
+- The 0.0.6b28 "node_id MISMATCH" fix didn't hold up in a follow-up capture. Root-caused further: the underlying assumption (first MeshInfo entry = the requesting device) is simply false, not just mishandled pagination - confirmed by specific bridges consistently reporting the same "wrong" device across unrelated reconnects. Removed the check entirely rather than patch it again
+
+### 0.0.6b28
+- Fix spurious "node_id MISMATCH" warnings on paginated MeshInfo reconnects, confirmed via a fresh post-0.0.6b27 capture. Cosmetic only (no data was affected), but a real logic bug in how the parser detected "device announcing itself" across paginated dumps
+
+### 0.0.6b27
+- Fix spurious "unknown device ID: 0" warnings (and the state loss they implied) during MeshInfo parsing on reconnect. Root-caused to duplicate BTLE relay-path entries desyncing the parser's fixed-stride byte offsets; it now self-resyncs instead of reading garbage for the rest of that page
+
+### 0.0.6b26
+- Temporary diagnostic logging (raw_debug only) added to investigate spurious "unknown device ID: 0" warnings seen during a full mesh reconnect; no user-facing change
+
+### 0.0.6b25
+- New "Cync App Active" occupancy entity on the CyncLAN Bridge device — turns on when the Cync phone app connects to the BTLE mesh, auto-clears after 60s of inactivity
+
+### 0.0.6b24
+- One more benign broadcast pattern (`fa f0`) downgraded to debug alongside `fa af`, same app-BTLE-connect noise
+
+### 0.0.6b23
+- Two more benign `0x83` broadcast patterns (`fa af`, and `fa db` with a non-status sub-type) downgraded from WARNING spam to debug — both fire in bursts across many devices when the Cync phone app connects/disconnects from the BTLE mesh, not an actual problem
+
+### 0.0.6b22
+- Per-device "MITM Mode" switch entities no longer show up in HA by default (new `MITM Mode Entities` option, off by default). Existing installs will have any previously-created MITM switch entities automatically removed on next restart.
+
+### 0.0.6b21
+- Fix the bridge's "Should Restart" diagnostic entity carrying a leftover mismatched platform key from a copy-paste; harmless but incorrect
+
+### 0.0.6b20
+- Fix a few silent bugs found in a type/classification audit: 4 device types were missing their model number (typo in the source dropped it without error) and switches created without an explicit dimmable flag (plugs, fan controller, toggle switches) carried the wrong internal default. Neither was visible in HA, but both are now correct at the data level.
+
+### 0.0.6b19
+- Plugs/outlets now show up in HA with the outlet icon (`device_class: outlet`) instead of the generic switch toggle icon
+
+### 0.0.6b18
+- Fix duplicate entities in HA after a device's platform classification changes (e.g. the type 53 light->switch fix in 0.0.6b17 left the old `light` entity behind alongside the new `switch` one). Stale platform discovery configs now clear automatically on the next discovery announce, no manual entity removal needed in HA.
+
+### 0.0.6b17
+- Built from [Proxy-alt/cync-lan@python](https://github.com/Proxy-alt/cync-lan/tree/python) instead of upstream, pending PR back to baudneo/cync-lan
+- Downgrade benign `0x83` broadcast warnings (unbound `fa 8e` control bytes, internal status for unmapped room/group IDs) to debug, they fired at WARNING for every device on every mesh broadcast despite being safe to ignore
+- Add device type 36 (dimmable light switch) and 96 (standalone motion sensor, unsupported) so they show real metadata in HASS instead of "no metadata"
+- Reclassify device type 53 "Toggle Switch" from a dimmable light to a binary switch, it's used interchangeably for fan- and light-wired switches with no dimming capability
+
 ### 0.0.6b16
 - NOTE: always backup, I am a carpenter who does this in my spare time, not a software engineer
 - Properly catch and parse fan controller state changes, was missing physical button presses. Thanks [@SamHartleyFixes](https://github.com/baudneo/cync-lan/commits?author=SamHartleyFixes)

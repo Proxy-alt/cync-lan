@@ -28,7 +28,10 @@ of **most** Cync devices via MQTT JSON payloads following the Home Assistant MQT
 This project masquerades as the cloud server, allowing you to control your devices locally.
 
 **This is a work in progress, and may not work for all devices.** 
-See [known devices](docs/known_devices.md) for more information. Battery powered devices are currently *not* supported due to them being BTLE *send* only.
+See [known devices](docs/known_devices.md) for more information. Most battery powered devices are
+still *not* supported since cync-lan can only listen to them, not write settings to them - the
+standalone motion sensor and "Wireless Switch" accessories are the exception, both exposed as
+`occupancy` binary sensors.
 
 Forked from [cync-lan](https://github.com/iburistu/cync-lan) and 
 [cync2mqtt](https://github.com/juanboro/cync2mqtt) - All credit to 

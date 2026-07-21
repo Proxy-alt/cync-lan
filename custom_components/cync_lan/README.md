@@ -14,6 +14,10 @@ This integration is a thin Home Assistant adapter around the
 does the actual protocol work (see [Known limitations](#known-limitations)
 for what that dependency relationship means in practice).
 
+See [CHANGELOG.md](./CHANGELOG.md) for this integration's own version
+history (independent of the underlying `cync-lan` package's own versioning
+- see that project's root `CHANGELOG.md`).
+
 ## Installation
 
 ### Prerequisites
@@ -80,6 +84,8 @@ Services → Cync LAN → Configure**:
 |---|---|---|
 | Local TCP port | The port the listener binds to. Must match whatever you redirect Cync's DNS traffic to. | `23779` |
 | Export refresh interval (hours) | How often to silently re-check your Cync account for newly added devices and reload if the device list changed. `0` disables automatic refresh. | `24` |
+| Create light group entities | Expose each Cync device group ("Living Room", etc.) as an aggregate `light` entity, built on Home Assistant's own group-light implementation. | Off |
+| Hide group members | When light groups are enabled, hide each group's individual member lights from dashboards (they still exist and still work, just out of the way). | Off |
 
 Account email/password are collected once during setup and are not exposed
 as an ongoing configuration parameter - use the reauthentication flow
@@ -113,6 +119,16 @@ Supported entity types in this integration specifically:
 
 - **Light** - on/off, brightness, color temperature, RGB color, and effects,
   depending on what the specific device model supports.
+- **Light (group)** - one aggregate entity per Cync device group ("Living
+  Room", etc.), opt-in via the "Create light group entities" configuration
+  parameter above. Reads as on if any member is on, and mirrors Home
+  Assistant's own built-in group-light behavior for brightness/color
+  averaging. Adding or removing a device from a group's own Cync-side
+  membership is available via the `cync_lan.experimental_set_group_membership`
+  service; setting a whole group's power in one command (without going
+  through HA's per-member group behavior) is
+  `cync_lan.experimental_set_group_power`. Both are EXPERIMENTAL - see
+  [Known limitations](#known-limitations).
 - **Switch** - binary on/off switches and outlets/plugs (shown with the
   `outlet` device class where applicable).
 - **Fan** - fan controller switches, with percentage and preset-speed control.
@@ -137,6 +153,11 @@ Supported entity types in this integration specifically:
   data and restored across HA restarts. EXPERIMENTAL - see
   [Known limitations](#known-limitations).
 
+Beyond entities backed by your existing account data, this integration can
+also create new Scenes/Schedules directly on the Cync hub - see
+[Pushing an HA automation to Cync hardware](#pushing-an-ha-automation-to-cync-hardware)
+below.
+
 Motion-sensor settings tuning also has a guided options-flow wizard
 ("Configure" -> "Edit motion sensor settings") that walks through waking
 the physical sensor first, rather than requiring the raw service alone.
@@ -146,6 +167,26 @@ underlying package, not yet exposed as HA entities here): motion/ambient
 sensor sensitivity and timing tuning as an entity (service + guided wizard
 only, not a bare entity), and OTA firmware update triggering - see
 [Known limitations](#known-limitations).
+
+### Services
+
+Every raw service is prefixed `experimental_` as a visible risk signal in
+Developer Tools -> Actions and the automation/script action picker - see
+each service's own description there for its specific transport-confidence
+caveats.
+
+| Service | Purpose |
+|---|---|
+| `set_indicator_led` | Set a device's indicator LED mode, color, and brightness. |
+| `set_motion_sensor_settings` | Tune a motion/ambient-light sensor's sensitivity and timing. |
+| `execute_scene` | Activate a saved Cync scene. |
+| `set_group_power` | Turn a Cync device group on or off as one command. |
+| `set_motion_sensor_schedule` | Write one slot of a device's native motion-sensor schedule. |
+| `delete_scene` | Delete a saved Cync scene. |
+| `delete_schedule` | Delete a saved Cync schedule. |
+| `toggle_automation` | Enable or disable a saved Cync schedule without deleting it. |
+| `set_group_membership` | Add or remove one device from a Cync group's mesh address. |
+| `push_automation_to_hardware` | Push an HA automation onto the hub as a native scene + schedule - see [above](#pushing-an-ha-automation-to-cync-hardware). |
 
 ## Use cases
 
@@ -210,6 +251,60 @@ automation:
           message: "Cync devices have been unreachable for 5 minutes"
 ```
 
+## Pushing an HA automation to Cync hardware
+
+`cync_lan.experimental_push_automation_to_hardware` reads an *existing* Home
+Assistant automation and recreates it directly on the Cync hub as a native
+Scene + Schedule, so the same trigger keeps firing even if Home Assistant or
+your network goes down. The automation keeps running as a normal HA
+automation afterward - this only *additionally* copies its logic onto the
+hub.
+
+Because a Cync Schedule only understands a fixed time-of-day and a
+day-of-week filter, and a Cync Scene only understands a light's color (not
+brightness, effects, or transitions), the automation being pushed must be
+built narrowly:
+
+- Exactly one trigger: a plain `time` trigger with a fixed `at:` time (no
+  entity or template - Cync has no way to track a dynamic time source).
+- At most one condition: a `time` condition with only `weekday:` set (no
+  `before`/`after` range). Omit it entirely to run every day.
+- One or more `light.turn_on` actions, each targeting a Cync LAN light
+  directly (not a light group) with exactly one color set - `rgb_color` or
+  `color_temp_kelvin`. Brightness, effects, and transitions are rejected
+  outright rather than silently dropped, since a Cync Scene entry has no
+  field for them.
+
+```yaml
+automation:
+  - alias: "Porch light warm white at sunset-ish, weekdays"
+    trigger:
+      - platform: time
+        at: "19:30:00"
+    condition:
+      - condition: time
+        weekday:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.porch
+        data:
+          color_temp_kelvin: 40
+```
+
+Call the service once against this automation's entity_id (Developer Tools
+-> Actions, or from another automation/script) to push it. If the
+automation's config changes afterward, call the service again to push the
+updated version - it always creates a new Scene/Schedule pair on the hub
+rather than editing the previous one in place, so old pushes should be
+cleaned up with `cync_lan.experimental_delete_scene`/
+`experimental_delete_schedule` if you no longer want them running natively.
+
 ## Known limitations
 
 - **Single account per Home Assistant instance.** The underlying `cync-lan`
@@ -245,6 +340,20 @@ automation:
   research has neither). If scene/schedule entities don't appear, or show
   the wrong scene/enabled state, please open an issue with (redacted)
   export data - see the parent project's `docs/cync_automations.md`.
+- **Scene/Schedule creation's transport is unconfirmed.** Creating a Scene or
+  Schedule (`experimental_push_automation_to_hardware`, or the underlying
+  `create_scene`/`create_schedule` functions directly) waits up to 10
+  seconds for the hub to report back an allocated ID over a notification
+  channel with a different wire format than this integration's own confirmed
+  command envelope. Whether that channel rides the same connection this
+  integration intercepts, or is BLE-specific, hasn't been confirmed against
+  real hardware yet - a timeout returns a clear error rather than silently
+  hanging. See the parent project's `docs/cync_automations.md`.
+- **Light groups are a virtual HA construct, not a Cync-side concept for
+  most commands.** `experimental_set_group_power` targets a group's real
+  Cync mesh address, but the light group *entity* itself is built entirely
+  on Home Assistant's own group-light helper - turning it on/off issues one
+  command per member device, not a single group-wide command.
 
 ## Troubleshooting
 
