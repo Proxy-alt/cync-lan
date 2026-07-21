@@ -43,6 +43,65 @@ Forked from [cync-lan](https://github.com/iburistu/cync-lan) and
 > It is extremely (change 1 param in a constructor or config) easy for Savant to disable this method of local control.
 > While new methods may restore functionality, I'd rather not go down that route.
 
+## About this fork
+
+This repository is itself a more recent fork, of [baudneo/cync-lan](https://github.com/baudneo/cync-lan)
+(all of the above credit still applies - baudneo did the substantial rewrite
+that this fork continues from). Upstream stopped receiving updates at
+`0.0.6b16`; everything from `0.0.6b17` onward - see [CHANGELOG.md](./CHANGELOG.md)
+for the full list - exists only here, including:
+
+- Real motion-sensor support: the standalone motion-sensor accessory and the
+  battery-powered "Wireless Switch" both now show up as `occupancy`
+  binary_sensors, and switch/light models with a built-in motion/ambient
+  sensor get a second entity for it.
+- 54 previously-unrecognized device types added, plus corrected
+  classification (light vs switch, dimmable vs not) for several existing
+  wired-switch types that were wrong.
+- A handful of real data-loss/crash bugs found via a new "Unsupported Device
+  Debug Capture" tool: silently-dropped device status updates on certain
+  packet variants, a TCP framing bug that discarded an entire read on a
+  single misaligned byte, and a crash that could permanently kill MQTT.
+- Fixed brightness state going stale on Sol-lamp devices, and a wrong
+  effect ID that likely made the "fireworks" light-show effect silently
+  fail.
+
+**A native Home Assistant integration also now exists** - not an add-on or
+MQTT bridge, but a real `custom_component` you install through HACS, on the
+`feature/ha-custom-component` branch. It doesn't exist upstream at all. See
+[Choosing how to run this](#choosing-how-to-run-this) below, and
+[`custom_components/cync_lan/README.md`](./custom_components/cync_lan/README.md)/
+[`custom_components/cync_lan/CHANGELOG.md`](./custom_components/cync_lan/CHANGELOG.md)
+for what it does specifically (light groups, Scenes/Schedules as real
+entities, indicator-LED control, and pushing an existing HA automation onto
+the Cync hub as a native schedule, among others) - it's versioned and
+released separately from the Python package described in the rest of this
+README.
+
+## Choosing how to run this
+
+There are three different ways to get Cync devices talking to Home
+Assistant through this project now, all requiring the same
+[DNS redirection](./docs/DNS.md) but otherwise fairly different in setup:
+
+| | Docker Compose (this README) | Home Assistant "App" ([hass-addons](https://github.com/Proxy-alt/hass-addons)) | HACS custom_component (`feature/ha-custom-component`) |
+|---|---|---|---|
+| Requires Docker | Yes, you run it | Yes, but HA Supervisor manages it | No |
+| Requires an MQTT broker | Yes | Yes (HA's own Mosquitto add-on works) | No |
+| Configuration | Environment variables / `docker-compose.yaml` | HA Supervisor's Options UI (`config.yaml` schema) | HA's own config flow (email/password + emailed code) - no YAML |
+| Devices exposed as | MQTT-discovered entities | MQTT-discovered entities | Native HA entities (no MQTT involved) |
+| Cloud-token encryption key | You set `CYNC_SECRET_KEY` yourself | You set the `secret_key` option yourself | Derived and set automatically - nothing to configure |
+| Install method | `docker compose up` | Add the [hass-addons](https://github.com/Proxy-alt/hass-addons) repository, install the "CyncLAN Bridge" App | Add this repository to HACS as a custom repository (see below) |
+
+If you're not sure which one you want: the HACS `custom_component` is the
+newest and least Docker-dependent option, but it's not on this
+repository's default branch yet, which makes HACS installation slightly
+more manual for now - see that integration's own README for the current
+workaround. If you'd rather stick with the well-established Docker/MQTT
+path, the "App" is the least manual-setup version of that (no
+docker-compose.yaml to write yourself), while this README's plain Docker
+Compose instructions give you the most direct control.
+
 ## Prerequisites
 - Docker
 - A minimum of 1, non battery powered, Wi-Fi (*Direct Connect*) Cync / C by GE device to act as the TCP <-> BT bridge (always on)
@@ -171,6 +230,7 @@ For the `yes` / `no` value, the user input is cast to a lower case string stripp
 | `CYNC_ENABLE_EXPORTER`       | Start the local device export web app                                                                          | `yes`                                 | str  |
 | `CYNC_ACCOUNT_USERNAME`      | Cync account username (email) *Required* for the export web app                                                |                                       | str  |
 | `CYNC_ACCOUNT_PASSWORD`      | Cync account password *Required* for the export web app                                                        |                                       | str  |
+| `CYNC_SECRET_KEY`            | *Required.* Random alphanumeric string used to encrypt the cached cloud auth token at rest (Fernet/PBKDF2HMAC). Pick your own value and keep it stable - changing it invalidates the cache and forces a re-login. | | str |
 | `CYNC_OVERWRITE_CONFIG_FILE` | On export, overwrite `cync_mesh.yaml` or use a numbered system: `*_1.yaml`, `*_2.yaml`, etc.                   | `yes`                                 | str  |
 | `CYNC_MQTT_HOST`             | Host of MQTT broker                                                                                            | `homeassistant.local`                 | str  |
 | `CYNC_MQTT_PORT`             | Port of MQTT broker                                                                                            | `1883`                                | int  |
@@ -183,6 +243,8 @@ For the `yes` / `no` value, the user input is cast to a lower case string stripp
 | `CYNC_RAW_DEBUG`             | Enable raw binary message debug logging (non-MITM, so strictly between dev and CyncLAN)                        | `no`                                  | str  |
 | `CYNC_MITM_DEV_LOGGER`       | Enable MITM console logging for Cync Devices (enabling this will also output to the console)                   | `no`                                  | str  |
 | `CYNC_MITM_APP_LOGGER`       | Enable MITM console logging for mobile APPS (enabling this will also output to the console)                    | `no`                                  | str  |
+| `CYNC_MITM_ENTITIES`         | Show a per-device "MITM Mode" switch entity in HASS. Off by default since 0.0.6b22 - MITM mode itself still works via the button/service either way, this only controls whether a dedicated entity clutters your dashboard | `no` | str |
+| `CYNC_UNSUPPORTED_RAW_DEBUG` | Log raw packets from never-seen or unsupported device types to a dedicated `unsupported_devices.log`, independent of `CYNC_RAW_DEBUG` - safe to leave on for an extended capture, useful when reporting a new device type | `no` | str |
 | `CYNC_DEVICE_CERT`           | Path to cert file                                                                                              | `certs/server.pem`                    | str  |
 | `CYNC_DEVICE_KEY`            | Path to key file                                                                                               | `certs/server.key`                    | str  |
 | `CYNC_SRV_HOST`              | Interface to listen on                                                                                         | `0.0.0.0`                             | str  |
