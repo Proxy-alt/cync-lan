@@ -1043,3 +1043,52 @@ async def test_add_to_scene_rejects_invalid_inputs():
     await node.add_to_scene(scene_id=3, rgb=(1, 2, 300))  # rgb channel out of range
 
     node.send_command.assert_not_awaited()
+
+
+async def test_remove_from_scene_non_sol_lamp_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = None  # is_sol_lamp -> False
+    node.send_command = AsyncMock()
+
+    await node.remove_from_scene(scene_id=3)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E
+    expected_payload = struct.pack(">BBBB", 0xEE, 0x11, 0x02, 0x00) + struct.pack(">B", 3)
+    assert len(expected_payload) == 5
+    assert args[1] == 7 + len(expected_payload)
+    assert args[3] == expected_payload
+    assert kwargs == {"repeat_op_code": False}
+
+
+async def test_remove_from_scene_sol_lamp_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = MagicMock(opcodes=MagicMock(sol_lamp=True))
+    node.send_command = AsyncMock()
+
+    await node.remove_from_scene(scene_id=3)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0xEE
+    expected_payload = struct.pack(">BBB", 0x11, 0x02, 0x00) + struct.pack(">B", 3)
+    assert len(expected_payload) == 4
+    assert args[1] == 7 + len(expected_payload) + 1
+    assert args[3] == expected_payload
+    assert kwargs == {}
+
+
+async def test_remove_from_scene_rejects_invalid_scene_id():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.id = 5
+    node.metadata = None
+    node.send_command = AsyncMock()
+
+    await node.remove_from_scene(scene_id=300)
+    await node.remove_from_scene(scene_id=-1)
+
+    node.send_command.assert_not_awaited()

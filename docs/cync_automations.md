@@ -237,8 +237,8 @@ question.
 `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one device's captured state
 within a scene) are different and dual-path, branching on the target device's product type: the
 "regular" product path **does** have the exact `0x8E`-relay bug (the `0xEE,0x11,0x02,...` array
-misread as an op_code, same fix class as indicator LED - not yet applied); a "special" product-type
-path calls the explicit-op_code method directly with the real op `0xEE`, no bug. See
+misread as an op_code, same fix class as indicator LED - **shipped**, see below); a "special"
+product-type path calls the explicit-op_code method directly with the real op `0xEE`, no bug. See
 `mesh_opcodes.md`'s "CORRECTION" section for the general bug pattern this partially replicates.
 
 **UPDATE, follow-up pass**: full payload resolved, prompted by researching the Schedule "fade"
@@ -290,11 +290,15 @@ concrete, locally-writable features worth building on their own merits:
    a separate, previously-unknown command. `AddDeviceSceneCommand`/`RemoveDeviceSceneCommand` (adding/removing one
    device's captured state within a scene) are a separate case: dual-path depending on the target
    device's product type, and the "regular" path **does** have the exact `0x8E`-relay bug (payload
-   `0xEE,0x11,0x02,...` misread as an op_code) - same fix class as indicator LED, not yet applied,
-   and not blocked by the transport question above since it's confirmed to go through the same
-   `mo14054f`/`mo14056h` methods already proven to carry real TCP-relay traffic. Full payload
-   (including the Schedule "fade" feature) since resolved - see `mesh_opcodes.md`'s follow-up on
-   this section.
+   `0xEE,0x11,0x02,...` misread as an op_code) - same fix class as indicator LED, **shipped** as
+   `add_to_scene()`/`remove_from_scene()`, and not blocked by the transport question above since
+   it's confirmed to go through the same `mo14054f`/`mo14056h` methods already proven to carry
+   real TCP-relay traffic. Full payload (including the Schedule "fade" feature) since resolved -
+   see `mesh_opcodes.md`'s follow-up on this section. Unlike `add_to_scene()`, `remove_from_scene()`
+   implements BOTH product-family branches - `RemoveDeviceSceneCommand`'s hub-routed path turned
+   out to reuse the simple, already-confirmed `mo14054f()` envelope rather than
+   `AddDeviceSceneCommand`'s more complex manually-built hub frame, so there was no unconfirmed
+   format to guess at.
 4. **Read Scenes/Schedules from the cloud export** and expose them in HA - **done**: `scene.py`'s
    activatable scene entities and `switch.py`'s schedule enable/disable switches, replacing the raw
    `experimental_execute_scene`/`experimental_toggle_automation` services as the primary surface

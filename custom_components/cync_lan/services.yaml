@@ -257,3 +257,52 @@ experimental_push_automation_to_hardware:
       selector:
         entity:
           domain: automation
+
+experimental_add_device_to_scene:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    scene_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255
+    cct:
+      selector:
+        number:
+          min: 0
+          max: 100
+    rgb:
+      selector:
+        color_rgb:
+    fade:
+      selector:
+        select:
+          options:
+            - no_fade
+            - 10_seconds
+            - 30_seconds
+            - 1_minute
+            - 5_minutes
+            - 10_minutes
+            - 20_minutes
+            - 30_minutes
+          translation_key: scene_fade
+
+experimental_remove_device_from_scene:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    scene_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255

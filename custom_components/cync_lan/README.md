@@ -187,6 +187,8 @@ caveats.
 | `toggle_automation` | Enable or disable a saved Cync schedule without deleting it. |
 | `set_group_membership` | Add or remove one device from a Cync group's mesh address. |
 | `push_automation_to_hardware` | Push an HA automation onto the hub as a native scene + schedule - see [above](#pushing-an-ha-automation-to-cync-hardware). |
+| `add_device_to_scene` | Add/update one device's captured color within an existing scene - standalone version of what `push_automation_to_hardware` does internally. |
+| `remove_device_from_scene` | Remove one device from an existing scene, without deleting the scene or affecting its other members. |
 
 ## Use cases
 

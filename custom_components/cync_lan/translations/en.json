@@ -206,6 +206,18 @@
         "normal": "Normal (send and receive)",
         "receive_only": "Receive-only"
       }
+    },
+    "scene_fade": {
+      "options": {
+        "no_fade": "No fade",
+        "10_seconds": "10 seconds",
+        "30_seconds": "30 seconds",
+        "1_minute": "1 minute",
+        "5_minutes": "5 minutes",
+        "10_minutes": "10 minutes",
+        "20_minutes": "20 minutes",
+        "30_minutes": "30 minutes"
+      }
     }
   },
   "services": {
@@ -422,6 +434,46 @@
         "automation_entity_id": {
           "name": "Automation",
           "description": "The Home Assistant automation to push - it keeps working as a normal HA automation afterward; this only ALSO copies its trigger/action logic onto the Cync hub itself."
+        }
+      }
+    },
+    "experimental_add_device_to_scene": {
+      "name": "Add a device's color to a Cync scene (experimental)",
+      "description": "Experimental — adds or updates this device's captured color state within an existing Cync scene (created via the Cync app, or via experimental_push_automation_to_hardware/the underlying create_scene function). Exactly one of cct or rgb must be given - a Cync scene entry has no brightness field, so it always implies \"device on, at whatever brightness it was last set to,\" never a specific captured brightness. Confirmed via decompiled app source (AddDeviceSceneCommand), including the fade option (a coded duration bucket, not raw seconds) - the device fades to this color autonomously whenever the scene fires, using the byte captured here. Reachable standalone so it can be tested against a scene you already have, independent of the automation-push flow. Please report success or failure with your device model.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The device whose current color should be captured into the scene."
+        },
+        "scene_id": {
+          "name": "Scene ID",
+          "description": "The numeric ID of the scene to add this device to (0-255 - this command truncates to 1 byte, unlike delete_scene's 2-byte/toggle_automation's 4-byte scene_id fields)."
+        },
+        "cct": {
+          "name": "Color temperature",
+          "description": "0-100 (0=warmest, 100=coolest). Mutually exclusive with RGB - give exactly one."
+        },
+        "rgb": {
+          "name": "RGB color",
+          "description": "Mutually exclusive with color temperature - give exactly one."
+        },
+        "fade": {
+          "name": "Fade",
+          "description": "How gradually the device transitions to this color when the scene fires. Leave as \"No fade\" unless you have a specific reason to change it."
+        }
+      }
+    },
+    "experimental_remove_device_from_scene": {
+      "name": "Remove a device from a Cync scene (experimental)",
+      "description": "Experimental — removes this device's captured state from an existing Cync scene, without deleting the scene itself or affecting its other member devices. Unlike most commands in this integration, both device product-family code paths are confirmed from decompiled app source (RemoveDeviceSceneCommand) - there's no unconfirmed format being guessed at here, only the predicted outer command length. Please report success or failure with your device model.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The device to remove from the scene."
+        },
+        "scene_id": {
+          "name": "Scene ID",
+          "description": "The numeric ID of the scene to remove this device from (0-255)."
         }
       }
     }

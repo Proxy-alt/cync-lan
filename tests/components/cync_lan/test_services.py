@@ -11,10 +11,12 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import DOMAIN
 from custom_components.cync_lan.services import (
+    SERVICE_ADD_DEVICE_TO_SCENE,
     SERVICE_DELETE_SCENE,
     SERVICE_DELETE_SCHEDULE,
     SERVICE_EXECUTE_SCENE,
     SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+    SERVICE_REMOVE_DEVICE_FROM_SCENE,
     SERVICE_SET_GROUP_MEMBERSHIP,
     SERVICE_SET_GROUP_POWER,
     SERVICE_SET_INDICATOR_LED,
@@ -120,6 +122,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
         node.set_motion_sensor_schedule = AsyncMock()
         node.set_group_membership = AsyncMock()
         node.add_to_scene = AsyncMock()
+        node.remove_from_scene = AsyncMock()
     entry.runtime_data = SimpleNamespace(
         ncync_server=SimpleNamespace(node_devices=nodes),
         bridge=CyncLanBridge(hass, entry.entry_id),
@@ -127,7 +130,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_ten_services(hass):
+async def test_setup_registers_all_twelve_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
@@ -139,6 +142,8 @@ async def test_setup_registers_all_ten_services(hass):
     assert hass.services.has_service(DOMAIN, SERVICE_TOGGLE_AUTOMATION)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_MEMBERSHIP)
     assert hass.services.has_service(DOMAIN, SERVICE_PUSH_AUTOMATION_TO_HARDWARE)
+    assert hass.services.has_service(DOMAIN, SERVICE_ADD_DEVICE_TO_SCENE)
+    assert hass.services.has_service(DOMAIN, SERVICE_REMOVE_DEVICE_FROM_SCENE)
     async_unload_services(hass)
 
 
@@ -1239,6 +1244,86 @@ async def test_push_automation_raises_home_assistant_error_when_schedule_creatio
                 {"automation_entity_id": "automation.test"},
                 blocking=True,
             )
+    async_unload_services(hass)
+
+
+async def test_add_device_to_scene_calls_node_method_with_cct(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADD_DEVICE_TO_SCENE,
+        {"device_id": device.id, "scene_id": 3, "cct": 80},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.add_to_scene.assert_awaited_once_with(3, cct=80, rgb=None, fade=0xFF)
+    async_unload_services(hass)
+
+
+async def test_add_device_to_scene_calls_node_method_with_rgb_and_fade(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADD_DEVICE_TO_SCENE,
+        {
+            "device_id": device.id,
+            "scene_id": 3,
+            "rgb": [255, 128, 0],
+            "fade": "10_seconds",
+        },
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.add_to_scene.assert_awaited_once_with(3, cct=None, rgb=(255, 128, 0), fade=1)
+    async_unload_services(hass)
+
+
+async def test_add_device_to_scene_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_ADD_DEVICE_TO_SCENE,
+            {"device_id": "does-not-exist", "scene_id": 3, "cct": 80},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_remove_device_from_scene_calls_node_method(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_REMOVE_DEVICE_FROM_SCENE,
+        {"device_id": device.id, "scene_id": 3},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.remove_from_scene.assert_awaited_once_with(3)
+    async_unload_services(hass)
+
+
+async def test_remove_device_from_scene_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_REMOVE_DEVICE_FROM_SCENE,
+            {"device_id": "does-not-exist", "scene_id": 3},
+            blocking=True,
+        )
     async_unload_services(hass)
 
 

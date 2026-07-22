@@ -206,10 +206,10 @@ and dropping the phantom repeated-op-byte cancel out exactly in the length formu
 LED: old `7+1+6B=0x0E` vs new `7+7B=0x0E`, same value). Only `op_code` (now `0x8E` for all three)
 and the payload's leading byte (now literally present as data - `0xF7` for indicator LED/motion
 settings, `0xEF` for scenes) changed. Fixed in `devices.py`'s `set_indicator_led()`,
-`set_motion_sensor_settings()`, and `execute_scene()`; **motion-sensor schedule write (`0x0B`,
-documented further below) was NOT yet updated** - it's still only documented, not wired into a
-real send, but almost certainly has the exact same bug (same `SetMotionSensorScheduleCommand`
-class, same `DefaultImpls.c`→`h()` path) and needs the identical correction whenever it's built.
+`set_motion_sensor_settings()`, and `execute_scene()`. **UPDATE**: motion-sensor schedule write
+(`0x0B`, documented further below) has since been wired in too - `set_motion_sensor_schedule()`
+has the identical correction applied (confirmed via the same `SetMotionSensorScheduleCommand`
+class, same `DefaultImpls.c`→`h()` path), same as its siblings above.
 
 ### Fine/fade brightness — `op_code = 0xE2`, sub-command `0x08`
 
@@ -303,6 +303,17 @@ created/edited, not at trigger time. Two payload shapes depending on device rout
   the raw pre-framed `e()` method (same dispatch class as the pure Hub Scenes/Schedules commands
   elsewhere in this doc) - a structurally different payload from the non-hub path above, not just
   a different op_code.
+
+**`RemoveDeviceSceneCommand`** (the counterpart - removing a device's captured state from a scene
+without deleting the scene) is simpler and, unlike `AddDeviceSceneCommand`, has **both** branches
+confirmed and shipped: opcode array `{0xEE,0x11,0x02,0x00}` (fixed trailing `0x00` - no actionType/
+mode/color/fade fields, since there's nothing to configure) + sceneId (1 byte) = 5 bytes.
+Non-hub-routed devices hit the same `0x8E`-relay substitution as `AddDeviceSceneCommand`'s non-hub
+path. Hub-routed devices (`is_sol_lamp`) turned out to route through the same trustworthy
+`mo14054f()` envelope already confirmed for `set_group_membership()`'s `is_sol_lamp` branch - a
+real op_code `0xEE`, not the manually-built `WriteBuffer`/`FrameCode` frame that blocks
+`AddDeviceSceneCommand`'s hub path. **Shipped**: `devices.py`'s
+`CyncDevice.remove_from_scene(scene_id, sub_id=)` implements both branches.
 
 **The fade byte** (`ScheduleFade.java:25-32`, 1-byte signed enum): `NO_FADE=-1(0xFF)`,
 `FADE_10_SECONDS=1`, `FADE_30_SECONDS=2`, `FADE_1_MINUTE=3`, `FADE_5_MINUTES=4`,

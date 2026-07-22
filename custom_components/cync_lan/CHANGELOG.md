@@ -8,6 +8,22 @@ root `CHANGELOG.md`) - the two are versioned and released separately, even
 though this integration depends on that package to do the actual protocol
 work.
 
+### 0.3.0
+
+- Add `CyncDevice.remove_from_scene()` in the underlying package - the
+  counterpart to `add_to_scene()`, removing one device's captured state
+  from an existing scene without deleting the scene or affecting its other
+  members. Confirmed via decompiled app source
+  (`RemoveDeviceSceneCommand`); unlike `add_to_scene()`, both device
+  product-family code paths are dispatch-confirmed here, not just the
+  common one.
+- Add `experimental_add_device_to_scene` and
+  `experimental_remove_device_from_scene`: standalone versions of the same
+  functions `experimental_push_automation_to_hardware` already uses
+  internally, so they can be tested against a scene you already have
+  (Cync-app-created or otherwise) without going through the full
+  automation-push flow.
+
 ### 0.2.0
 
 - Add native Scene/Schedule creation: `create_scene`, `create_schedule`, and

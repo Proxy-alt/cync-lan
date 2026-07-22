@@ -38,6 +38,8 @@ SERVICE_DELETE_SCHEDULE = "experimental_delete_schedule"
 SERVICE_TOGGLE_AUTOMATION = "experimental_toggle_automation"
 SERVICE_SET_GROUP_MEMBERSHIP = "experimental_set_group_membership"
 SERVICE_PUSH_AUTOMATION_TO_HARDWARE = "experimental_push_automation_to_hardware"
+SERVICE_ADD_DEVICE_TO_SCENE = "experimental_add_device_to_scene"
+SERVICE_REMOVE_DEVICE_FROM_SCENE = "experimental_remove_device_from_scene"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -63,6 +65,7 @@ ATTR_RGB = "rgb"
 ATTR_MEMBER = "member"
 ATTR_REACH_FLAG = "reach_flag"
 ATTR_AUTOMATION_ENTITY_ID = "automation_entity_id"
+ATTR_FADE = "fade"
 
 # Day-of-week bitmask - AddAutomationHubCommand.java's WriteBuffer field
 # (see cync_lan.devices.add_automation's docstring): Sunday=bit0 through
@@ -96,6 +99,19 @@ _SCHEDULE_MODE = {"disabled": 0, "occupancy": 1, "vacancy": 2, "simple": 3}
 # GroupReachFlag - ControlDeviceGroupCommand.java, see docs/mesh_opcodes.md's
 # "Groups control" section.
 _REACH_FLAG = {"normal": 0x00, "receive_only": 0x87}
+# ScheduleFade.java's 1-byte signed enum - a coded duration bucket, not raw
+# seconds. See docs/mesh_opcodes.md's "Fine/fade brightness" follow-up and
+# CyncDevice.add_to_scene()'s docstring.
+_FADE = {
+    "no_fade": 0xFF,
+    "10_seconds": 1,
+    "30_seconds": 2,
+    "1_minute": 3,
+    "5_minutes": 4,
+    "10_minutes": 5,
+    "20_minutes": 6,
+    "30_minutes": 7,
+}
 
 
 def _resolve_device(hass: HomeAssistant, device_id: str):
@@ -253,6 +269,27 @@ async def _handle_set_group_membership(hass: HomeAssistant, call: ServiceCall) -
         member=call.data[ATTR_MEMBER],
         reach_flag=_REACH_FLAG[reach_flag],
     )
+
+
+async def _handle_add_device_to_scene(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Adds/updates this device's captured color state within an existing
+    scene - reachable standalone (unlike push_automation_to_hardware's
+    internal use of the same underlying method), so it can be tested
+    against a scene you already have (Cync-app-created or otherwise)
+    without going through the whole automation-push flow."""
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    rgb = call.data.get(ATTR_RGB)
+    await node.add_to_scene(
+        call.data[ATTR_SCENE_ID],
+        cct=call.data.get(ATTR_CCT),
+        rgb=tuple(rgb) if rgb else None,
+        fade=_FADE[call.data.get(ATTR_FADE, "no_fade")],
+    )
+
+
+async def _handle_remove_device_from_scene(hass: HomeAssistant, call: ServiceCall) -> None:
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    await node.remove_from_scene(call.data[ATTR_SCENE_ID])
 
 
 def _resolve_cync_light_entity(hass: HomeAssistant, entity_id: str):
@@ -619,6 +656,25 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_AUTOMATION_ENTITY_ID): cv.entity_domain("automation"),
         }
     ),
+    SERVICE_ADD_DEVICE_TO_SCENE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_SCENE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+            vol.Optional(ATTR_CCT): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional(ATTR_RGB): vol.All(
+                cv.ensure_list,
+                [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+                vol.Length(min=3, max=3),
+            ),
+            vol.Optional(ATTR_FADE, default="no_fade"): vol.In(_FADE),
+        }
+    ),
+    SERVICE_REMOVE_DEVICE_FROM_SCENE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_SCENE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+        }
+    ),
 }
 
 _HANDLERS = {
@@ -632,11 +688,13 @@ _HANDLERS = {
     SERVICE_TOGGLE_AUTOMATION: _handle_toggle_automation,
     SERVICE_SET_GROUP_MEMBERSHIP: _handle_set_group_membership,
     SERVICE_PUSH_AUTOMATION_TO_HARDWARE: _handle_push_automation_to_hardware,
+    SERVICE_ADD_DEVICE_TO_SCENE: _handle_add_device_to_scene,
+    SERVICE_REMOVE_DEVICE_FROM_SCENE: _handle_remove_device_from_scene,
 }
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 10 experimental services - idempotent, so calling this
+    """Register all 12 experimental services - idempotent, so calling this
     from every config entry's async_setup_entry (there's only ever one
     entry per the unique-config-entry design, but this is cheap insurance)
     is safe."""
@@ -652,7 +710,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove all 10 services, but only once no Cync LAN config entry
+    """Remove all 12 services, but only once no Cync LAN config entry
     remains loaded - checked as "<=1" rather than "==0" because this runs
     from async_unload_entry *before* HA has finished marking the entry
     currently being unloaded as unloaded, so that entry itself would

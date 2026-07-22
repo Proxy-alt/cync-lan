@@ -1883,6 +1883,67 @@ class CyncDevice:
         m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
 
+    async def remove_from_scene(self, scene_id: int, sub_id: Optional[int] = None) -> None:
+        """EXPERIMENTAL: removes THIS device's captured state from an
+        existing scene (by scene_id) - the counterpart to add_to_scene().
+        Unlike add_to_scene(), BOTH product-family branches are
+        implemented here: RemoveDeviceSceneCommand.java's hub-routed path
+        turned out to reuse the same trustworthy mo14054f() envelope
+        already confirmed for set_group_membership()'s is_sol_lamp branch,
+        not the more complex manually-built WriteBuffer/FrameCode frame
+        that blocked add_to_scene()'s hub path - so there's no unconfirmed
+        format to guess at here.
+
+        Confirmed via RemoveDeviceSceneCommand.java (decompiled app):
+        opcode array f34625q = `{0xEE,0x11,0x02,0x00}` (note the fixed
+        trailing 0x00 - unlike add_to_scene()'s sibling command, there is
+        no actionType/mode/color/fade field at all, since removing a
+        device from a scene has nothing to configure) + sceneId (1 byte).
+
+        Non-hub-routed (common case, `is_sol_lamp=False`): dispatched via
+        the same `0x8E` "mesh-relay" substitution bug as add_to_scene/
+        set_indicator_led/etc - the array's own leading `0xEE` is NOT the
+        real outer op_code (that's the hardcoded `0x8E`), so it's included
+        as literal payload data: `op=0x8E`,
+        `payload=[0xEE,0x11,0x02,0x00,sceneId]` (5 bytes),
+        `repeat_op_code=False`.
+
+        Hub-routed (`is_sol_lamp=True`): dispatched via the trustworthy
+        `mo14054f()` envelope with a genuine real `op_code=0xEE` - the
+        array's own leading `0xEE` byte is the same byte the real app
+        passes as `mo14054f()`'s op_code argument, then re-embeds inside
+        its own payload array (`ArraysKt.plus(f34625q, sceneId)` is passed
+        to `mo14054f((byte) -18, ...)` unmodified). cync-lan's own
+        PacketBuilder already inserts a repeated op_code byte for this
+        exact real-op case (`repeat_op_code=True`, the default - see
+        set_group_membership()'s identical is_sol_lamp branch), so the
+        payload given here omits that leading byte to avoid sending it
+        twice: `op=0xEE`, `payload=[0x11,0x02,0x00,sceneId]` (4 bytes).
+
+        Dispatched through the same `mo14054f()`/`mo14056h()` methods
+        already proven to carry real TCP-relay traffic (unlike
+        create_scene/create_schedule/add_automation's Hub-notification
+        transport question) - only `cmd_` is PREDICTED via the length
+        formula, not confirmed against a live capture.
+        """
+        lp = f"{self.lp}remove_from_scene:"
+        _warn_experimental_cmd_code(lp, "remove_from_scene")
+        if not (0 <= scene_id <= 0xFF):
+            logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-255 (1-byte field)")
+            return
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        if self.is_sol_lamp:
+            op = 0xEE
+            payload = struct.pack(">BBB", 0x11, 0x02, 0x00) + struct.pack(">B", scene_id)
+            cmd_ = 7 + len(payload) + 1  # +1: repeated op_code byte (repeat_op_code default True)
+            await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
+        else:
+            op = 0x8E
+            payload = struct.pack(">BBBB", 0xEE, 0x11, 0x02, 0x00) + struct.pack(">B", scene_id)
+            cmd_ = 7 + len(payload)
+            await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+
     @staticmethod
     def _build_motion_sensor_settings_payload(
         setting_type: int,

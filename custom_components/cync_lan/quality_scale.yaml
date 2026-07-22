@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (347 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (355 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,7 +9,7 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 10 experimental_* services are registered idempotently in
+      services.py's 12 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning's raw service is
@@ -63,6 +63,16 @@ rules:
       scene_id/schedule_id is a distinct HDLC/PPP-style frame format
       (src/cync_lan/packet/xlink_legacy.py) whose presence on cync-lan's
       TCP connection at all is unconfirmed (see docs/cync_automations.md).
+      experimental_add_device_to_scene/experimental_remove_device_from_scene
+      are a seventh kind: standalone versions of the same add_to_scene/
+      remove_from_scene functions push_automation_to_hardware already uses
+      internally, added so they're independently testable against a scene
+      you already have rather than only reachable through the full
+      automation-push flow. remove_from_scene is unusual among every
+      command in this integration in that BOTH device product-family
+      branches are dispatch-confirmed from decompiled source (no
+      unconfirmed format guessed at for either) - only cmd_code is
+      predicted, same as everything else.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -123,7 +133,7 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 10 experimental_*
+      strings.json's "services" block documents all 12 experimental_*
       services and their fields, each description explicitly flagging what's
       actually unconfirmed for that specific command - predicted cmd_code
       for most, the target address too for scenes, for group power
