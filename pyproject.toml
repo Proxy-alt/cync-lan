@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cync_lan"
-version = "0.0.6b45"
+version = "0.0.6b46"
 description = "A Python library for local async MQTT control of Cync/C by GE smart devices (DNS redirection required)"
 readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
@@ -34,9 +34,13 @@ dependencies = [
 dev = [
     "python-dotenv>=1.1.0",
 ]
+ble = [
+    "bleak>=0.22.0",
+]
 
 [project.scripts]
 cync-lan = "cync_lan.main:main"
+cync-lan-ble-provision = "cync_lan.ble_provision:main"
 
 [project.urls]
 Homepage = "https://github.com/baudneo/cync-lan"
