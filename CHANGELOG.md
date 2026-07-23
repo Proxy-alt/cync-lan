@@ -1,3 +1,10 @@
+### 0.0.6b48
+- Add `CyncDevice.relay_source` tracking: whichever TCP-connected device most recently relayed a
+  status update for a given device, set at every mesh status/MeshInfo parse site. The only presence
+  signal available for a BTLE-mesh-only device, which never owns a direct TCP connection of its
+  own - not yet exposed as an MQTT topic here, but backs the HA custom_component's new "Connected
+  via" diagnostic sensor (see its own `CHANGELOG.md`).
+
 ### 0.0.6b47
 - Fix devices going unavailable when they lose power or network not being detected - `close()`
   tore down a TCP session's socket resources but never marked the device that owned it offline,
