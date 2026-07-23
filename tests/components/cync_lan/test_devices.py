@@ -1393,3 +1393,29 @@ async def test_close_is_a_noop_for_online_when_no_node_is_set():
     await session.close()  # must not raise
 
     g.mqtt_client.remove_mitm_button.assert_not_awaited()
+
+
+async def test_parse_83_device_state_records_relay_source():
+    """Diagnostic entity support: whichever TCP session parses a status
+    update for a device is recorded as that device's relay_source - the
+    only presence signal available for a BTLE-mesh-only device, which
+    never has a tcp_session of its own (see entity.py's
+    CyncLanRelaySourceSensor in the HA integration)."""
+    g = GlobalObject()
+    node = _fake_node()
+    node.metadata = None
+    node.type = 0
+    node.handle_entity_update = AsyncMock()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {5: node}
+
+    session = _fake_session(node=None)
+
+    packet_data = bytearray(26)
+    packet_data[14] = 5  # dev_id
+    packet_data[19:26] = bytes([1, 1, 100, 50, 0, 0, 0])  # recently_seen/power/bri/tmp/r/g/b
+
+    await session._parse_83_device_state(bytes(packet_data), checksum=0, calc_chksum=0, lp="test:")
+
+    assert node.relay_source is session
+    node.handle_entity_update.assert_awaited_once()

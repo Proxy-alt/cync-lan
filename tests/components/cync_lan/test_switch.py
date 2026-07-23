@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from homeassistant.exceptions import HomeAssistantError
+import pytest
+
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.switch import (
     CyncLanIndicatorLedWifiBlinkSwitch,
+    CyncLanMitmModeSwitch,
     CyncLanScheduleSwitch,
     CyncLanSwitch,
     async_setup_entry,
@@ -20,6 +24,7 @@ def _fake_node(**overrides):
     node.mac = "AA:BB:CC:DD:EE:FF"
     node.wifi_mac = "11:22:33:44:55:66"
     node.bt_only = False
+    node.has_wifi = True
     node.metadata = MagicMock(supported=True)
     node.metadata.model_string = "Some Model"
     node.is_switch = True
@@ -86,6 +91,107 @@ async def test_setup_entry_creates_wifi_blink_switch_for_every_supported_node(ha
     # unsupported (metadata=None) is skipped entirely; fan and not_switch
     # both still get the config switch despite failing CyncLanSwitch's gate.
     assert len(blink_switches) == 2
+
+
+async def test_setup_entry_creates_mitm_switch_only_for_wifi_devices(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    unsupported = _fake_node(metadata=None)
+    bt_only = _fake_node(has_wifi=False, bt_only=True)
+    wifi_capable = _fake_node()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {1: unsupported, 2: bt_only, 3: wifi_capable}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    mitm_switches = [e for e in added if isinstance(e, CyncLanMitmModeSwitch)]
+    assert len(mitm_switches) == 1
+    assert mitm_switches[0]._node is wifi_capable
+
+
+def test_mitm_switch_is_diagnostic_and_disabled_by_default():
+    bridge = MagicMock()
+    node = _fake_node()
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+    assert entity.entity_category == "diagnostic"
+    assert entity.entity_registry_enabled_default is False
+    assert entity.translation_key == "mitm_mode"
+
+
+def test_mitm_switch_is_on_reflects_tcp_session_mitm_mode():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = MagicMock(mitm_mode=True)
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+    assert entity.is_on is True
+
+
+def test_mitm_switch_is_on_false_when_no_active_session():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = None
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+    assert entity.is_on is False
+
+
+def test_mitm_switch_unavailable_when_no_active_session():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = None
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+    assert entity.available is False
+
+
+async def test_mitm_switch_turn_on_calls_start_mitm():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = MagicMock()
+    node.tcp_session.start_mitm = AsyncMock()
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+    entity.async_write_ha_state = MagicMock()
+
+    await entity.async_turn_on()
+
+    node.tcp_session.start_mitm.assert_awaited_once()
+
+
+async def test_mitm_switch_turn_off_calls_stop_mitm():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = MagicMock()
+    node.tcp_session.stop_mitm = AsyncMock()
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+    entity.async_write_ha_state = MagicMock()
+
+    await entity.async_turn_off()
+
+    node.tcp_session.stop_mitm.assert_awaited_once()
+
+
+async def test_mitm_switch_turn_on_raises_when_no_active_session():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = None
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+
+    with pytest.raises(HomeAssistantError):
+        await entity.async_turn_on()
+
+
+async def test_mitm_switch_turn_off_raises_when_no_active_session():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = None
+    entity = CyncLanMitmModeSwitch(bridge, "entry1", node)
+
+    with pytest.raises(HomeAssistantError):
+        await entity.async_turn_off()
 
 
 async def test_setup_entry_creates_one_entity_per_sub_id(hass):

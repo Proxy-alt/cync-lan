@@ -143,7 +143,18 @@ Supported entity types in this integration specifically:
   than reading live device state.
 - **Sensor (diagnostic)** - one entity per native Cync motion-sensor
   schedule slot (morning/daytime/evening/sleep), for devices that belong to
-  a Cync app group with schedules configured. Read-only.
+  a Cync app group with schedules configured. Read-only. Every device also
+  gets exactly one of two connection-diagnostic sensors: **IP address**
+  (WiFi-capable devices - the LAN address of its own direct TCP
+  connection) or **Connected via** (BTLE-mesh-only devices - which
+  WiFi-capable device is currently relaying its status).
+- **Switch (diagnostic, disabled by default)** - a MITM-mode toggle per
+  WiFi-capable device, for capturing traffic to help add support for new
+  devices/features - see [Known limitations](#known-limitations). While
+  active, the device disconnects from this integration and reconnects
+  through the real Cync cloud instead, so it can't be controlled locally.
+  Hidden by default since most users never need it; enable it in the
+  entity registry if you do.
 - **Scene** - one activatable entity per saved Cync Scene ("Routines ->
   Scenes"), reachable from HA's own scene picker instead of a raw service
   call. EXPERIMENTAL - see [Known limitations](#known-limitations).
@@ -365,6 +376,17 @@ cleaned up with `cync_lan.experimental_delete_scene`/
   doesn't know or replicate the order/timing the real Cync app uses across
   multiple calls when programming more than 2 segments - you'll need to
   experiment with call order yourself, and please report what you find.
+- **MITM mode disconnects the device from local control while active.**
+  It's a debugging aid for capturing traffic, not something to leave on -
+  a device in MITM mode is proxied to the real Cync cloud and won't
+  respond to any command from this integration until it's turned back
+  off. Disabled by default (see [above](#supported-devices-and-functions))
+  precisely so it can't be toggled on by accident.
+- **"Connected via" reflects whichever device last relayed a status
+  update, not a stable topology.** A BTLE-mesh-only device has no fixed
+  "parent" - if the mesh reconfigures which WiFi-capable device relays
+  it, this sensor's value changes accordingly. Not a bug, just not a
+  permanent assignment.
 
 ## Troubleshooting
 

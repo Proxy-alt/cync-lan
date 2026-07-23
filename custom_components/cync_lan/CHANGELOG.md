@@ -8,6 +8,21 @@ root `CHANGELOG.md`) - the two are versioned and released separately, even
 though this integration depends on that package to do the actual protocol
 work.
 
+### 0.5.0
+
+- Add a per-device MITM-mode toggle switch (diagnostic category, disabled
+  by default - most users never need it): puts a device into the
+  underlying package's traffic-capture debug mode, useful for helping add
+  support for new devices/features. Reads/writes the device's own TCP
+  session directly rather than the underlying package's MQTT-discovery
+  mechanism, which this integration's static entity model has no use for.
+- Add two connection-diagnostic sensors, exactly one per device depending
+  on how it connects: **IP address** for WiFi-capable devices (the LAN
+  address of its own direct connection), or **Connected via** for
+  BTLE-mesh-only devices (which WiFi-capable device is currently relaying
+  its status - a new `CyncDevice.relay_source` tracking addition in the
+  underlying package, set at every mesh status/MeshInfo parse site).
+
 ### 0.4.1
 
 - Fix devices going unavailable when they lose power or network not being

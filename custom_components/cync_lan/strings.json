@@ -125,6 +125,9 @@
     "switch": {
       "indicator_led_wifi_disconnect_blink": {
         "name": "Indicator LED blink on WiFi disconnect"
+      },
+      "mitm_mode": {
+        "name": "MITM mode"
       }
     },
     "sensor": {
@@ -133,6 +136,12 @@
       },
       "sensor_schedule_slot_grouped": {
         "name": "{group_name} {slot} schedule"
+      },
+      "diagnostic_ip_address": {
+        "name": "IP address"
+      },
+      "diagnostic_relay_source": {
+        "name": "Connected via"
       }
     }
   },

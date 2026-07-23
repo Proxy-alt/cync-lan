@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (403 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (419 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -374,7 +374,9 @@ rules:
     comment: SwitchDeviceClass.OUTLET/SWITCH in switch.py; motion/occupancy device_class in binary_sensor.py. Tested.
   entity-disabled-by-default:
     status: done
-    comment: CyncLanAppMeshActiveSensor is disabled by default via DEFAULT_DISABLED_ENTITIES. Tested.
+    comment: >-
+      CyncLanAppMeshActiveSensor and CyncLanMitmModeSwitch (switch.py) are
+      both disabled by default via DEFAULT_DISABLED_ENTITIES. Tested.
   entity-translations:
     status: done
     comment: >-

@@ -14,11 +14,12 @@ from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DEFAULT_DISABLED_ENTITIES, DOMAIN, MANUFACTURER
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,6 +48,12 @@ async def async_setup_entry(
         # entity above (the indicator LED is a whole-device feature, see
         # select.py/number.py for its sibling mode/color/brightness entities).
         entities.append(CyncLanIndicatorLedWifiBlinkSwitch(bridge, entry.entry_id, node))
+        # MITM debug mode - only devices capable of their own direct TCP
+        # connection can be put into MITM mode at all (see
+        # CyncLanMitmModeSwitch's docstring); BTLE-mesh-only devices never
+        # have a tcp_session to toggle.
+        if node.has_wifi:
+            entities.append(CyncLanMitmModeSwitch(bridge, entry.entry_id, node))
 
     # Schedule enable/disable - home-wide, not tied to any device, attached
     # to the bridge device like scene.py's scene entities. See
@@ -87,6 +94,70 @@ class CyncLanSwitch(CyncLanEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self._node.set_power(0, sub_id=self._sub_id or None)
+
+
+class CyncLanMitmModeSwitch(CyncLanEntity, SwitchEntity):
+    """Debug/reverse-engineering aid: when enabled, this device's TCP
+    session is disconnected and forced to reconnect through a real
+    connection to the Cync cloud instead of this integration - every byte
+    exchanged is proxied and logged (see the underlying package's
+    start_mitm()/stop_mitm()), useful for capturing traffic to support a
+    new device/feature, but the device can't be controlled locally while
+    active. Diagnostic category and disabled-by-default
+    (entity-disabled-by-default, gold) - most users never need this, and
+    it's easy to forget was left on, at which point the device silently
+    stops responding to local commands.
+
+    Only created for WiFi-capable devices (has_wifi) - a BTLE-mesh-only
+    device never has a tcp_session of its own to put into MITM mode.
+    Reads/writes CyncTCPSession.mitm_mode directly rather than going
+    through the underlying package's MQTT-discovery-oriented
+    add_mitm_button/remove_mitm_button (a dynamic-entity mechanism this
+    integration's static, HA-native entity model has no use for - see
+    bridge.py's docstring on those two no-op stubs).
+    """
+
+    _attr_translation_key = "mitm_mode"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = "mitm_mode" not in DEFAULT_DISABLED_ENTITIES
+    _attr_assumed_state = True
+
+    def __init__(self, bridge, entry_id: str, node) -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_mitm_mode")
+
+    @property
+    def is_on(self) -> bool:
+        session = self._node.tcp_session
+        return bool(session.mitm_mode) if session else False
+
+    @property
+    def available(self) -> bool:
+        # Overrides CyncLanEntity.available (bridge.is_online) - MITM mode
+        # is a property of this device's OWN tcp_session specifically, not
+        # its general mesh online/offline status. A device that's only
+        # reachable via BTLE-mesh relay right now (its own direct
+        # connection dropped, even if some other device relays its normal
+        # status broadcasts) genuinely can't have MITM toggled - reflect
+        # that instead of showing a control that would silently no-op.
+        return self._node.tcp_session is not None
+
+    async def async_turn_on(self, **kwargs) -> None:
+        session = self._node.tcp_session
+        if session is None:
+            raise HomeAssistantError(
+                f"{self._node.name} has no active connection to toggle MITM mode on right now."
+            )
+        await session.start_mitm()
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        session = self._node.tcp_session
+        if session is None:
+            raise HomeAssistantError(
+                f"{self._node.name} has no active connection to toggle MITM mode on right now."
+            )
+        await session.stop_mitm()
+        self.async_write_ha_state()
 
 
 class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, RestoreEntity, SwitchEntity):

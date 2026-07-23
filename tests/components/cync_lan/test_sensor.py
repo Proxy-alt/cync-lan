@@ -6,7 +6,9 @@ from unittest.mock import MagicMock
 
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.sensor import (
+    CyncLanIpAddressSensor,
     CyncLanMotionScheduleSensor,
+    CyncLanRelaySourceSensor,
     async_setup_entry,
 )
 
@@ -18,6 +20,7 @@ def _fake_node(**overrides):
     node.mac = "AA:BB:CC:DD:EE:FF"
     node.wifi_mac = "11:22:33:44:55:66"
     node.bt_only = False
+    node.has_wifi = True
     node.metadata = MagicMock(supported=True)
     node.metadata.model_string = "Some Model"
     node.has_motion_sensor = True
@@ -49,12 +52,16 @@ _DISABLED_SLOT = {
 
 
 async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass):
+    """No motion-schedule sensors get created for these 3 devices, but the
+    connection-diagnostic sensor (IP address, since has_wifi=True here)
+    is unconditional for every supported device regardless of motion
+    sensor/schedule status - 2 of the 3 devices are supported."""
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
     unsupported = _fake_node(metadata=None)
-    no_motion = _fake_node(has_motion_sensor=False)
-    no_schedule = _fake_node()
+    no_motion = _fake_node(id=1, has_motion_sensor=False)
+    no_schedule = _fake_node(id=2)
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {0: unsupported, 1: no_motion, 2: no_schedule}
 
@@ -66,7 +73,8 @@ async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert added == []
+    assert len(added) == 2
+    assert all(isinstance(e, CyncLanIpAddressSensor) for e in added)
 
 
 async def test_setup_entry_creates_one_sensor_per_slot(hass):
@@ -91,11 +99,12 @@ async def test_setup_entry_creates_one_sensor_per_slot(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert len(added) == 2
+    assert len(added) == 3
     unique_ids = {e.unique_id for e in added}
     assert unique_ids == {
         "entry1_5_schedule_32770_daytime",
         "entry1_5_schedule_32770_sleep",
+        "entry1_5_ip_address",
     }
 
 
@@ -176,3 +185,83 @@ def test_entity_category_is_diagnostic():
         slot=_DAYTIME_SLOT, disambiguate=False,
     )
     assert entity.entity_category == "diagnostic"
+
+
+async def test_setup_entry_creates_ip_address_sensor_for_wifi_devices(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    node = _fake_node(has_wifi=True, bt_only=False)
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {5: node}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.groups = {}
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert len(added) == 1
+    assert isinstance(added[0], CyncLanIpAddressSensor)
+    assert added[0].unique_id == "entry1_5_ip_address"
+
+
+async def test_setup_entry_creates_relay_source_sensor_for_bt_only_devices(hass):
+    from cync_lan.structs import GlobalObject
+
+    g = GlobalObject()
+    node = _fake_node(has_wifi=False, bt_only=True)
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {5: node}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.groups = {}
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert len(added) == 1
+    assert isinstance(added[0], CyncLanRelaySourceSensor)
+    assert added[0].unique_id == "entry1_5_relay_source"
+
+
+def test_ip_address_sensor_reads_tcp_session_ip():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = MagicMock(ip_address="192.168.1.50")
+    entity = CyncLanIpAddressSensor(bridge, "entry1", node)
+    assert entity.native_value == "192.168.1.50"
+    assert entity.translation_key == "diagnostic_ip_address"
+    assert entity.entity_category == "diagnostic"
+
+
+def test_ip_address_sensor_none_when_no_active_session():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.tcp_session = None
+    entity = CyncLanIpAddressSensor(bridge, "entry1", node)
+    assert entity.native_value is None
+
+
+def test_relay_source_sensor_reads_relaying_devices_name():
+    bridge = MagicMock()
+    node = _fake_node()
+    relay_session = MagicMock()
+    relay_session.node.name = "Living Room Lamp"
+    node.relay_source = relay_session
+    entity = CyncLanRelaySourceSensor(bridge, "entry1", node)
+    assert entity.native_value == "Living Room Lamp"
+    assert entity.translation_key == "diagnostic_relay_source"
+    assert entity.entity_category == "diagnostic"
+
+
+def test_relay_source_sensor_none_when_never_relayed():
+    bridge = MagicMock()
+    node = _fake_node()
+    node.relay_source = None
+    entity = CyncLanRelaySourceSensor(bridge, "entry1", node)
+    assert entity.native_value is None

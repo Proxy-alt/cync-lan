@@ -996,6 +996,17 @@ class CyncDevice:
     num_late_states: int = 0
     mqtt_metadata = None
     tcp_session: Optional["CyncTCPSession"] = None
+    # Which TCP-connected device most recently relayed a status update for
+    # THIS device - distinct from tcp_session above (this device's OWN
+    # direct connection, only set for WiFi-capable devices that identify
+    # themselves). A BTLE-mesh-only device (bt_only=True) has no
+    # tcp_session of its own; its only presence signal is another
+    # device's relayed mesh broadcast, so this is the one place that
+    # records which WiFi hub is currently doing that relaying - set at
+    # every status-update parse site (see _parse_83_device_state,
+    # _handle_73_mesh_control, _process_73_mesh_info), read by the HA
+    # integration's diagnostic "Connected via"/"IP address" entities.
+    relay_source: Optional["CyncTCPSession"] = None
 
     def __init__(
         self,
@@ -3400,6 +3411,7 @@ class CyncTCPSession:
                 f"{lp} Received internal STATUS for unknown device [group/room?, safe to ignore]: {parsed_state}"
             )
             return
+        cync_device.relay_source = self
 
         if cync_device.metadata and cync_device.metadata.type == DeviceClassification.SENSOR:
             # Standalone motion sensor: recently_seen carries the actual trigger flag
@@ -3490,6 +3502,7 @@ class CyncTCPSession:
                     motion_flag = bool(packet_data[15])
                     motion_device = g.ncync_server.node_devices.get(motion_dev_id)
                     if motion_device and motion_device.has_motion_sensor:
+                        motion_device.relay_source = self
                         logger.debug(
                             f"{lp} Motion STATUS for {motion_device.name}: {motion_flag}"
                         )
@@ -3661,6 +3674,7 @@ class CyncTCPSession:
             )
             if node_repr:
                 dev_name = node_repr.name
+                node_repr.relay_source = self
                 if loop_num == 1 and is_new_sequence:
                     # Only the first entry of the FIRST page of a fresh MeshInfo
                     # sequence is the device announcing itself. MeshInfo is

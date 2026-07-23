@@ -67,6 +67,20 @@ async def async_setup_entry(
                         disambiguate=disambiguate,
                     )
                 )
+
+    for node in g.ncync_server.node_devices.values():
+        if node.metadata is None or not node.metadata.supported:
+            continue
+        # Connection diagnostics - exactly one of these two per device,
+        # gated on the same has_wifi/bt_only split as switch.py's MITM
+        # toggle: a device either owns a direct TCP connection (so its own
+        # IP is meaningful) or is only ever reachable through another
+        # device's BTLE-mesh relay (so which device is relaying it is the
+        # meaningful fact instead) - never both, never neither.
+        if node.has_wifi:
+            entities.append(CyncLanIpAddressSensor(bridge, entry.entry_id, node))
+        else:
+            entities.append(CyncLanRelaySourceSensor(bridge, entry.entry_id, node))
     async_add_entities(entities)
 
 
@@ -117,3 +131,48 @@ class CyncLanMotionScheduleSensor(CyncLanEntity, SensorEntity):
             "group_id": self._group_id,
             "group_name": self._group_name,
         }
+
+
+class CyncLanIpAddressSensor(CyncLanEntity, SensorEntity):
+    """The LAN IP address of this device's own direct TCP connection to
+    the local listener - only created for WiFi-capable devices
+    (has_wifi), which always own a direct connection when reachable at
+    all (see CyncLanRelaySourceSensor for the BTLE-mesh-only case). None
+    while the device has no active connection - reported "Unavailable" by
+    virtue of CyncLanEntity.available already reflecting the same
+    online/offline tracking, not a separate check here."""
+
+    _attr_translation_key = "diagnostic_ip_address"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, bridge, entry_id: str, node) -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_ip_address")
+
+    @property
+    def native_value(self) -> str | None:
+        session = self._node.tcp_session
+        return session.ip_address if session else None
+
+
+class CyncLanRelaySourceSensor(CyncLanEntity, SensorEntity):
+    """Which WiFi-capable device is currently relaying this BTLE-mesh-only
+    device's status over its own TCP connection - the only presence
+    signal this kind of device has at all, since it never owns a direct
+    connection of its own (see CyncLanIpAddressSensor for that case).
+    Reflects whichever device most recently reported a status update
+    naming this one (CyncDevice.relay_source, set at every mesh status/
+    MeshInfo parse site in devices.py) - can change if the mesh
+    reconfigures which WiFi device relays it."""
+
+    _attr_translation_key = "diagnostic_relay_source"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, bridge, entry_id: str, node) -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_relay_source")
+
+    @property
+    def native_value(self) -> str | None:
+        relay = self._node.relay_source
+        if relay is None or relay.node is None:
+            return None
+        return relay.node.name
