@@ -24,6 +24,7 @@ jobs:
   prerelease:
     runs-on: ubuntu-latest
     outputs:
+      version: ${{ steps.version.outputs.version }}
       exists: ${{ steps.check.outputs.exists }}
     steps:
       - name: Check out the repository
@@ -73,9 +74,30 @@ jobs:
             --prerelease \
             --target "${{ github.sha }}"
 
-  publish:
+  check_pypi:
     needs: prerelease
-    if: needs.prerelease.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.check.outputs.published }}
+    steps:
+      - name: Check whether this version is already live on PyPI
+        id: check
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/cync-lan-mqtt/${{ needs.prerelease.outputs.version }}/json")
+          if [ "$status" = "200" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: [prerelease, check_pypi]
+    # Deliberately independent of prerelease's tag-existence check: a tag/
+    # GitHub release can already exist while the actual PyPI publish never
+    # succeeded (e.g. the Trusted Publisher wasn't configured yet on an
+    # earlier run) - gate on PyPI's own state instead, so a workflow_dispatch
+    # re-run can retry the publish step alone without needing a new version.
+    if: needs.check_pypi.outputs.published == 'false'
     runs-on: ubuntu-latest
     environment: pypi-mqtt
     permissions:
