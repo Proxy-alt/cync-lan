@@ -22,6 +22,15 @@ env:
 
 jobs:
   build:
+    # Guards against prerelease_ha_integration.yml/prerelease_python_package.yml:
+    # both now create GitHub releases (as prereleases) too, which also fire
+    # this workflow's release:published trigger - the HA custom_component's
+    # own vX.Y.Z releases have nothing to do with this Docker image and must
+    # not trigger a build tagged with an unrelated version number. Only
+    # cync-lan-vX.Y.Z (the python package's own prefix, see RELEASING.md)
+    # should build. workflow_dispatch runs are unaffected (no release event
+    # to check tag_name against).
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'cync-lan-v')
 
     runs-on: ubuntu-latest
     permissions:
