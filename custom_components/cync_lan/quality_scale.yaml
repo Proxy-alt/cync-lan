@@ -119,28 +119,24 @@ rules:
       credentials (immutable identity); entry.options holds user-changeable
       settings (local port, export refresh interval).
   dependency-transparency:
-    status: todo
+    status: done
     comment: >-
       manifest.json's requirements previously referenced a git+https URL
       (github.com/Proxy-alt/cync-lan); as of Home Assistant 2026.1, core's
       requirement parser strictly validates against PEP 508 and rejects
       git+https:// requirement URLs outright (home-assistant/core#160450),
       making that approach unusable at all, not just non-ideal. Worked
-      around by vendoring the cync_lan protocol package directly under
-      custom_components/cync_lan/vendor/ (see const.py's sys.path
-      bootstrap); manifest.json's requirements now lists only real PyPI
-      packages (pyyaml, pydantic, tzlocal, cryptography). uvloop was
-      dropped from requirements entirely after a real install failure on
-      Python 3.14 (no uvloop wheels exist for that ABI at all yet) - it
-      was only ever referenced for type hints in structs.py/server.py,
-      never actually constructed on the code path this integration uses,
-      so those imports were moved under TYPE_CHECKING instead of being a
-      hard runtime dependency. Still "todo" because vendoring a local
-      copy isn't the same as a pinned,
-      independently-versioned, reproducible PyPI release - publishing
-      cync-lan to PyPI would resolve this properly, and requires an actual
-      publish action outside the scope of what a code change in this
-      branch can do.
+      around for a while by vendoring the cync_lan protocol package
+      directly under custom_components/cync_lan/vendor/ - resolved
+      properly by extracting that code into its own cync-lan package,
+      published to PyPI, on a new `core` branch. manifest.json's
+      requirements now lists a real, pinned, independently-versioned PyPI
+      dependency (cync-lan>=0.1.0) instead of a vendored copy; the
+      vendor/ directory and const.py's sys.path bootstrap are gone. uvloop
+      remains out of requirements entirely (no PyPI wheels for newer
+      CPython ABIs yet) - it's still only referenced under TYPE_CHECKING
+      in cync-lan's own structs.py/server.py, never constructed on any
+      code path this integration uses.
   docs-actions:
     status: done
     comment: >-
@@ -448,14 +444,14 @@ rules:
 
   # ------------------------------ Platinum -------------------------------
   async-dependency:
-    status: todo
+    status: done
     comment: >-
-      The cync_lan package's protocol code (devices.py, server.py) is
-      asyncio-native throughout, and cloud_api.py now accepts an injected
-      session (see inject-websession) rather than always creating its own -
-      but the package still isn't published as an intentionally-async-first
-      library with a versioned/semver API guarantee (see
-      dependency-transparency), which is the remaining piece of this rule.
+      The cync-lan package's protocol code (devices.py, server.py) is
+      asyncio-native throughout, and cloud_api.py accepts an injected
+      session (see inject-websession) rather than always creating its own.
+      Now published to PyPI as a versioned, semver-guaranteed package (see
+      dependency-transparency) with a py.typed marker - the remaining gap
+      this rule used to cite is resolved.
   inject-websession:
     status: done
     comment: >-
@@ -472,6 +468,11 @@ rules:
   strict-typing:
     status: todo
     comment: >-
-      No py.typed marker on this integration, and the upstream cync_lan
-      package doesn't provide one either - a hard blocker for platinum
-      regardless of what this integration branch does on its own.
+      cync-lan (the upstream package) now ships a py.typed marker, and its
+      GlobalObject.mqtt_client/.export_server attributes are typed against
+      Protocol classes (cync_lan/protocols.py) instead of importing
+      concrete addon types - partial progress on this rule's "published
+      package has py.typed" half. Still todo: this integration's own code
+      (custom_components/cync_lan/) has no py.typed marker and hasn't been
+      run through strict mypy - a separate effort from the dependency
+      packaging fixed here.

@@ -2,11 +2,19 @@
 
 Version history for the Home Assistant `cync_lan` custom_component
 specifically (`custom_components/cync_lan/manifest.json`'s `version` field).
-This is independent of the underlying [`cync-lan`](https://github.com/Proxy-alt/cync-lan)
-Python package's own version scheme (`0.0.6bNN`, see the parent project's
-root `CHANGELOG.md`) - the two are versioned and released separately, even
-though this integration depends on that package to do the actual protocol
-work.
+This is independent of the [`cync-lan`](https://github.com/Proxy-alt/cync-lan/tree/core)
+core protocol library's own version scheme and the
+[`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan/tree/python)
+Docker/MQTT add-on's own version scheme - all three are versioned and
+released separately, even though this integration depends on `cync-lan` to
+do the actual protocol work.
+
+### 1.1.0
+
+- Depend on the published `cync-lan` PyPI package instead of a vendored
+  copy (`custom_components/cync_lan/vendor/`) - see `quality_scale.yaml`'s
+  `dependency-transparency`/`async-dependency` entries. No functional
+  change; this is the packaging fix those entries describe.
 
 ### 1.0.0
 
