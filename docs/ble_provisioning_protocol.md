@@ -94,14 +94,16 @@ def generate_sk(name, password, data1, data2):  # dimond/__init__.py:37-43
    `SecureRandom` output before use, rather than a genuine fixed value - not fully resolved, but
    `python-dimond`'s account is the one with real-world validation behind it.
 3. Phone reads the pairing characteristic for the device's response and takes bytes `[1:9]` as
-   `R_dev`, the device's own random contribution (`dimond/__init__.py:129,133`). **Correction**: the
-   original pass described an explicit mutual-authentication check (verifying a proof the device
-   sends back) - the real implementation performs **no such verification at all**, it just trusts
-   whatever the device returns and proceeds. Either the real app does check and `python-dimond`
-   simply skips it (plausible - a minimal client doesn't need to replicate defensive checks the
-   official app makes), or the decompile mis-read a different code path as verification; unresolved,
-   but a from-scratch client doesn't need the check either way since `python-dimond` works without
-   it.
+   `R_dev`, the device's own random contribution (`dimond/__init__.py:129,133`). **`python-dimond`
+   itself performs no mutual-auth verification** - it just trusts whatever the device returns and
+   proceeds. **Update, resolved**: a direct read of the real Cync app's own callback
+   (`C2184d.java`'s `DataReceivedCallback`, registered on this exact `ReadRequest` in
+   `TelinkDeviceBleManager.m14334v`) confirms the real app DOES perform this verification -
+   see "Resolved: the real app's mutual-auth check" below. The earlier "unresolved, either the app
+   checks and python-dimond skips it, or the decompile mis-read something" framing is now settled:
+   it's the former. This doesn't change whether a from-scratch client's pairing attempt succeeds
+   (the device doesn't care whether the phone verifies its own response), but it does mean the
+   check is real, confirmed protocol behavior worth replicating as a diagnostic.
 4. Both sides derive **`sessionKey = AES_ECB(key=XOR(meshName, meshPass), data=R_app[0:8] ‖
    R_dev[0:8])`** (`dimond/__init__.py:133`, calling `generate_sk`). The `XOR(meshName, meshPass)`
    key-material claim from the original pass is **confirmed exactly** - only the identity of the two
@@ -171,6 +173,48 @@ implements the full flow above (`bleak`-based scan → connect → factory-boots
 session-key derivation → target mesh name/password/LTK handoff), exposed as a `cync-lan-ble-provision`
 CLI (`pip install cync_lan[ble]`). Does not yet implement the WiFi credential handoff
 (`SetWifiCommand`) below - only the BLE mesh-join step.
+
+### Resolved: the real app's mutual-auth check, and the pairMesh confirmation byte
+
+A direct read of two real callback classes - not just `python-dimond`'s account, which only
+establishes what a *minimal* client needs to do - closes two more of this doc's own open items.
+
+**The real Cync app DOES verify the device's pairing response** (`C2184d.java`'s
+`DataReceivedCallback`, the callback registered on the `ReadRequest` right after
+`TelinkDeviceBleManager.m14334v`'s pairing write). Contrary to this doc's earlier framing (based
+only on `python-dimond`, which skips this), the shipped app reconstructs an expected proof value
+from the device's own `R_dev` and compares it against what the device actually sent:
+
+```
+r_dev = response[1:9]
+expected_proof = key_encrypt(meshName, meshPass, key=pad16(r_dev))[0:8]
+# real app requires: response[9:17] == expected_proof, else session key is set to null (pairing fails)
+```
+
+This is a **client-side-only** check - the device has no way to know whether the phone validated
+its response, so this cannot be what makes a device accept or reject pairing. A from-scratch client
+that skips it (as `python-dimond` does, and still works) will not be rejected by the device for
+that reason. It's valuable anyway as a diagnostic: if this check fails, something about how `R_dev`
+or the mesh name/password is being interpreted is probably wrong, and would otherwise surface later
+as a much more confusing failure once the (silently-wrong) session key gets used.
+
+**Shipped**: `src/cync_lan/ble_provision.py`'s `verify_pairing_response()` implements this exact
+check, called as a non-fatal diagnostic (logged as a warning, not raised) in `provision_device()`.
+
+**The `pairMesh` confirmation read must check for the literal byte value `7`, not merely
+"nonzero"** (`C2185e.java`'s `DataReceivedCallback`, registered on the final confirmation
+`ReadRequest` in `pairMesh$2.java`): the callback only sets its success flag when
+`response[0] == 7`; any other value - including `0`, and including other plausible-looking nonzero
+values - leaves it `false` ("not confirmed"). This lines up neatly with the same "literal =
+ordinal+1" pattern already confirmed elsewhere in this doc for the NAME/PASSWORD/LTK opcodes
+(`4`/`5`/`6` = enum ordinals `3`/`4`/`5`) - enum ordinal `6` is `PAIR_CONFIRM`, and `6+1=7`, a
+semantically sensible match for "pairing confirmed" under that same hypothesis.
+
+An earlier version of `ble_provision.py` checked `response[0] != 0` here instead of
+`response[0] != PAIR_CONFIRM_BYTE` (`7`) - a real bug (not merely an unconfirmed guess), since it
+would have treated most rejection responses as success. Caught and fixed by re-reading `C2185e.java`
+directly rather than assuming; see `test_provision_device_raises_for_nonzero_but_wrong_confirmation_byte`
+in `tests/components/cync_lan/test_ble_provision.py` for the regression test.
 
 ## Command encryption (post-pairing)
 
@@ -399,16 +443,25 @@ code this pass - but the decompile-internal consistency (the same call paths, th
 routine, the same vendor-ID bytes appearing in three unrelated places) is itself strong internal
 evidence.
 
+**Resolved this pass** (moved out of "genuinely open" below): whether the Cync app performs the
+mutual-auth verification step - **yes**, confirmed via direct read of `C2184d.java` (see "Resolved:
+the real app's mutual-auth check" above), along with the exact `pairMesh` confirmation byte value
+(`7`, not merely "nonzero" - a real bug this caught and fixed in `ble_provision.py`).
+
 **Lower confidence / genuinely open**:
 - Exact semantic mapping of the `Telink.OPCODE` enum's ordinal values to the literal integer opcodes
-  actually used in wire writes (code uses literals, not the enum, at the actual write sites).
+  actually used in wire writes (code uses literals, not the enum, at the actual write sites) - the
+  "ordinal+1" hypothesis now has 5 confirmed data points (opcodes 4/5/6/7 for
+  NAME/PASSWORD/LTK/CONFIRM = ordinals 3/4/5/6, plus the original 11=ENC_REQ), still not exhaustively
+  proven for the remaining ordinals.
 - `f28869c`/`f28871e` (the byte-reversed service/characteristic pair) - purpose not determined.
-- Whether the Cync app itself performs the mutual-auth verification step the original decompile pass
-  described (`python-dimond` doesn't, and doesn't need to) - unresolved, but not blocking for a
-  from-scratch client.
 - Whether an already-provisioned device stops advertising its default name (plausible, not directly
   confirmed via UI strings this pass) - relevant only for a "should already-paired devices ever show
   up in a scan" edge case, not a correctness blocker.
+- `ble_provision.py`'s new-device scan filter doesn't validate the device-type byte the real app
+  checks (`BleDeviceScanner.java`) - only manufacturer-data company ID + advertised name. Looser
+  than the real app's filter, not incorrect, but could surface non-Cync Telink devices in scan
+  results if any happen to be nearby.
 
 **Recommended next steps, in order of cost**: (1) clone `vpaeder/telinkpp` too, as a second
 cross-check on the command-encryption algorithm now confirmed above; (2) ~~an actual prototype

@@ -26,10 +26,12 @@ from cync_lan.ble_provision import (
     FACTORY_DEFAULT_PAIRING_WRITE,
     FACTORY_MESH_NAME,
     FACTORY_MESH_PASSWORD,
+    PAIR_CONFIRM_BYTE,
     PAIRING_CHAR_UUID,
     PairingError,
     R_APP,
     TELINK_COMPANY_ID,
+    _pad16,
     _parse_cli,
     build_mesh_credential_write,
     build_pairing_write,
@@ -38,6 +40,7 @@ from cync_lan.ble_provision import (
     key_encrypt,
     provision_device,
     scan_for_unprovisioned_devices,
+    verify_pairing_response,
 )
 
 bleak = pytest.importorskip("bleak", reason="bleak is an optional dependency (cync_lan[ble])")
@@ -183,7 +186,7 @@ async def test_provision_device_writes_pairing_then_credentials_then_confirms():
     fake_client.read_gatt_char = AsyncMock(
         side_effect=[
             bytes([0x0D]) + b"\x01\x02\x03\x04\x05\x06\x07\x08",  # pairing response, R_dev
-            b"\x01",  # confirmation
+            bytes([PAIR_CONFIRM_BYTE]),  # confirmation - must be literally 7, not just nonzero
         ]
     )
     fake_client_cls = MagicMock(return_value=fake_client)
@@ -229,3 +232,52 @@ async def test_provision_device_raises_when_device_does_not_confirm():
     with patch("bleak.BleakClient", fake_client_cls):
         with pytest.raises(PairingError):
             await provision_device("AA:BB:CC:DD:EE:FF", "target_mesh", "target_pass")
+
+
+async def test_provision_device_raises_for_nonzero_but_wrong_confirmation_byte():
+    """Regression test: C2185e.java's real DataReceivedCallback only
+    treats a LITERAL byte value of 7 as confirmation - any other value,
+    including a plausible-looking nonzero one, must still be treated as
+    a failure. (An earlier version of this code incorrectly accepted any
+    nonzero byte.)"""
+    fake_client = MagicMock()
+    fake_client.write_gatt_char = AsyncMock()
+    fake_client.read_gatt_char = AsyncMock(
+        side_effect=[
+            bytes([0x0D]) + b"\x01\x02\x03\x04\x05\x06\x07\x08",
+            bytes([PAIR_CONFIRM_BYTE + 1]),  # nonzero, but not the confirmed value
+        ]
+    )
+    fake_client_cls = MagicMock(return_value=fake_client)
+    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+    fake_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("bleak.BleakClient", fake_client_cls):
+        with pytest.raises(PairingError):
+            await provision_device("AA:BB:CC:DD:EE:FF", "target_mesh", "target_pass")
+
+
+def _build_valid_pairing_response(mesh_name: str, mesh_password: str, r_dev: bytes, status: int = 0x0D) -> bytes:
+    """Reference builder matching the real device's expected response
+    shape (status byte + R_dev + mutual-auth proof), for testing
+    verify_pairing_response() against a self-consistent, known-correct
+    response rather than only ever mocking success/failure."""
+    proof = key_encrypt(mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), _pad16(r_dev))[:8]
+    return bytes([status]) + r_dev + proof
+
+
+def test_verify_pairing_response_accepts_a_correctly_constructed_response():
+    r_dev = bytes([1, 2, 3, 4, 5, 6, 7, 8])
+    response = _build_valid_pairing_response("test_mesh", "test_pass", r_dev)
+    assert verify_pairing_response("test_mesh", "test_pass", response) is True
+
+
+def test_verify_pairing_response_rejects_wrong_mesh_credentials():
+    r_dev = bytes([1, 2, 3, 4, 5, 6, 7, 8])
+    response = _build_valid_pairing_response("test_mesh", "test_pass", r_dev)
+    assert verify_pairing_response("test_mesh", "wrong_pass", response) is False
+    assert verify_pairing_response("wrong_mesh", "test_pass", response) is False
+
+
+def test_verify_pairing_response_rejects_too_short_response():
+    assert verify_pairing_response("test_mesh", "test_pass", bytes(10)) is False

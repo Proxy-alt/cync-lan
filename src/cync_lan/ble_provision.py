@@ -46,11 +46,13 @@ __all__ = [
     "R_APP",
     "FACTORY_DEFAULT_PAIRING_WRITE",
     "DEFAULT_LTK",
+    "PAIR_CONFIRM_BYTE",
     "TELINK_COMPANY_ID",
     "key_encrypt",
     "generate_sk",
     "build_pairing_write",
     "derive_session_key",
+    "verify_pairing_response",
     "build_mesh_credential_write",
     "PairingError",
     "scan_for_unprovisioned_devices",
@@ -125,6 +127,17 @@ DEFAULT_LTK = bytes(
 # writes - see build_mesh_credential_write().
 _PAIR_CREDENTIAL_OPCODES = {"name": 4, "password": 5, "ltk": 6}
 
+# Confirmed via C2185e.java (the DataReceivedCallback registered on
+# pairMesh$2's confirmation ReadRequest): the callback only sets its
+# success flag when the response's first byte is LITERALLY 7 - any other
+# value (including 0) leaves it false, i.e. "not confirmed". Not merely
+# "nonzero means success" as a naive read might assume. This lines up
+# with the same "literal = ordinal+1" pattern already confirmed for the
+# NAME/PASSWORD/LTK opcodes above (4/5/6 = enum ordinals 3/4/5) -
+# ordinal 6 is PAIR_CONFIRM, and 6+1=7, a semantically sensible match
+# for "pairing confirmed" under that same hypothesis.
+PAIR_CONFIRM_BYTE = 7
+
 
 def _pad16(data: bytes) -> bytes:
     """Truncates/zero-pads to exactly 16 bytes - Telink's own UTF-8-encode-
@@ -196,6 +209,39 @@ def derive_session_key(mesh_name: str, mesh_password: str, r_app: bytes, r_dev: 
     return generate_sk(mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), r_app, r_dev)
 
 
+def verify_pairing_response(mesh_name: str, mesh_password: str, response: bytes) -> bool:
+    """Real mutual-auth check the actual Cync app performs on the pairing
+    response, confirmed via C2184d.java's DataReceivedCallback -
+    contradicting this module's own earlier assumption (based only on
+    python-dimond, which skips it) that the real app performs no
+    verification at all. The device is expected to prove it derived the
+    same R_dev/key material by echoing back a proof value:
+    `response[9:17]` should equal `key_encrypt(mesh_name, mesh_password,
+    key=pad16(r_dev))[0:8]`, where `r_dev = response[1:9]`.
+
+    This is a CLIENT-side sanity check only - the device doesn't care
+    whether the phone/client verifies its response, so a failed/skipped
+    check does not by itself prevent provisioning from working (this is
+    exactly why python-dimond can skip it and still work). Treat a
+    verification failure as a strong signal something is misunderstood
+    about the response format (e.g. wrong mesh_name/mesh_password, or a
+    device that responds differently than expected) rather than a fatal
+    error - provision_device() logs it as a warning, not a raised
+    exception.
+
+    Returns False (rather than raising) if `response` is too short to
+    contain a proof value (< 17 bytes) - not every device/response variant
+    is guaranteed to include one.
+    """
+    if len(response) < 17:
+        return False
+    r_dev = response[1:9]
+    expected_proof = key_encrypt(
+        mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), _pad16(r_dev)
+    )[:8]
+    return response[9:17] == expected_proof
+
+
 def build_mesh_credential_write(kind: str, value: bytes, session_key: bytes) -> bytes:
     """Builds one of the 3 mesh-credential-handoff writes ("pairMesh") that
     permanently assign a device its target mesh name/password/LTK, sent
@@ -232,6 +278,13 @@ async def scan_for_unprovisioned_devices(timeout: float = 10.0):
     stock unprovisioned-node name). No BLE-level scan filter is used by
     the real app either - everything is filtered in application code
     after an unfiltered OS-level scan, so this does the same.
+
+    Looser than the real app's own filter: BleDeviceScanner.java also
+    validates a device-type byte within the manufacturer data against
+    the full GE/Cync product catalog, rejecting unrecognized types
+    outright - not replicated here, so this may surface non-Cync Telink
+    devices in scan results if any happen to be nearby (not incorrect,
+    just more permissive).
 
     Returns a list of bleak `BLEDevice` objects. Requires the `bleak`
     optional dependency (`pip install cync_lan[ble]`).
@@ -315,6 +368,14 @@ async def provision_device(
                 f"{response.hex()}"
             )
         r_dev = response[1:9]
+        if not verify_pairing_response(FACTORY_MESH_NAME, FACTORY_MESH_PASSWORD, response):
+            logger.warning(
+                f"{lp} device's pairing response did not pass the mutual-auth proof "
+                f"check the real app performs (see verify_pairing_response()'s docstring) - "
+                f"continuing anyway, since this doesn't block the device from accepting "
+                f"pairing, but it's a signal something may be misunderstood if the "
+                f"following steps fail: {response.hex()}"
+            )
         session_key = derive_session_key(
             FACTORY_MESH_NAME, FACTORY_MESH_PASSWORD, R_APP, r_dev
         )
@@ -331,9 +392,10 @@ async def provision_device(
             await client.write_gatt_char(PAIRING_CHAR_UUID, payload, response=True)
 
         confirm = await client.read_gatt_char(PAIRING_CHAR_UUID)
-        if not confirm or confirm[0] == 0:
+        if not confirm or confirm[0] != PAIR_CONFIRM_BYTE:
             raise PairingError(
-                f"{lp} device did not confirm the new mesh credentials: {confirm.hex()}"
+                f"{lp} device did not confirm the new mesh credentials "
+                f"(expected first byte {PAIR_CONFIRM_BYTE}): {confirm.hex() if confirm else '(empty)'}"
             )
         logger.info(f"{lp} provisioned successfully onto mesh {mesh_name!r}")
 
