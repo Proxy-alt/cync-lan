@@ -1338,3 +1338,58 @@ def test_warn_experimental_transport_unconfirmed_logs_to_experimental_file(tmp_p
     _EXPERIMENTAL_CMDS_WARNED.discard("test_transport_logging")
 
     assert "test_transport_logging" in log_path.read_text()
+
+
+def _fake_session(node=None):
+    """A real CyncTCPSession, with reader/writer immediately cleared so
+    close() skips their actual socket-teardown plumbing - isolates the
+    test to close()'s device-offline-marking behavior specifically."""
+    from cync_lan.devices import CyncTCPSession
+
+    session = CyncTCPSession(reader=MagicMock(), writer=MagicMock(), ip_address="127.0.0.1")
+    session.writer = None
+    session.reader = None
+    session.node = node
+    return session
+
+
+async def test_close_marks_its_own_node_offline():
+    """The bug this fixes: a TCP session ending (device lost power, network
+    dropped, or a deliberate reconnect like MITM-mode toggling) is the most
+    direct signal available for THIS device's own availability - it owns
+    this connection, unlike a BTLE-mesh-relayed device whose presence is
+    only ever inferred from another device's relayed status broadcasts.
+    Previously close() never touched CyncDevice.online at all, so a device
+    that simply stopped appearing in any mesh broadcast (rather than being
+    reported WITH a stale/"not recently seen" flag) stayed marked online
+    forever, showing stale last-known state in HA."""
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.tcp_connections = {}
+    g.mqtt_client = MagicMock()
+    g.mqtt_client.remove_mitm_button = AsyncMock()
+
+    node = _fake_node()
+    node.online = True
+    session = _fake_session(node=node)
+
+    await session.close()
+
+    assert node.online is False
+
+
+async def test_close_is_a_noop_for_online_when_no_node_is_set():
+    """A TCP session that never identified a device yet (e.g. a connection
+    dropped before handshake completed) has no CyncDevice to mark
+    offline - close() must not crash in that case."""
+    g = GlobalObject()
+    g.ncync_server = MagicMock()
+    g.ncync_server.tcp_connections = {}
+    g.mqtt_client = MagicMock()
+    g.mqtt_client.remove_mitm_button = AsyncMock()
+
+    session = _fake_session(node=None)
+
+    await session.close()  # must not raise
+
+    g.mqtt_client.remove_mitm_button.assert_not_awaited()

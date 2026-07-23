@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (380 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (403 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -235,8 +235,24 @@ rules:
   entity-unavailable:
     status: done
     comment: >-
-      CyncLanEntity.available reflects bridge.is_online(dev_id), driven by
-      real online/offline tracking from device status packets. Tested.
+      CyncLanEntity.available reflects bridge.is_online(dev_id), fed by two
+      distinct signals now, not just one. The original path (mesh status
+      broadcasts reporting a device with a stale/"not recently seen" flag)
+      only detects a device going offline if OTHER devices keep relaying
+      broadcasts that still mention it - it never covered the device that
+      directly owns its own TCP connection (a WiFi plug/switch/bulb) simply
+      losing power or network and its session ending, since nothing that
+      device's dev_id stops appearing at all in that case rather than
+      appearing with a stale flag. Fixed: CyncTCPSession.close() (devices.py)
+      now marks that session's own node offline immediately, covering every
+      real path that reaches close() - lost power (confirmed via write()'s
+      own "device probably dropped the connection" detection, which
+      previously logged the finding but never acted on it), a network drop,
+      or a deliberate reconnect cycle (MITM mode toggling briefly flips
+      availability too - correct, not a regression, since that's a real,
+      if brief, disconnect). Tested (test_close_marks_its_own_node_offline/
+      test_close_is_a_noop_for_online_when_no_node_is_set in
+      test_devices.py).
   integration-owner:
     status: done
     comment: 'manifest.json codeowners: ["@Proxy-alt"].'

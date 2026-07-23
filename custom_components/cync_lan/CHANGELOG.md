@@ -8,6 +8,21 @@ root `CHANGELOG.md`) - the two are versioned and released separately, even
 though this integration depends on that package to do the actual protocol
 work.
 
+### 0.4.1
+
+- Fix devices going unavailable when they lose power or network not being
+  reflected in Home Assistant, showing stale last-known state indefinitely
+  instead. The existing detection path (a mesh status broadcast reporting a
+  device with a "not recently seen" flag) only catches this if *other*
+  devices keep relaying broadcasts that still mention the affected one -
+  it never covered the common case of a WiFi-connected plug/switch/bulb
+  that owns its own direct TCP connection simply losing power, since that
+  device's own dev_id just stops appearing in broadcasts entirely rather
+  than appearing with a stale flag. The underlying package's code even
+  already detected this exact scenario ("device probably dropped the
+  connection (lost power)") but never acted on it - the TCP session
+  closing now immediately marks that device offline.
+
 ### 0.4.0
 
 - Add `CyncDevice.set_multicolor_gradient_mode()`/`set_multicolor_segment_count()`/
