@@ -2873,7 +2873,7 @@ class CyncTCPSession:
         )
 
 
-    def get_ctrl_msg_id_bytes(self) -> List[int, int]:
+    def get_ctrl_msg_id_bytes(self) -> List[int]:
         """
         Control packets need a number that gets incremented, it is used as a type of msg ID and
         in calculating the checksum. Result is mod 256 in order to keep it within 0-255.
