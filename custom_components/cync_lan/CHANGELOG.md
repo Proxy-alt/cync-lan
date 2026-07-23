@@ -8,6 +8,15 @@ root `CHANGELOG.md`) - the two are versioned and released separately, even
 though this integration depends on that package to do the actual protocol
 work.
 
+### 1.0.0
+
+- First major version number. This is a versioning milestone, not a
+  stability claim: nothing functional changed from 0.5.0, every
+  `experimental_*` service is exactly as experimental as before, and
+  entities disabled-by-default remain disabled-by-default. See
+  `quality_scale.yaml` and this integration's own README for what's
+  actually confirmed-working versus still unconfirmed.
+
 ### 0.5.0
 
 - Add a per-device MITM-mode toggle switch (diagnostic category, disabled
