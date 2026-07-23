@@ -274,10 +274,30 @@ documented here for completeness but not worth implementing as a second way to d
 **Custom MultiColor scheme creation** (uploading arbitrary per-segment RGB data, not just
 activating a saved one) is a **separate, unrelated opcode**: `SetMultiColorSegmentsCommand.java`,
 `{0xF7, 0x11, 0x02, 0x4E}` — payload is a gradient-mode toggle, segment count, or up to 2 segments
-per packet as `[position_or_255, R, G, B]`. Also `SetMultiColorSchemeDirectCommand.java` (xlink
-`0x89`, "entertainment"/live-streaming variant) and `SetMultiColorBitmapCommand.java` (unread,
-likely tile/matrix bitmap data for other product types). Out of scope for a `set_lightshow`
-extension — a materially bigger feature with its own data model.
+per packet as `[position_or_255, R, G, B]`.
+
+**SHIPPED, EXPERIMENTAL**: `devices.py`'s `CyncDevice.set_multicolor_gradient_mode()`/
+`set_multicolor_segment_count()`/`set_multicolor_segments()` implement these 3 confirmed wire
+primitives exactly (dispatched via the same non-hub `0x8E`-relay-bug family as add_to_scene/
+set_indicator_led/etc, per `SetMultiColorSegmentsCommand.mo14023N()`'s
+`XlinkCommandDelegate.DefaultImpls.c()` call - no product-family branch exists for this command at
+all, unlike add_to_scene/set_group_membership/remove_from_scene). Per-segment position and color
+are confirmed INDEPENDENTLY nullable (`MultiColorSegmentData.java`'s own two separately-`@Nullable`
+fields) - position defaults to the `0xFF` sentinel, color defaults to `0,0,0`, not tied together.
+Position's `1-120` range is a literal confirmed directly in `SegmentData`'s own bounds check, not
+inferred. What's **not** wired in, and not just a matter of exposing another primitive:
+this project does not orchestrate the multi-send SEQUENCE a real custom scheme needs (what order
+the app sends gradient-mode/count/segment-data in across possibly many chunked sends for >2
+segments, and any timing between them, isn't traced from the decompiled source) - callers
+must chunk/sequence themselves.
+
+Also `SetMultiColorSchemeDirectCommand.java` (xlink `0x89`, "entertainment"/live-streaming variant)
+and `SetMultiColorBitmapCommand.java` (tile/matrix bitmap data for other product types) remain
+**out of scope, not just untested** - both dispatch via methods (`m14393b`/`m14027t`) never traced
+anywhere else in this research, structurally distinct from every other confirmed command family in
+this file, and "entertainment"/live-streaming framing strongly implies a continuous low-latency
+protocol rather than a one-shot command - a materially bigger feature than exposing another
+primitive, unlike the 3 `SetMultiColorSegmentsCommand` primitives above.
 
 Related for a future scene-export feature: `AddDeviceSceneCommand.java` (`{-18,17,2}` =
 `0xEE 0x11 0x02`) documents the 6-byte per-device state block scenes store
