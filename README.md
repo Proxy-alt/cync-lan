@@ -319,6 +319,21 @@ like AP reboot) - you need to power cycle all devices that are currently
 connected to the Cync cloud servers before they request a new DNS record 
 and will connect to the local `cync-lan` server.
 
+# Experimental: BLE provisioning of brand-new devices
+`cync-lan-ble-provision` (install with `pip install cync_lan[ble]`) is an **EXPERIMENTAL, untested
+against real hardware** command-line tool for pairing a brand-new/factory-reset Cync device onto a
+mesh over BLE directly - unrelated to the TCP relay server above, and a different transport
+entirely. See [docs/ble_provisioning_protocol.md](docs/ble_provisioning_protocol.md) for the full
+protocol research this implements. Usage:
+
+```bash
+cync-lan-ble-provision scan
+cync-lan-ble-provision provision <ble-address> <mesh-name> <mesh-password>
+```
+
+Please report success or failure (with the exact error/traceback either way) if you try this
+against real hardware.
+
 # Troubleshooting
 If you are having issues, please see the 
 [Troubleshooting docs](docs/troubleshooting.md) for more information.

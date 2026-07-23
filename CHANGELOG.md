@@ -1,3 +1,12 @@
+### 0.0.6b46
+- Add `cync-lan-ble-provision`, an EXPERIMENTAL, untested-against-real-hardware CLI for pairing a
+  brand-new/factory-reset device onto a mesh directly over BLE (a separate transport entirely from
+  this project's usual TCP relay). Implements the full confirmed pairing/session-key/mesh-credential
+  handoff flow, including the exact fixed bootstrap bytes the real Cync app uses for a never-
+  provisioned device - independently reproduced from the documented formula, matching the
+  decompiled app's own hardcoded constant exactly. See `docs/ble_provisioning_protocol.md`. Install
+  with `pip install cync_lan[ble]`; does not touch the main server or require `bleak` otherwise.
+
 ### 0.0.6b45
 - Fix sol-lamp brightness changes not updating in HA immediately: the ack-matching allow-list was missing the `0xD2` op sol-lamp devices use for brightness, so their acks went unrecognized and HA's brightness slider stayed stale until an unrelated status update happened to correct it. Confirmed against the real Cync Android app's decompiled command encoding
 - Fix the "fireworks" light-show effect sending the wrong effect ID (`0x3A`/58, not valid anywhere in the real app's effect scheme) instead of the correct ID (`3`) - likely silently rejected by real hardware before this fix

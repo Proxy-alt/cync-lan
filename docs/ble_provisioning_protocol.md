@@ -117,6 +117,61 @@ cloud already knows about) - they don't implement new-mesh creation or WiFi hand
 **no cross-validation** for `pairMesh$2.java`'s "hand the device its permanent mesh credentials"
 step or the `SetWifiCommand` chunking scheme below - those remain sourced from the decompile alone.
 
+### Resolved: the real Cync app's `R_app` is a fixed constant, not random - and the exact factory-bootstrap bytes are now confirmed
+
+A follow-up pass through the real Cync app's own `TelinkDeviceBleManager.m14334v` ("authenticate")
+and `Telink.java`'s static initializer closes the "not fully resolved" caveat on step 2 above.
+**The real app's `R_app` is genuinely a fixed constant, not `SecureRandom` output** -
+`Telink.f28877k` is a `final` field, assigned once (`{0xA0,0xA1,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,
+0,0,0,0,0,0,0,0}`), and used as-is at two independent real call sites: the initial pairing write
+(`m14334v`) and the read-response callback that reconstructs the same value to derive the session
+key (`C2184d.mo14353a`). `python-dimond` generating fresh random bytes each session is a difference
+between it and the real app, not a sign the real app also randomizes - both are protocol-compatible
+since the encryption algorithm doesn't require `R_app` to be unique per session, just known to both
+sides deriving the same session key.
+
+`m14334v` has two branches:
+- **name/password exactly the Telink factory defaults** (`"telink_mesh1"`/`"123"`) - the
+  brand-new/never-provisioned-device case: writes a fully pre-baked 17-byte constant
+  (`Telink.f28878l`) verbatim, no computation needed.
+- **otherwise** (re-authenticating against an already-known mesh): computes
+  `[0x0C] + R_app[0:8] + key_encrypt(name, password, key=pad16(R_app))[0:8]` - the same general
+  formula step 2 above already described, just with the fixed `R_app` instead of a random one.
+
+Exact confirmed byte values (`Telink.java`'s static initializer):
+
+```
+R_APP (Telink.f28877k[0:8])        = A0 A1 A2 A3 A4 A5 A6 A7
+FACTORY_DEFAULT_PAIRING_WRITE       = 0C A0 A1 A2 A3 A4 A5 A6 A7 8D B6 74 71 1B 85 5A 79
+  (Telink.f28878l - opcode 0x0C + R_APP + key_encrypt("telink_mesh1","123",key=pad16(R_APP))[0:8])
+DEFAULT_LTK (Telink.f28879m)        = C0 C1 C2 C3 C4 C5 C6 C7 D8 D9 DA DB DC DD DE DF
+```
+
+**Independent confirmation, not just a decompiled literal**: `src/cync_lan/ble_provision.py`'s
+`build_pairing_write("telink_mesh1", "123")` - implementing the general formula above from scratch,
+using the `cryptography` package's AES-ECB primitive - reproduces `FACTORY_DEFAULT_PAIRING_WRITE`
+exactly (see `test_build_pairing_write_reproduces_the_factory_default_constant` in
+`tests/components/cync_lan/test_ble_provision.py`). This is real evidence the crypto
+implementation (byte-reversal quirk, XOR key derivation, padding) is correct, not just internally
+consistent with itself.
+
+The mesh-credential-handoff opcode bytes (`TelinkDeviceBleManager$pairMesh$2.java`) are also now
+fully confirmed by direct read: `4`=NAME, `5`=PASSWORD, `6`=LTK, each written as
+`[opcode] + AES_ECB(sessionKey, pad16(value))[0:8]`, zero-padded to 17 bytes - matching this doc's
+existing "genuinely open" `OPCODE` enum note (`ordinal+1` for `PAIR_NETWORK_NAME`/`PAIR_PASS`/
+`PAIR_LTK` = literals 4/5/6) exactly.
+
+**Practical upshot**: a from-scratch client provisioning a brand-new device never needs to touch
+`SecureRandom` at all for the bootstrap step - `FACTORY_DEFAULT_PAIRING_WRITE` is a fixed constant
+that works for every never-provisioned Telink device, confirmed both from the decompiled source and
+by independently reproducing it from the documented formula.
+
+**Shipped, EXPERIMENTAL, untested against real hardware**: `src/cync_lan/ble_provision.py`
+implements the full flow above (`bleak`-based scan → connect → factory-bootstrap pairing write →
+session-key derivation → target mesh name/password/LTK handoff), exposed as a `cync-lan-ble-provision`
+CLI (`pip install cync_lan[ble]`). Does not yet implement the WiFi credential handoff
+(`SetWifiCommand`) below - only the BLE mesh-join step.
+
 ## Command encryption (post-pairing)
 
 **Corrected against `python-dimond`'s real implementation** (`dimond/__init__.py:51-72,
@@ -356,10 +411,10 @@ evidence.
   up in a scan" edge case, not a correctness blocker.
 
 **Recommended next steps, in order of cost**: (1) clone `vpaeder/telinkpp` too, as a second
-cross-check on the command-encryption algorithm now confirmed above; (2) an actual prototype attempt
-against real hardware is now reasonable to try directly - discovery, pairing, mesh-join, WiFi
-handoff, and command encryption are all traced end-to-end with either independent library validation
-or thorough internal cross-checking; (3) a live BLE capture during a real pairing session remains
-the way to get full certainty on the couple of remaining lower-confidence items above, same as
-`docs/cloud_independence_research.md`'s original
-recommendation - now scoped to just the provisioning-specific pieces rather than the whole protocol.
+cross-check on the command-encryption algorithm now confirmed above; (2) ~~an actual prototype
+attempt against real hardware is now reasonable to try directly~~ - **done**: `src/cync_lan/ble_provision.py`
+implements discovery + the factory-bootstrap pairing + mesh-credential handoff (not yet WiFi
+handoff), awaiting a real-hardware test result; (3) a live BLE capture during a real pairing session
+remains the way to get full certainty on the couple of remaining lower-confidence items above, same
+as `docs/cloud_independence_research.md`'s original recommendation - now scoped to just the
+provisioning-specific pieces rather than the whole protocol.
