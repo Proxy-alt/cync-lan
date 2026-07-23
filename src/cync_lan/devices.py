@@ -4043,6 +4043,31 @@ class CyncTCPSession:
         finally:
             self.reader = None
 
+        if self.node and self.node.online:
+            # This TCP session ending is the single most direct, authoritative
+            # signal available for THIS device's own availability - it owns this
+            # connection (unlike a BTLE-mesh-relayed device, whose presence is
+            # inferred from another device's relayed status broadcasts). Every
+            # call path that reaches close() already represents this device
+            # actually being gone (lost power, network drop, a deliberate
+            # reconnect-forcing cycle like MITM mode toggling) - previously this
+            # was never propagated to CyncDevice.online at all, so a device that
+            # simply stopped appearing in any mesh broadcast (rather than being
+            # reported WITH a stale/"not recently seen" flag) stayed marked
+            # online/available forever, showing stale last-known state. See
+            # write()'s own "device probably dropped the connection (lost
+            # power)" detection above for the clearest real-world case this
+            # was missing. Deliberate reconnects (MITM mode) briefly flip this
+            # to offline too - honest, not a regression: entity-unavailable
+            # (silver) means reflecting real connection state, not hiding a
+            # brief, real disconnect/reconnect cycle. handle_entity_update()
+            # flips it back to online the moment fresh state arrives.
+            logger.info(
+                f"{lp} TCP session ending - marking device '{self.node.name}' "
+                f"(ID: {self.node.id}) OFFLINE."
+            )
+            self.node.online = False
+
         if self.node and remove_mitm_button:
             await g.mqtt_client.remove_mitm_button(self.node)
         self.closing = False

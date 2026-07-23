@@ -1,3 +1,14 @@
+### 0.0.6b47
+- Fix devices going unavailable when they lose power or network not being detected - `close()`
+  tore down a TCP session's socket resources but never marked the device that owned it offline,
+  even in the exact case the code already detected and logged ("device probably dropped the
+  connection (lost power)"). A device that simply stopped appearing in any mesh status broadcast
+  (rather than appearing WITH a "not recently seen" flag - the only case the existing offline
+  detection covered) stayed marked online/available indefinitely, showing stale last-known state.
+  Now `close()` marks that session's own device offline immediately whenever it ends, covering
+  lost power, network drops, and deliberate reconnect cycles (MITM mode toggling briefly flips
+  availability too - correct, not a regression, since that's a real disconnect/reconnect).
+
 ### 0.0.6b46
 - Add `cync-lan-ble-provision`, an EXPERIMENTAL, untested-against-real-hardware CLI for pairing a
   brand-new/factory-reset device onto a mesh directly over BLE (a separate transport entirely from
