@@ -14,16 +14,25 @@ from paho.mqtt.enums import CallbackAPIVersion
 from paho.mqtt.enums import CallbackAPIVersion
 
 from cync_lan.const import (
+    CYNC_LOG_NAME,
+    CYNC_MAXK,
+    CYNC_MINK,
+    CYNC_VERSION,
+    FACTORY_EFFECTS_BYTES,
+)
+from cync_lan.devices import CyncDevice
+from cync_lan.metadata.model_info import device_type_map, DeviceClassification
+from cync_lan.structs import EntityState, FanSpeed, GlobalObject
+from cync_lan.utils import send_sigterm
+
+from cync_lan_mqtt.const import (
     CYNC_BRIDGE_DEVICE_REGISTRY_CONF,
     CYNC_BRIDGE_OBJ_ID,
     CYNC_HASS_BIRTH_MSG,
     CYNC_HASS_STATUS_TOPIC,
     CYNC_HASS_TOPIC,
     CYNC_HASS_WILL_MSG,
-    CYNC_LOG_NAME,
     CYNC_MANUFACTURER,
-    CYNC_MAXK,
-    CYNC_MINK,
     CYNC_MITM_ENTITIES,
     CYNC_MQTT_CONN_DELAY,
     CYNC_MQTT_HOST,
@@ -31,17 +40,11 @@ from cync_lan.const import (
     CYNC_MQTT_PORT,
     CYNC_MQTT_USER,
     CYNC_TOPIC,
-    CYNC_VERSION,
     DEVICE_LWT_MSG,
-    FACTORY_EFFECTS_BYTES,
     MQTT_DEAD,
     MQTT_DEBUG,
     ORIGIN_STRUCT,
 )
-from cync_lan.devices import CyncDevice
-from cync_lan.metadata.model_info import device_type_map, DeviceClassification
-from cync_lan.structs import EntityState, FanSpeed, GlobalObject
-from cync_lan.utils import send_sigterm
 
 # ---------------------------------------------------------------------------
 # Navigation index (quick lookups only - see each method's own docstring /

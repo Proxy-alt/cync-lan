@@ -22,15 +22,18 @@ env:
 
 jobs:
   build:
-    # Guards against prerelease_ha_integration.yml/prerelease_python_package.yml:
-    # both now create GitHub releases (as prereleases) too, which also fire
-    # this workflow's release:published trigger - the HA custom_component's
-    # own vX.Y.Z releases have nothing to do with this Docker image and must
-    # not trigger a build tagged with an unrelated version number. Only
-    # cync-lan-vX.Y.Z (the python package's own prefix, see RELEASING.md)
-    # should build. workflow_dispatch runs are unaffected (no release event
-    # to check tag_name against).
-    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'cync-lan-v')
+    # Guards against the other release-creating workflows in this project
+    # (the HA custom_component's own prerelease_ha_integration.yml, and the
+    # core cync-lan library's publish_pypi_core.yml on the `core` branch) -
+    # all of them create GitHub releases (as prereleases) too, which also
+    # fire this workflow's release:published trigger. This Docker image is
+    # built from the cync-lan-mqtt add-on specifically, so only its own
+    # cync-lan-mqtt-vX.Y.Z tags (see RELEASING.md) should trigger a build -
+    # not the HA integration's vX.Y.Z releases, and not core's own
+    # cync-lan-vX.Y.Z releases (a different, non-Docker artifact).
+    # workflow_dispatch runs are unaffected (no release event to check
+    # tag_name against).
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'cync-lan-mqtt-v')
 
     runs-on: ubuntu-latest
     permissions:

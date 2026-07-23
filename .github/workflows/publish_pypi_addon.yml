@@ -1,23 +1,17 @@
-name: Prerelease - Python package
+name: Prerelease + PyPI publish - cync-lan-mqtt add-on
 
 # Automatically creates a GitHub prerelease every time pyproject.toml's
 # version changes on this branch - see RELEASING.md. Always a prerelease:
-# this package has never had a formal stable-release process (no tag or
-# release existed for it at all before this workflow). Tagged
-# cync-lan-vX.Y.Z, a distinct prefix from the HA integration's own
-# vX.Y.Z tags (see prerelease_ha_integration.yml and RELEASING.md's note
-# on why the two must not share a tag namespace).
-#
-# Present on both feature/ha-custom-component and python since
-# pyproject.toml is a shared file bumped on either branch (usually
-# feature/ha-custom-component first, then ported) - idempotent (skips if
-# the tag already exists) so the same version landing on both branches
-# only ever produces one release.
+# this package has never had a formal stable-release process. Tagged
+# cync-lan-mqtt-vX.Y.Z - distinct from the core cync-lan library's own
+# cync-lan-vX.Y.Z tags (see the core branch's publish_pypi_core.yml) and
+# the HA integration's own vX.Y.Z tags, since all three are versioned and
+# released independently. Publishes to PyPI via Trusted Publishing (no
+# stored token - see RELEASING.md) once the prerelease is created.
 
 on:
   push:
     branches:
-      - feature/ha-custom-component
       - python
     paths:
       - "pyproject.toml"
@@ -29,6 +23,8 @@ permissions:
 jobs:
   prerelease:
     runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4.2.2
@@ -40,7 +36,7 @@ jobs:
         run: |
           version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=cync-lan-v$version" >> "$GITHUB_OUTPUT"
+          echo "tag=cync-lan-mqtt-v$version" >> "$GITHUB_OUTPUT"
 
       - name: Check whether this tag already exists
         id: check
@@ -72,7 +68,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            --title "cync-lan ${{ steps.version.outputs.tag }}" \
+            --title "cync-lan-mqtt ${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/release-notes.md \
             --prerelease \
             --target "${{ github.sha }}"
+
+  publish:
+    needs: prerelease
+    if: needs.prerelease.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    environment: pypi-mqtt
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1

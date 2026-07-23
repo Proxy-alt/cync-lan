@@ -1,6 +1,14 @@
 >[!IMPORTANT]
 > [DNS redirection REQUIRED](./docs/DNS.md)
 
+>[!NOTE]
+> This branch's package is now `cync-lan-mqtt` on PyPI (`pip install
+> cync-lan-mqtt`), depending on the `cync-lan` core protocol library rather
+> than bundling it - see the `core` branch. The `cync-lan` console script
+> name and every environment variable are unchanged; only the underlying
+> package/import names split (`cync_lan_mqtt` for this add-on's own
+> `main.py`/`mqtt_client.py`/`exporter.py`, `cync_lan` for everything else).
+
 # THERE IS NOW A HASS *App* FOR THIS PROJECT!
 
 Huge thanks to [@CodeNeedsCoffee](https://github.com/CodeNeedsCoffee) for the initial work on the App!

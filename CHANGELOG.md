@@ -1,3 +1,18 @@
+### 0.1.0
+
+- Renamed from `cync-lan` (version scheme `0.0.6bNN`) to `cync-lan-mqtt`,
+  and reset to a clean `0.1.0` - the protocol/device layer (`devices.py`,
+  `server.py`, `cloud_api.py`, `packet/`, `metadata/`, `ble_provision.py`,
+  most of `const.py`/`structs.py`/`utils.py`) moved out to a new, separately
+  published `cync-lan` core package (see its own `CHANGELOG.md` on the
+  `core` branch) instead of living in this same package. This package now
+  contains only the standalone daemon (`main.py`), MQTT/HASS-discovery
+  bridge (`mqtt_client.py`), and HTTP device-list exporter (`exporter.py`),
+  and depends on `cync-lan` from PyPI. The `cync-lan` console script name,
+  every environment variable, and all runtime behavior are unchanged - this
+  is a packaging change, not a functional one. Earlier history below this
+  entry describes the same codebase before the split.
+
 ### 0.0.6b48
 - Add `CyncDevice.relay_source` tracking: whichever TCP-connected device most recently relayed a
   status update for a given device, set at every mesh status/MeshInfo parse site. The only presence

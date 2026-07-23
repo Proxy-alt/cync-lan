@@ -12,17 +12,21 @@ RUN set -x \
         -subj '/CN=*.xlink.cn' -sha256 -days 3650 -nodes
 
 
-# Install dependencies first, lessens cache hit on rebuilds
+# Install dependencies first, lessens cache hit on rebuilds. cync-lan (the
+# core protocol library this add-on depends on) is installed from PyPI here
+# too, rather than deferred to the final `pip install .` below, so its own
+# transitive deps (pydantic, tzlocal, cryptography) land in this cached
+# layer as well.
 RUN set -x \
     && pip install --no-cache-dir \
+        "cync-lan>=0.1.0" \
         "pyyaml==6.0.2" \
         "uvloop>=0.21.0" \
         "aiomqtt==2.3.0" \
+        "paho-mqtt" \
         "aiohttp>=3.10.8" \
         "fastapi>=0.115.12" \
-        "uvicorn>=0.34.3" \
-        "tzlocal>=5.3.1" \
-        "cryptography>=46.0.7"
+        "uvicorn>=0.34.3"
 
 # copy, install, remove src for smaller image
 WORKDIR /tmp/cync-src
