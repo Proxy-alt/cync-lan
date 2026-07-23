@@ -1,0 +1,78 @@
+name: Prerelease - Python package
+
+# Automatically creates a GitHub prerelease every time pyproject.toml's
+# version changes on this branch - see RELEASING.md. Always a prerelease:
+# this package has never had a formal stable-release process (no tag or
+# release existed for it at all before this workflow). Tagged
+# cync-lan-vX.Y.Z, a distinct prefix from the HA integration's own
+# vX.Y.Z tags (see prerelease_ha_integration.yml and RELEASING.md's note
+# on why the two must not share a tag namespace).
+#
+# Present on both feature/ha-custom-component and python since
+# pyproject.toml is a shared file bumped on either branch (usually
+# feature/ha-custom-component first, then ported) - idempotent (skips if
+# the tag already exists) so the same version landing on both branches
+# only ever produces one release.
+
+on:
+  push:
+    branches:
+      - feature/ha-custom-component
+      - python
+    paths:
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Read the version from pyproject.toml
+        id: version
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=cync-lan-v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this tag already exists
+        id: check
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract this version's CHANGELOG section
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          python3 - "${{ steps.version.outputs.version }}" CHANGELOG.md <<'PYEOF'
+          import re, sys
+          version, changelog_path = sys.argv[1], sys.argv[2]
+          text = open(changelog_path, encoding="utf-8").read()
+          pattern = re.compile(rf"^### {re.escape(version)}$\n(.*?)(?=^### |\Z)", re.M | re.S)
+          match = pattern.search(text)
+          if not match:
+              sys.exit(f"Could not find a CHANGELOG.md entry for version {version!r}")
+          with open("/tmp/release-notes.md", "w", encoding="utf-8") as f:
+              f.write(match.group(1).strip() + "\n")
+          PYEOF
+
+      - name: Create the prerelease
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "cync-lan ${{ steps.version.outputs.tag }}" \
+            --notes-file /tmp/release-notes.md \
+            --prerelease \
+            --target "${{ github.sha }}"
