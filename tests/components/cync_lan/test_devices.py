@@ -9,17 +9,22 @@ test_cloud_api.py), living alongside the rest of the suite so the same
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import cync_lan.devices as devices
 from cync_lan.const import FACTORY_EFFECTS_BYTES, LIGHT_RUN_MODE_EFFECTS
 from cync_lan.devices import (
     CyncDevice,
     _EXPERIMENTAL_CMDS_WARNED,
     _PENDING_XLINK_RESPONSES,
     _await_xlink_notification,
+    _get_experimental_logger,
+    _log_experimental,
     _warn_experimental_cmd_code,
     _warn_experimental_group_targeting,
+    _warn_experimental_transport_unconfirmed,
     add_automation,
     broadcast_control_command,
     create_schedule,
@@ -33,6 +38,21 @@ from cync_lan.devices import (
 )
 from cync_lan.packet import PacketBuilder
 from cync_lan.structs import GlobalObject
+
+
+def _reset_experimental_logger():
+    """_get_experimental_logger() lazily caches a module-level singleton
+    (see devices.py) tied to a real logging.Logger registered under a
+    fixed name - tests that want a fresh handler pointed at a tmp_path
+    must clear both the module's cached reference and any handlers
+    already attached to that named logger, or handlers accumulate across
+    tests (harmless for correctness since each test's tmp_path is unique,
+    but leaks file handles over a long test run)."""
+    devices._experimental_logger = None
+    named = logging.getLogger("cync_lan.experimental")
+    for h in list(named.handlers):
+        named.removeHandler(h)
+        h.close()
 
 
 def _fake_node(**overrides):
@@ -1092,3 +1112,229 @@ async def test_remove_from_scene_rejects_invalid_scene_id():
     await node.remove_from_scene(scene_id=-1)
 
     node.send_command.assert_not_awaited()
+
+
+async def test_set_multicolor_gradient_mode_enabled_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_gradient_mode(enabled=True)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E
+    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0x00, 1)
+    assert args[1] == 7 + len(expected_payload)
+    assert args[3] == expected_payload
+    assert kwargs == {"repeat_op_code": False}
+
+
+async def test_set_multicolor_gradient_mode_disabled_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_gradient_mode(enabled=False)
+
+    args, kwargs = node.send_command.call_args
+    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0x00, 0)
+    assert args[3] == expected_payload
+
+
+async def test_set_multicolor_segment_count_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segment_count(count=12)
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E
+    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0xFF, 12)
+    assert args[1] == 7 + len(expected_payload)
+    assert args[3] == expected_payload
+    assert kwargs == {"repeat_op_code": False}
+
+
+async def test_set_multicolor_segment_count_rejects_invalid_count():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segment_count(count=256)
+    await node.set_multicolor_segment_count(count=-1)
+
+    node.send_command.assert_not_awaited()
+
+
+async def test_set_multicolor_segments_one_segment_pads_second_slot():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(5, (255, 0, 0))])
+
+    args, kwargs = node.send_command.call_args
+    assert args[0] == 0x8E
+    expected_payload = (
+        struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E)
+        + struct.pack(">B", 1)
+        + struct.pack(">BBBB", 5, 255, 0, 0)
+        + b"\xff\xff\xff\xff"
+    )
+    assert args[1] == 7 + len(expected_payload)
+    assert args[3] == expected_payload
+    assert kwargs == {"repeat_op_code": False}
+
+
+async def test_set_multicolor_segments_two_segments_payload_shape():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(1, (255, 0, 0)), (2, (0, 255, 0))])
+
+    args, kwargs = node.send_command.call_args
+    expected_payload = (
+        struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E)
+        + struct.pack(">B", 1)
+        + struct.pack(">BBBB", 1, 255, 0, 0)
+        + struct.pack(">BBBB", 2, 0, 255, 0)
+    )
+    assert args[3] == expected_payload
+
+
+async def test_set_multicolor_segments_position_none_uses_0xff_sentinel():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(None, (10, 20, 30))])
+
+    args, kwargs = node.send_command.call_args
+    expected_slot = struct.pack(">BBBB", 0xFF, 10, 20, 30)
+    payload = args[3]
+    assert payload[5:9] == expected_slot
+
+
+async def test_set_multicolor_segments_color_none_writes_zero_rgb():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(5, None)])
+
+    args, kwargs = node.send_command.call_args
+    expected_slot = struct.pack(">BBBB", 5, 0, 0, 0)
+    payload = args[3]
+    assert payload[5:9] == expected_slot
+
+
+async def test_set_multicolor_segments_rejects_too_many_segments():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(1, (0, 0, 0)), (2, (0, 0, 0)), (3, (0, 0, 0))])
+    await node.set_multicolor_segments([])
+
+    node.send_command.assert_not_awaited()
+
+
+async def test_set_multicolor_segments_rejects_invalid_position():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(0, (0, 0, 0))])
+    await node.set_multicolor_segments([(121, (0, 0, 0))])
+
+    node.send_command.assert_not_awaited()
+
+
+async def test_set_multicolor_segments_rejects_invalid_color():
+    node = CyncDevice.__new__(CyncDevice)
+    node.lp = "test:"
+    node.send_command = AsyncMock()
+
+    await node.set_multicolor_segments([(5, (256, 0, 0))])
+
+    node.send_command.assert_not_awaited()
+
+
+def test_get_experimental_logger_writes_every_call(tmp_path):
+    log_path = tmp_path / "experimental_features.log"
+    _reset_experimental_logger()
+    with patch.object(devices, "CYNC_EXPERIMENTAL_LOG_PATH", str(log_path)):
+        elogger = _get_experimental_logger()
+        elogger.info("first call")
+        elogger.info("second call")
+        for h in elogger.handlers:
+            h.flush()
+    _reset_experimental_logger()
+
+    contents = log_path.read_text()
+    assert "first call" in contents
+    assert "second call" in contents
+
+
+def test_log_experimental_writes_on_every_invocation_not_just_first(tmp_path):
+    """Unlike the console warn-once behavior (_EXPERIMENTAL_CMDS_WARNED),
+    _log_experimental() must record every single call to the dedicated
+    file - a bug report needs to see every time an experimental command
+    actually ran, not just the first."""
+    log_path = tmp_path / "experimental_features.log"
+    _reset_experimental_logger()
+    with patch.object(devices, "CYNC_EXPERIMENTAL_LOG_PATH", str(log_path)):
+        _log_experimental("lp:", "some_command", "test reason")
+        _log_experimental("lp:", "some_command", "test reason")
+        for h in _get_experimental_logger().handlers:
+            h.flush()
+    _reset_experimental_logger()
+
+    contents = log_path.read_text()
+    assert contents.count("some_command") == 2
+
+
+def test_warn_experimental_cmd_code_logs_every_call_to_experimental_file(tmp_path):
+    log_path = tmp_path / "experimental_features.log"
+    _reset_experimental_logger()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_cmd_code_logging")
+    with patch.object(devices, "CYNC_EXPERIMENTAL_LOG_PATH", str(log_path)):
+        _warn_experimental_cmd_code("lp:", "test_cmd_code_logging")
+        _warn_experimental_cmd_code("lp:", "test_cmd_code_logging")
+        for h in _get_experimental_logger().handlers:
+            h.flush()
+    _reset_experimental_logger()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_cmd_code_logging")
+
+    contents = log_path.read_text()
+    assert contents.count("test_cmd_code_logging") == 2
+
+
+def test_warn_experimental_group_targeting_logs_to_experimental_file(tmp_path):
+    log_path = tmp_path / "experimental_features.log"
+    _reset_experimental_logger()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_group_targeting_logging")
+    with patch.object(devices, "CYNC_EXPERIMENTAL_LOG_PATH", str(log_path)):
+        _warn_experimental_group_targeting("lp:", "test_group_targeting_logging")
+        for h in _get_experimental_logger().handlers:
+            h.flush()
+    _reset_experimental_logger()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_group_targeting_logging")
+
+    assert "test_group_targeting_logging" in log_path.read_text()
+
+
+def test_warn_experimental_transport_unconfirmed_logs_to_experimental_file(tmp_path):
+    log_path = tmp_path / "experimental_features.log"
+    _reset_experimental_logger()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_transport_logging")
+    with patch.object(devices, "CYNC_EXPERIMENTAL_LOG_PATH", str(log_path)):
+        _warn_experimental_transport_unconfirmed("lp:", "test_transport_logging")
+        for h in _get_experimental_logger().handlers:
+            h.flush()
+    _reset_experimental_logger()
+    _EXPERIMENTAL_CMDS_WARNED.discard("test_transport_logging")
+
+    assert "test_transport_logging" in log_path.read_text()

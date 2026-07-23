@@ -189,6 +189,9 @@ caveats.
 | `push_automation_to_hardware` | Push an HA automation onto the hub as a native scene + schedule - see [above](#pushing-an-ha-automation-to-cync-hardware). |
 | `add_device_to_scene` | Add/update one device's captured color within an existing scene - standalone version of what `push_automation_to_hardware` does internally. |
 | `remove_device_from_scene` | Remove one device from an existing scene, without deleting the scene or affecting its other members. |
+| `set_multicolor_gradient_mode` | Toggle gradient mode for a custom MultiColor light-strip scheme (segmented dynamic RGB, separate from factory effect presets). |
+| `set_multicolor_segment_count` | Set the total logical segment count for a custom MultiColor scheme. |
+| `set_multicolor_segments` | Set up to 2 segments' position/color in one call, for a custom MultiColor scheme. |
 
 ## Use cases
 
@@ -356,6 +359,12 @@ cleaned up with `cync_lan.experimental_delete_scene`/
   Cync mesh address, but the light group *entity* itself is built entirely
   on Home Assistant's own group-light helper - turning it on/off issues one
   command per member device, not a single group-wide command.
+- **MultiColor services are 3 raw wire primitives, not a full custom-scheme
+  builder.** `set_multicolor_gradient_mode`/`set_multicolor_segment_count`/
+  `set_multicolor_segments` are confirmed individually, but this integration
+  doesn't know or replicate the order/timing the real Cync app uses across
+  multiple calls when programming more than 2 segments - you'll need to
+  experiment with call order yourself, and please report what you find.
 
 ## Troubleshooting
 
@@ -376,3 +385,8 @@ cleaned up with `cync_lan.experimental_delete_scene`/
 - **Reauthentication keeps being requested.** The upstream package's cached
   cloud session expired and couldn't silently refresh - this is normal
   occasionally; just re-enter your password when prompted.
+- **Reporting a bug about any `experimental_*` service.** Every experimental
+  command/service invocation is automatically recorded (no setup needed) to
+  a dedicated `experimental_features.log`, alongside your other cync-lan
+  files in Home Assistant's own config directory - attach that file (not
+  the full HA log) along with your device model when opening an issue.

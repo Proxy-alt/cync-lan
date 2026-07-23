@@ -22,6 +22,9 @@ from custom_components.cync_lan.services import (
     SERVICE_SET_INDICATOR_LED,
     SERVICE_SET_MOTION_SENSOR_SCHEDULE,
     SERVICE_SET_MOTION_SENSOR_SETTINGS,
+    SERVICE_SET_MULTICOLOR_GRADIENT_MODE,
+    SERVICE_SET_MULTICOLOR_SEGMENTS,
+    SERVICE_SET_MULTICOLOR_SEGMENT_COUNT,
     SERVICE_TOGGLE_AUTOMATION,
     async_setup_services,
     async_unload_services,
@@ -123,6 +126,9 @@ def _make_entry(hass, dev_ids: list[int] = ()):
         node.set_group_membership = AsyncMock()
         node.add_to_scene = AsyncMock()
         node.remove_from_scene = AsyncMock()
+        node.set_multicolor_gradient_mode = AsyncMock()
+        node.set_multicolor_segment_count = AsyncMock()
+        node.set_multicolor_segments = AsyncMock()
     entry.runtime_data = SimpleNamespace(
         ncync_server=SimpleNamespace(node_devices=nodes),
         bridge=CyncLanBridge(hass, entry.entry_id),
@@ -130,7 +136,7 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_twelve_services(hass):
+async def test_setup_registers_all_fifteen_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
@@ -144,6 +150,9 @@ async def test_setup_registers_all_twelve_services(hass):
     assert hass.services.has_service(DOMAIN, SERVICE_PUSH_AUTOMATION_TO_HARDWARE)
     assert hass.services.has_service(DOMAIN, SERVICE_ADD_DEVICE_TO_SCENE)
     assert hass.services.has_service(DOMAIN, SERVICE_REMOVE_DEVICE_FROM_SCENE)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_MULTICOLOR_GRADIENT_MODE)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_MULTICOLOR_SEGMENT_COUNT)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_MULTICOLOR_SEGMENTS)
     async_unload_services(hass)
 
 
@@ -1322,6 +1331,153 @@ async def test_remove_device_from_scene_raises_for_unknown_device_id(hass):
             DOMAIN,
             SERVICE_REMOVE_DEVICE_FROM_SCENE,
             {"device_id": "does-not-exist", "scene_id": 3},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_gradient_mode_calls_node_method(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MULTICOLOR_GRADIENT_MODE,
+        {"device_id": device.id, "enabled": True},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_multicolor_gradient_mode.assert_awaited_once_with(True)
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_gradient_mode_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MULTICOLOR_GRADIENT_MODE,
+            {"device_id": "does-not-exist", "enabled": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segment_count_calls_node_method(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MULTICOLOR_SEGMENT_COUNT,
+        {"device_id": device.id, "count": 12},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_multicolor_segment_count.assert_awaited_once_with(12)
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segment_count_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MULTICOLOR_SEGMENT_COUNT,
+            {"device_id": "does-not-exist", "count": 12},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segments_calls_node_method_with_both_slots(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MULTICOLOR_SEGMENTS,
+        {
+            "device_id": device.id,
+            "segment_1_position": 1,
+            "segment_1_rgb": [255, 0, 0],
+            "segment_2_position": 2,
+            "segment_2_rgb": [0, 255, 0],
+        },
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_multicolor_segments.assert_awaited_once_with(
+        [(1, (255, 0, 0)), (2, (0, 255, 0))]
+    )
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segments_calls_node_method_with_one_slot(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MULTICOLOR_SEGMENTS,
+        {"device_id": device.id, "segment_1_position": 1, "segment_1_rgb": [255, 0, 0]},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_multicolor_segments.assert_awaited_once_with([(1, (255, 0, 0))])
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segments_position_without_rgb_is_valid(hass):
+    """Position and color are independently optional on the wire (see
+    CyncDevice.set_multicolor_segments()'s docstring) - a position-only
+    slot must be passed through, not rejected."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MULTICOLOR_SEGMENTS,
+        {"device_id": device.id, "segment_1_position": 7},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_multicolor_segments.assert_awaited_once_with([(7, None)])
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segments_raises_when_no_segment_given(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MULTICOLOR_SEGMENTS,
+            {"device_id": device.id},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_set_multicolor_segments_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MULTICOLOR_SEGMENTS,
+            {"device_id": "does-not-exist", "segment_1_position": 1, "segment_1_rgb": [0, 0, 0]},
             blocking=True,
         )
     async_unload_services(hass)

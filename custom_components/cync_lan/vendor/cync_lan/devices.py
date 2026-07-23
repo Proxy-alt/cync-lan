@@ -15,6 +15,7 @@ from typing import Coroutine, Dict, List, Optional, Tuple, Union, Callable
 from cync_lan.const import (
     CYNC_CLOUD_IP,
     CYNC_CMD_BROADCASTS,
+    CYNC_EXPERIMENTAL_LOG_PATH,
     CYNC_LOG_NAME,
     CYNC_MAX_TCP_CONN,
     CYNC_MITM_LOG_DIR,
@@ -66,6 +67,7 @@ logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
 _unsupported_logger: Optional[logging.Logger] = None
+_experimental_logger: Optional[logging.Logger] = None
 
 # ============================================================================
 # NAVIGATION INDEX - quick jump points for this ~3450-line file (grep a name
@@ -163,6 +165,50 @@ def _get_unsupported_logger() -> logging.Logger:
     return ulogger
 
 
+def _get_experimental_logger() -> logging.Logger:
+    """Lazily set up the dedicated, always-on log file for experimental_*
+    command/service invocations (see CYNC_EXPERIMENTAL_LOG_PATH). Unlike
+    _get_unsupported_logger()'s capture (opt-in via
+    CYNC_UNSUPPORTED_RAW_DEBUG), this one is never gated behind a feature
+    flag - every experimental command records itself here the moment it
+    runs, so the file is always ready to attach to a bug report without
+    the user needing to have pre-enabled anything. See
+    _warn_experimental_cmd_code/_warn_experimental_group_targeting/
+    _warn_experimental_transport_unconfirmed, which write to this on
+    every call (not just once-per-process like their console warning).
+
+    Since this runs on every experimental command with no opt-in flag,
+    it must never be able to block/break the actual command being sent -
+    if CYNC_EXPERIMENTAL_LOG_PATH's directory can't be created (bad
+    permissions, read-only filesystem, etc.), this logs one error to the
+    main logger and falls back to a no-op logger (NullHandler) instead of
+    raising, rather than taking down whatever command triggered it."""
+    global _experimental_logger
+    if _experimental_logger is not None:
+        return _experimental_logger
+    elogger = logging.getLogger("cync_lan.experimental")
+    elogger.setLevel(logging.DEBUG)
+    elogger.propagate = False
+    try:
+        log_path = Path(CYNC_EXPERIMENTAL_LOG_PATH)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        formatter = logging.Formatter(
+            "%(asctime)s.%(msecs)03d %(message)s", datefmt="%Y/%m/%d %H:%M:%S"
+        )
+        file_handler = logging.handlers.TimedRotatingFileHandler(log_path, when="midnight")
+        file_handler.setFormatter(formatter)
+        elogger.addHandler(file_handler)
+    except OSError as e:
+        logger.error(
+            f"Could not set up the experimental-features log file at "
+            f"{CYNC_EXPERIMENTAL_LOG_PATH}: {e}. Experimental command usage will "
+            f"only appear in the main log from now on."
+        )
+        elogger.addHandler(logging.NullHandler())
+    _experimental_logger = elogger
+    return elogger
+
+
 def capture_unsupported_device(
     ip_lp: str,
     dev_id: int,
@@ -228,6 +274,17 @@ def capture_unknown_packet(ip_lp: str, reason: str, raw: bytes):
 _EXPERIMENTAL_CMDS_WARNED: set = set()
 
 
+def _log_experimental(lp: str, name: str, reason: str) -> None:
+    """Writes one line to the dedicated experimental-features log file
+    (CYNC_EXPERIMENTAL_LOG_PATH) EVERY time an experimental command runs -
+    unlike the console warnings below, which only fire once per process
+    per command name. Pull this file (not the main log) when reporting a
+    bug about any experimental_* command/service: it's a focused record
+    of exactly which experimental functionality ran, when, and why it's
+    experimental, without the volume of full raw/debug logging."""
+    _get_experimental_logger().info(f"{lp} {name} - {reason}")
+
+
 def _warn_experimental_cmd_code(lp: str, name: str) -> None:
     """Log once per process per command name that this command uses a
     cmd_code PREDICTED (not confirmed against a real packet capture) by
@@ -238,7 +295,11 @@ def _warn_experimental_cmd_code(lp: str, name: str) -> None:
     @Deprecated in the decompiled app, so treat it as a strong prediction,
     not a certainty. If this command doesn't behave as expected, please
     report it (device model + what happened) - see docs/mesh_opcodes.md.
+
+    Every call (not just the first per process) is also recorded in the
+    dedicated experimental-features log file - see _log_experimental().
     """
+    _log_experimental(lp, name, "predicted (not confirmed) cmd_code")
     if name in _EXPERIMENTAL_CMDS_WARNED:
         return
     _EXPERIMENTAL_CMDS_WARNED.add(name)
@@ -258,7 +319,11 @@ def _warn_experimental_group_targeting(lp: str, name: str) -> None:
     responds to a group-range target as "the whole group," which has never
     been tested against real hardware - see docs/mesh_opcodes.md's "Groups
     control" section.
+
+    Every call (not just the first per process) is also recorded in the
+    dedicated experimental-features log file - see _log_experimental().
     """
+    _log_experimental(lp, name, "unconfirmed group-address targeting")
     if name in _EXPERIMENTAL_CMDS_WARNED:
         return
     _EXPERIMENTAL_CMDS_WARNED.add(name)
@@ -281,7 +346,11 @@ def _warn_experimental_transport_unconfirmed(lp: str, name: str) -> None:
     genuinely unresolved - not just an unconfirmed cmd_code/target, but an
     open question about which transport carries it in practice. See
     docs/cync_automations.md's "HA -> Cync (writing)" section.
+
+    Every call (not just the first per process) is also recorded in the
+    dedicated experimental-features log file - see _log_experimental().
     """
+    _log_experimental(lp, name, "unconfirmed real transport (may not be TCP at all)")
     if name in _EXPERIMENTAL_CMDS_WARNED:
         return
     _EXPERIMENTAL_CMDS_WARNED.add(name)
@@ -1691,6 +1760,137 @@ class CyncDevice:
             return
         mode_code, index, nonce = LIGHT_RUN_MODE_EFFECTS[effect]
         await self._send_light_run_mode(mode_code, index, nonce, sub_id)
+
+    async def set_multicolor_gradient_mode(
+        self, enabled: bool, sub_id: Optional[int] = None
+    ) -> None:
+        """EXPERIMENTAL: toggles gradient mode for a custom MultiColor
+        scheme (per-segment RGB programming for segmented/dynamic light
+        strips - a separate feature from the factory show/scheme presets
+        set_light_effect() covers). This is one of 3 confirmed wire
+        primitives for programming a custom scheme -
+        set_multicolor_segment_count()/set_multicolor_segments() are the
+        other two. cync-lan does NOT orchestrate the full multi-send
+        sequence a real custom scheme needs (what order the real app
+        sends these in, and any timing between them, was not traced from
+        the decompiled source) - only the 3 confirmed primitives are
+        exposed here; call them yourself.
+
+        Confirmed via SetMultiColorSegmentsCommand.java
+        (Data.GradientMode.mo14104a()): opcode array
+        `{0xF7,0x11,0x02,0x4E}` (misread-as-op-code - real op is the same
+        `0x8E` "mesh-relay" substitution as add_to_scene/
+        set_indicator_led/etc, dispatched via the identical
+        XlinkCommandDelegate.DefaultImpls.c()->h() path) + sub-payload
+        `[0x00, enabled (1-byte bool)]` = 6 bytes total.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}set_multicolor_gradient_mode:"
+        _warn_experimental_cmd_code(lp, "set_multicolor_gradient_mode")
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(
+            ">BB", 0x00, 1 if enabled else 0
+        )
+        cmd_ = 7 + len(payload)
+        await self.send_command(0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+
+    async def set_multicolor_segment_count(
+        self, count: int, sub_id: Optional[int] = None
+    ) -> None:
+        """EXPERIMENTAL: sets the total logical segment count for a
+        custom MultiColor scheme - see set_multicolor_gradient_mode()'s
+        docstring for the overall multi-send-sequence caveat this shares.
+
+        Confirmed via SetMultiColorSegmentsCommand.java
+        (Data.SegmentCount.mo14104a()): opcode array
+        `{0xF7,0x11,0x02,0x4E}` + sub-payload `[0xFF, count (1 byte)]` = 6
+        bytes total.
+
+        count: 0-255 (1-byte field) - no narrower bound confirmed; the
+        real app's own MAX_SEGMENT_COUNT constant's compiled value wasn't
+        visible in the decompiled source, only its name.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}set_multicolor_segment_count:"
+        _warn_experimental_cmd_code(lp, "set_multicolor_segment_count")
+        if not (0 <= count <= 0xFF):
+            logger.error(f"{lp} Invalid count: {count} must be 0-255")
+            return
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0xFF, count)
+        cmd_ = 7 + len(payload)
+        await self.send_command(0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+
+    async def set_multicolor_segments(
+        self,
+        segments: List[Tuple[Optional[int], Optional[Tuple[int, int, int]]]],
+        sub_id: Optional[int] = None,
+    ) -> None:
+        """EXPERIMENTAL: sets up to 2 segments' position+RGB color in one
+        send, for a custom MultiColor scheme - see
+        set_multicolor_gradient_mode()'s docstring for the overall
+        multi-send-sequence caveat this shares. For more than 2 segments
+        total, the CALLER must chunk into groups of <= 2 and call this
+        repeatedly - ordering/timing requirements across multiple calls
+        were not traced from the decompiled source and are NOT confirmed.
+
+        Confirmed via SetMultiColorSegmentsCommand.java
+        (Data.SegmentData.mo14104a()) and MultiColorSegmentData.java/
+        MultiColorSegmentDataKt.m14270a(): opcode array
+        `{0xF7,0x11,0x02,0x4E}` + a fixed leading byte (always `1` in the
+        real app - hardcoded in `SegmentData`'s own constructor, not
+        itself configurable there) + up to 2 segment blocks, each
+        `[position, R, G, B]` (4 bytes) - unset trailing slots (fewer
+        than 2 segments given) are padded with 4 bytes of 0xFF.
+
+        Per segment, position and color are INDEPENDENTLY nullable -
+        confirmed directly from `MultiColorSegmentData`'s own two
+        separately-nullable fields (`Integer`/`RgbColor`, both
+        `@Nullable`), not assumed to be all-or-nothing together:
+        position is 1-120 (`SegmentData`'s own bounds check divides
+        against a literal `120`, not inferred) or `None` for the 0xFF
+        "unset position" sentinel; color is `None` for "no color"
+        (written as `0,0,0`, per `MultiColorSegmentData`'s own null
+        branch), otherwise `(r, g, b)` each 0-255.
+
+        segments: 1 or 2 `(position, rgb)` tuples, `rgb` itself either
+        `None` or an `(r, g, b)` tuple.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}set_multicolor_segments:"
+        _warn_experimental_cmd_code(lp, "set_multicolor_segments")
+        if not (1 <= len(segments) <= 2):
+            logger.error(f"{lp} Invalid segments: must be 1 or 2 tuples, got {len(segments)}")
+            return
+        slot_bytes = b""
+        for position, rgb in segments:
+            if position is not None and not (1 <= position <= 120):
+                logger.error(f"{lp} Invalid position: {position} must be 1-120 or None")
+                return
+            if rgb is not None:
+                r, g, b = rgb
+                if not all(0 <= c <= 255 for c in (r, g, b)):
+                    logger.error(
+                        f"{lp} Invalid color: {rgb}, each channel must be 0-255"
+                    )
+                    return
+            else:
+                r = g = b = 0
+            pos_byte = position if position is not None else 0xFF
+            slot_bytes += struct.pack(">BBBB", pos_byte, r, g, b)
+        slot_bytes += b"\xff\xff\xff\xff" * (2 - len(segments))
+        payload = (
+            struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">B", 1) + slot_bytes
+        )
+        cmd_ = 7 + len(payload)
+        _sub_id = sub_id if sub_id is not None else 0x00
+        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        await self.send_command(0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
 
     async def set_group_membership(
         self,

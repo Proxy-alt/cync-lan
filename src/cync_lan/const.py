@@ -71,6 +71,7 @@ __all__ = [
     "CYNC_MITM_ENTITIES",
     "CYNC_UNSUPPORTED_RAW_DEBUG",
     "CYNC_UNSUPPORTED_LOG_PATH",
+    "CYNC_EXPERIMENTAL_LOG_PATH",
 ]
 
 YES_ANSWER = ("true", "1", "yes", "y", "t", 1, "on", "o")
@@ -205,6 +206,13 @@ CYNC_UNSUPPORTED_RAW_DEBUG: bool = (
 )
 CYNC_UNSUPPORTED_LOG_PATH = os.environ.get(
     "CYNC_UNSUPPORTED_LOG_PATH", f"{CYNC_CONFIG_DIR}/unsupported_devices.log"
+)
+# Always-on (no feature flag, unlike CYNC_UNSUPPORTED_RAW_DEBUG above) - every
+# experimental_* command's invocation is recorded here the moment it runs, so this
+# file is ready to attach to a bug report without the user needing to have
+# pre-enabled anything. See devices.py's _get_experimental_logger().
+CYNC_EXPERIMENTAL_LOG_PATH = os.environ.get(
+    "CYNC_EXPERIMENTAL_LOG_PATH", f"{CYNC_CONFIG_DIR}/experimental_features.log"
 )
 CYNC_CLOUD_IP = os.environ.get("CYNC_CLOUD_IP", "34.73.130.191")
 

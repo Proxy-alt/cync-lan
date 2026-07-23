@@ -306,3 +306,53 @@ experimental_remove_device_from_scene:
         number:
           min: 0
           max: 255
+
+experimental_set_multicolor_gradient_mode:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    enabled:
+      required: true
+      selector:
+        boolean:
+
+experimental_set_multicolor_segment_count:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    count:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255
+
+experimental_set_multicolor_segments:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    segment_1_position:
+      selector:
+        number:
+          min: 1
+          max: 120
+    segment_1_rgb:
+      selector:
+        color_rgb:
+    segment_2_position:
+      selector:
+        number:
+          min: 1
+          max: 120
+    segment_2_rgb:
+      selector:
+        color_rgb:

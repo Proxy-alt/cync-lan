@@ -40,6 +40,9 @@ SERVICE_SET_GROUP_MEMBERSHIP = "experimental_set_group_membership"
 SERVICE_PUSH_AUTOMATION_TO_HARDWARE = "experimental_push_automation_to_hardware"
 SERVICE_ADD_DEVICE_TO_SCENE = "experimental_add_device_to_scene"
 SERVICE_REMOVE_DEVICE_FROM_SCENE = "experimental_remove_device_from_scene"
+SERVICE_SET_MULTICOLOR_GRADIENT_MODE = "experimental_set_multicolor_gradient_mode"
+SERVICE_SET_MULTICOLOR_SEGMENT_COUNT = "experimental_set_multicolor_segment_count"
+SERVICE_SET_MULTICOLOR_SEGMENTS = "experimental_set_multicolor_segments"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -66,6 +69,11 @@ ATTR_MEMBER = "member"
 ATTR_REACH_FLAG = "reach_flag"
 ATTR_AUTOMATION_ENTITY_ID = "automation_entity_id"
 ATTR_FADE = "fade"
+ATTR_COUNT = "count"
+ATTR_SEGMENT_1_POSITION = "segment_1_position"
+ATTR_SEGMENT_1_RGB = "segment_1_rgb"
+ATTR_SEGMENT_2_POSITION = "segment_2_position"
+ATTR_SEGMENT_2_RGB = "segment_2_rgb"
 
 # Day-of-week bitmask - AddAutomationHubCommand.java's WriteBuffer field
 # (see cync_lan.devices.add_automation's docstring): Sunday=bit0 through
@@ -290,6 +298,42 @@ async def _handle_add_device_to_scene(hass: HomeAssistant, call: ServiceCall) ->
 async def _handle_remove_device_from_scene(hass: HomeAssistant, call: ServiceCall) -> None:
     _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
     await node.remove_from_scene(call.data[ATTR_SCENE_ID])
+
+
+async def _handle_set_multicolor_gradient_mode(hass: HomeAssistant, call: ServiceCall) -> None:
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    await node.set_multicolor_gradient_mode(call.data[ATTR_ENABLED])
+
+
+async def _handle_set_multicolor_segment_count(hass: HomeAssistant, call: ServiceCall) -> None:
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    await node.set_multicolor_segment_count(call.data[ATTR_COUNT])
+
+
+async def _handle_set_multicolor_segments(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Builds the (position, rgb) tuple list CyncDevice.set_multicolor_segments()
+    expects from up to 2 named, independently-optional slots - position and
+    color are independently nullable on the wire (see that method's
+    docstring), so each slot only needs BOTH omitted to be skipped
+    entirely; either alone given is valid (an explicit position with no
+    color, or a color with no position)."""
+    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    segments = []
+    for pos_key, rgb_key in (
+        (ATTR_SEGMENT_1_POSITION, ATTR_SEGMENT_1_RGB),
+        (ATTR_SEGMENT_2_POSITION, ATTR_SEGMENT_2_RGB),
+    ):
+        position = call.data.get(pos_key)
+        rgb = call.data.get(rgb_key)
+        if position is None and rgb is None:
+            continue
+        segments.append((position, tuple(rgb) if rgb else None))
+    if not segments:
+        raise ServiceValidationError(
+            "At least one segment (segment_1_position/segment_1_rgb or "
+            "segment_2_position/segment_2_rgb) must be given."
+        )
+    await node.set_multicolor_segments(segments)
 
 
 def _resolve_cync_light_entity(hass: HomeAssistant, entity_id: str):
@@ -675,6 +719,39 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_SCENE_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
         }
     ),
+    SERVICE_SET_MULTICOLOR_GRADIENT_MODE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_ENABLED): cv.boolean,
+        }
+    ),
+    SERVICE_SET_MULTICOLOR_SEGMENT_COUNT: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_COUNT): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+        }
+    ),
+    SERVICE_SET_MULTICOLOR_SEGMENTS: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Optional(ATTR_SEGMENT_1_POSITION): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=120)
+            ),
+            vol.Optional(ATTR_SEGMENT_1_RGB): vol.All(
+                cv.ensure_list,
+                [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+                vol.Length(min=3, max=3),
+            ),
+            vol.Optional(ATTR_SEGMENT_2_POSITION): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=120)
+            ),
+            vol.Optional(ATTR_SEGMENT_2_RGB): vol.All(
+                cv.ensure_list,
+                [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+                vol.Length(min=3, max=3),
+            ),
+        }
+    ),
 }
 
 _HANDLERS = {
@@ -690,11 +767,14 @@ _HANDLERS = {
     SERVICE_PUSH_AUTOMATION_TO_HARDWARE: _handle_push_automation_to_hardware,
     SERVICE_ADD_DEVICE_TO_SCENE: _handle_add_device_to_scene,
     SERVICE_REMOVE_DEVICE_FROM_SCENE: _handle_remove_device_from_scene,
+    SERVICE_SET_MULTICOLOR_GRADIENT_MODE: _handle_set_multicolor_gradient_mode,
+    SERVICE_SET_MULTICOLOR_SEGMENT_COUNT: _handle_set_multicolor_segment_count,
+    SERVICE_SET_MULTICOLOR_SEGMENTS: _handle_set_multicolor_segments,
 }
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 12 experimental services - idempotent, so calling this
+    """Register all 15 experimental services - idempotent, so calling this
     from every config entry's async_setup_entry (there's only ever one
     entry per the unique-config-entry design, but this is cheap insurance)
     is safe."""
@@ -710,7 +790,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Remove all 12 services, but only once no Cync LAN config entry
+    """Remove all 15 services, but only once no Cync LAN config entry
     remains loaded - checked as "<=1" rather than "==0" because this runs
     from async_unload_entry *before* HA has finished marking the entry
     currently being unloaded as unloaded, so that entry itself would

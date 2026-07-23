@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (355 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (380 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -9,7 +9,7 @@ rules:
   action-setup:
     status: done
     comment: >-
-      services.py's 12 experimental_* services are registered idempotently in
+      services.py's 15 experimental_* services are registered idempotently in
       async_setup_entry (hass.services.has_service guard) and removed in
       async_unload_entry only once no Cync LAN entry remains loaded. Tested
       in test_services.py. Motion/ambient sensor tuning's raw service is
@@ -73,6 +73,17 @@ rules:
       branches are dispatch-confirmed from decompiled source (no
       unconfirmed format guessed at for either) - only cmd_code is
       predicted, same as everything else.
+      experimental_set_multicolor_gradient_mode/
+      experimental_set_multicolor_segment_count/
+      experimental_set_multicolor_segments are an eighth kind: 3 raw wire
+      primitives for a materially bigger feature (custom MultiColor
+      scheme programming on segmented light strips) this integration
+      deliberately does NOT fully build out - only the individually-
+      confirmed primitives are exposed, chunking/ordering for more than 2
+      segments is left to the caller. Two sibling commands
+      (SetMultiColorSchemeDirectCommand/SetMultiColorBitmapCommand)
+      dispatch via methods never traced anywhere else in this project's
+      research and are out of scope entirely, not just unwired.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -133,7 +144,7 @@ rules:
   docs-actions:
     status: done
     comment: >-
-      strings.json's "services" block documents all 12 experimental_*
+      strings.json's "services" block documents all 15 experimental_*
       services and their fields, each description explicitly flagging what's
       actually unconfirmed for that specific command - predicted cmd_code
       for most, the target address too for scenes, for group power

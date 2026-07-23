@@ -8,6 +8,33 @@ root `CHANGELOG.md`) - the two are versioned and released separately, even
 though this integration depends on that package to do the actual protocol
 work.
 
+### 0.4.0
+
+- Add `CyncDevice.set_multicolor_gradient_mode()`/`set_multicolor_segment_count()`/
+  `set_multicolor_segments()` in the underlying package - 3 confirmed wire
+  primitives for programming a custom MultiColor scheme (per-segment RGB
+  color on segmented/dynamic light strips), plus standalone
+  `experimental_set_multicolor_gradient_mode`/
+  `experimental_set_multicolor_segment_count`/
+  `experimental_set_multicolor_segments` services. Per-segment position and
+  color are independently optional, confirmed directly from the app's own
+  data model. This integration does not orchestrate the full multi-send
+  sequence a real custom scheme needs (chunking/ordering for more than 2
+  segments) - only the 3 confirmed primitives are exposed; see the
+  README's "Known limitations" for what that means in practice. Two
+  related commands (`SetMultiColorSchemeDirectCommand`'s "entertainment"/
+  live-streaming variant, `SetMultiColorBitmapCommand`'s tile/matrix
+  bitmap data) remain out of scope - both dispatch via methods never
+  traced anywhere else in this project's research, not just untested.
+- Add a dedicated, always-on `experimental_features.log` (no flag to
+  enable) that records every single `experimental_*` command/service
+  invocation the moment it runs, independent of the console warnings that
+  only fire once per process per command name - attach this file (not the
+  full HA log) when reporting a bug about any experimental feature. Never
+  blocks the actual command if the log file itself can't be created (e.g.
+  a permissions issue) - falls back to a one-time error in the main log
+  instead.
+
 ### 0.3.0
 
 - Add `CyncDevice.remove_from_scene()` in the underlying package - the

@@ -476,6 +476,60 @@
           "description": "The numeric ID of the scene to remove this device from (0-255)."
         }
       }
+    },
+    "experimental_set_multicolor_gradient_mode": {
+      "name": "Set MultiColor gradient mode (experimental)",
+      "description": "Experimental — toggles gradient mode for a custom MultiColor scheme (per-segment RGB programming for segmented/dynamic light strips - a separate, bigger feature from the factory light-effect presets). This is one of 3 confirmed wire primitives for programming a custom scheme (see experimental_set_multicolor_segment_count/experimental_set_multicolor_segments for the other two) - this integration does not orchestrate the full multi-step sequence a real custom scheme needs, only these 3 confirmed primitives are exposed. Confirmed via decompiled app source (SetMultiColorSegmentsCommand); the predicted outer command length is what's unconfirmed. Please report success or failure with your device model.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The light strip / segmented device to set gradient mode on."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether gradient mode should be on."
+        }
+      }
+    },
+    "experimental_set_multicolor_segment_count": {
+      "name": "Set MultiColor segment count (experimental)",
+      "description": "Experimental — sets the total logical segment count for a custom MultiColor scheme - see experimental_set_multicolor_gradient_mode's description for the overall multi-step-sequence context this shares. Confirmed via decompiled app source (SetMultiColorSegmentsCommand); the predicted outer command length is what's unconfirmed, along with the real app's own upper bound for this value (not visible in the decompiled source). Please report success or failure with your device model.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The light strip / segmented device to set the segment count on."
+        },
+        "count": {
+          "name": "Segment count",
+          "description": "Total number of logical segments (0-255 - no narrower confirmed bound)."
+        }
+      }
+    },
+    "experimental_set_multicolor_segments": {
+      "name": "Set MultiColor segment position/color (experimental)",
+      "description": "Experimental — sets up to 2 segments' position and/or color in one command, for a custom MultiColor scheme - see experimental_set_multicolor_gradient_mode's description for the overall multi-step-sequence context this shares. Position and color are independently optional per segment (confirmed directly from the app's own data model, not assumed) - give either, both, or neither per segment slot. At least one of the two segment slots must be given. Confirmed via decompiled app source (SetMultiColorSegmentsCommand); the predicted outer command length is what's unconfirmed. Please report success or failure with your device model.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The light strip / segmented device to set segments on."
+        },
+        "segment_1_position": {
+          "name": "Segment 1 position",
+          "description": "Which physical segment (1-120) this slot addresses. Leave blank to send the \"unset position\" sentinel."
+        },
+        "segment_1_rgb": {
+          "name": "Segment 1 color",
+          "description": "This segment's color. Leave blank to send \"no color\" (0,0,0)."
+        },
+        "segment_2_position": {
+          "name": "Segment 2 position",
+          "description": "Which physical segment (1-120) this slot addresses. Leave blank to send the \"unset position\" sentinel."
+        },
+        "segment_2_rgb": {
+          "name": "Segment 2 color",
+          "description": "This segment's color. Leave blank to send \"no color\" (0,0,0)."
+        }
+      }
     }
   }
 }
