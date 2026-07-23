@@ -6,6 +6,12 @@
   provisioned device - independently reproduced from the documented formula, matching the
   decompiled app's own hardcoded constant exactly. See `docs/ble_provisioning_protocol.md`. Install
   with `pip install cync_lan[ble]`; does not touch the main server or require `bleak` otherwise.
+- Fixed, before this saw real use: the pairing-confirmation check accepted any nonzero response
+  byte as success; the real app's own callback (confirmed via direct source read) only treats the
+  literal byte value `7` as confirmed - anything else, including plausible-looking nonzero values,
+  means the device rejected the new mesh credentials. Also added `verify_pairing_response()`, a
+  non-fatal diagnostic replicating a real mutual-auth check the app performs that this module had
+  incorrectly assumed (based only on an unrelated open-source client) wasn't done at all.
 
 ### 0.0.6b45
 - Fix sol-lamp brightness changes not updating in HA immediately: the ack-matching allow-list was missing the `0xD2` op sol-lamp devices use for brightness, so their acks went unrecognized and HA's brightness slider stayed stale until an unrelated status update happened to correct it. Confirmed against the real Cync Android app's decompiled command encoding
