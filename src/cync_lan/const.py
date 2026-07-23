@@ -7,54 +7,37 @@ import tzlocal
 
 from cync_lan import __version__
 
+# Constants that were here before this package split (MQTT broker settings,
+# HASS discovery topics, the exporter HTTP service, task names for the
+# standalone CLI) now live in the `cync-lan-mqtt` add-on package's own
+# `const.py` - nothing in this package (`devices.py`/`server.py`/
+# `cloud_api.py`/`utils.py`) reads them. See that package's `const.py` for
+# `CYNC_MQTT_*`, `CYNC_HASS_*`, `CYNC_TOPIC`, `CYNC_BRIDGE_*`,
+# `ORIGIN_STRUCT`, `DEVICE_LWT_MSG`, `CYNC_MITM_ENTITIES`, `CYNC_EXPORT_*`,
+# `CYNC_STATIC_DIR`, `CYNC_HASS_APP`, and the `*_START_TASK_NAME` constants.
 __all__ = [
-    "CYNC_EXPORT_HOST",
     "CYNC_OVERWRITE_CONFIG_FILE",
-    "CYNC_EXPORT_HOST",
-    "EXPORT_SRV_START_TASK_NAME",
-    "MQTT_CLIENT_START_TASK_NAME",
-    "nCYNC_START_TASK_NAME",
     "FOREIGN_LOG_FORMATTER",
     "LOG_FORMATTER",
     "TCP_BLACKHOLE_DELAY",
-    "CYNC_MANUFACTURER",
-    "CYNC_BRIDGE_OBJ_ID",
     "CYNC_MINK",
     "CYNC_MAXK",
-    "ORIGIN_STRUCT",
-    "CYNC_BRIDGE_DEVICE_REGISTRY_CONF",
     "CYNC_UUID_PATH",
     "LOCAL_TZ",
     "CYNC_CONFIG_DIR",
-    "CYNC_ENABLE_EXPORTER",
     "CYNC_BASE_DIR",
-    "CYNC_STATIC_DIR",
-    "CYNC_EXPORT_PORT",
-    "CYNC_UUID_PATH",
     "FACTORY_EFFECTS_BYTES",
     "LIGHT_RUN_MODE_EFFECTS",
-    "LOCAL_TZ",
     "CYNC_CONFIG_FILE_PATH",
     "CYNC_CLOUD_AUTH_PATH",
     "CYNC_VERSION",
     "SRC_REPO_URL",
-    "DEVICE_LWT_MSG",
-    "CYNC_MQTT_CONN_DELAY",
     "CYNC_CMD_BROADCASTS",
     "CYNC_MAX_TCP_CONN",
     "CYNC_TCP_WHITELIST",
     "CYNC_API_BASE",
-    "CYNC_MQTT_HOST",
-    "CYNC_MQTT_PORT",
-    "CYNC_MQTT_USER",
-    "CYNC_MQTT_PASS",
     "CYNC_SSL_CERT",
     "CYNC_SSL_KEY",
-    "CYNC_TOPIC",
-    "CYNC_HASS_TOPIC",
-    "CYNC_HASS_STATUS_TOPIC",
-    "CYNC_HASS_BIRTH_MSG",
-    "CYNC_HASS_WILL_MSG",
     "CYNC_SRV_PORT",
     "CYNC_SRV_HOST",
     "STREAM_CHUNK_SIZE",
@@ -62,16 +45,24 @@ __all__ = [
     "CYNC_RAW",
     "CYNC_DEBUG",
     "CYNC_CORP_ID",
+    "CYNC_CLOUD_IP",
     "DATA_BOUNDARY",
     "RAW_MSG",
     "CYNC_LOG_NAME",
     "CYNC_ACCOUNT_USERNAME",
     "CYNC_ACCOUNT_PASSWORD",
     "CYNC_ACCOUNT_LANGUAGE",
-    "CYNC_MITM_ENTITIES",
+    "CYNC_SECRET_KEY",
+    "CYNC_MITM_DEV_LOGGER",
+    "CYNC_MITM_APP_LOGGER",
+    "CYNC_APP_MITM_LOGGING",
+    "CYNC_MITM_LOG_NAME",
+    "CYNC_MITM_LOG_PATH",
+    "CYNC_MITM_LOG_DIR",
     "CYNC_UNSUPPORTED_RAW_DEBUG",
     "CYNC_UNSUPPORTED_LOG_PATH",
     "CYNC_EXPERIMENTAL_LOG_PATH",
+    "CYNC_EXPORT_SOURCE",
 ]
 
 YES_ANSWER = ("true", "1", "yes", "y", "t", 1, "on", "o")
@@ -90,26 +81,18 @@ FOREIGN_LOG_FORMATTER = logging.Formatter(
 CYNC_VERSION: str = __version__
 SRC_REPO_URL: str = "https://github.com/baudneo/cync-lan"
 CYNC_API_BASE: str = "https://api.gelighting.com/v2/"
-DEVICE_LWT_MSG: bytes = b"offline"
-
-MQTT_DEBUG = os.environ.get("CYNC_MQTT_DEBUG", "1").casefold() in YES_ANSWER
-MQTT_DEAD = os.environ.get("CYNC_MQTT_DEAD", "0").casefold() in YES_ANSWER
 
 CYNC_SRV_HOST = os.environ.get("CYNC_SRV_HOST", "0.0.0.0")
-CYNC_EXPORT_HOST = os.environ.get("CYNC_EXPORT_HOST", CYNC_SRV_HOST)
+# Read by cloud_api.py: if set, device-list export data is read from this
+# local file path instead of calling out to the Cync cloud API. Also read
+# by the (addon-only) exporter.py HTTP service, hence the name.
 CYNC_EXPORT_SOURCE = os.environ.get("CYNC_EXPORT_SOURCE")
-
-CYNC_HASS_APP = os.environ.get("CYNC_HASS_APP", "no") in YES_ANSWER
 
 CYNC_ACCOUNT_LANGUAGE: str = os.environ.get("CYNC_ACCOUNT_LANGUAGE", "en-us").casefold()
 CYNC_ACCOUNT_USERNAME: str = os.environ.get("CYNC_ACCOUNT_USERNAME", None)
 CYNC_ACCOUNT_PASSWORD: str = os.environ.get("CYNC_ACCOUNT_PASSWORD", None)
 CYNC_MITM_DEV_LOGGER: bool = os.environ.get("CYNC_MITM_DEV_LOGGER", 'no').casefold() in YES_ANSWER
 CYNC_MITM_APP_LOGGER: bool = os.environ.get("CYNC_MITM_APP_LOGGER", 'no').casefold() in YES_ANSWER
-# Whether to expose a per-device "MITM Mode" switch entity in HASS. Off by default since
-# it's a developer/reverse-engineering feature most users don't want cluttering their
-# entity list; MITM mode itself is still usable via raw MQTT if needed.
-CYNC_MITM_ENTITIES: bool = os.environ.get("CYNC_MITM_ENTITIES", 'no').casefold() in YES_ANSWER
 
 CYNC_CMD_BROADCASTS: int = os.environ.get("CYNC_CMD_BROADCASTS", 2)
 if not CYNC_CMD_BROADCASTS:
@@ -130,22 +113,11 @@ else:
 CYNC_TCP_WHITELIST: Optional[Union[str, List[Optional[str]]]] = os.environ.get(
     "CYNC_TCP_WHITELIST"
 )
-CYNC_MQTT_HOST = os.environ.get("CYNC_MQTT_HOST", "homeassistant.local")
-CYNC_MQTT_PORT = os.environ.get("CYNC_MQTT_PORT", 1883)
-CYNC_MQTT_USER = os.environ.get("CYNC_MQTT_USER")
-CYNC_MQTT_PASS = os.environ.get("CYNC_MQTT_PASS")
-CYNC_TOPIC = os.environ.get("CYNC_TOPIC", "cync_lan")
-CYNC_HASS_TOPIC = os.environ.get("CYNC_HASS_TOPIC", "homeassistant")
-CYNC_HASS_STATUS_TOPIC = os.environ.get("CYNC_HASS_STATUS_TOPIC", "status")
-CYNC_HASS_BIRTH_MSG = os.environ.get("CYNC_HASS_BIRTH_MSG", "online")
-CYNC_HASS_WILL_MSG = os.environ.get("CYNC_HASS_WILL_MSG", "offline")
-CYNC_MQTT_CONN_DELAY: int = int(os.environ.get("CYNC_MQTT_CONN_DELAY", 10))
 CYNC_SECRET_KEY: str = os.environ.get("CYNC_SECRET_KEY", None)
 CYNC_RAW = os.environ.get("CYNC_RAW_DEBUG", "0").casefold() in YES_ANSWER
 CYNC_DEBUG = os.environ.get("CYNC_DEBUG", "0").casefold() in YES_ANSWER
 
 CYNC_BASE_DIR: str = os.environ.get("CYNC_BASE_DIR", "/root/cync-lan")
-CYNC_STATIC_DIR: str = os.environ.get("CYNC_STATIC_DIR", f"{CYNC_BASE_DIR}/www")
 CYNC_CFGAPPEND_DIR: str = os.environ.get("CYNC_CFGAPPEND_DIR", "/config")
 CYNC_OVERWRITE_CONFIG_FILE: bool = (
     os.environ.get("CYNC_OVERWRITE_CONFIG_FILE", "1").casefold() in YES_ANSWER
@@ -167,26 +139,16 @@ CYNC_SSL_CERT: str = os.environ.get(
 )
 CYNC_SSL_KEY: str = os.environ.get("CYNC_DEVICE_KEY", "/root/cync-lan/certs/key.pem")
 
-CYNC_BRIDGE_DEVICE_REGISTRY_CONF: dict = {}
-
 CYNC_SRV_PORT = int(os.environ.get("CYNC_PORT", 23779))
-CYNC_EXPORT_PORT = int(os.environ.get("CYNC_EXPORT_PORT", 23778))
 STREAM_CHUNK_SIZE = 2048
 CYNC_CORP_ID: str = "1007d2ad150c4000"
 DATA_BOUNDARY = 0x7E
 RAW_MSG = (
     " Set the CYNC_RAW_DEBUG env var to 1 to see the data" if CYNC_RAW is False else ""
 )
-CYNC_ENABLE_EXPORTER: bool = (
-    os.environ.get("CYNC_ENABLE_EXPORTER", "1").casefold() in YES_ANSWER
-)
 # hardcoded: internally cync uses 0-100. So, no matter the bulbs actual kelvin range, it will work out.
 CYNC_MINK: int = 2000
 CYNC_MAXK: int = 7000
-CYNC_BRIDGE_OBJ_ID: str = "cync_lan_bridge"
-EXPORT_SRV_START_TASK_NAME = "ExportServer_START"
-MQTT_CLIENT_START_TASK_NAME = "MQTTClient_START"
-nCYNC_START_TASK_NAME = "CyncLanServer_START"
 if CYNC_TCP_WHITELIST:
     CYNC_TCP_WHITELIST = CYNC_TCP_WHITELIST.split(",")
     CYNC_TCP_WHITELIST = [x.strip() for x in CYNC_TCP_WHITELIST if x]
@@ -263,13 +225,6 @@ LIGHT_RUN_MODE_EFFECTS: Dict[str, Tuple[int, int, int]] = {
     "cool_blues": (0x04, 2, 0x00),
 }
 
-ORIGIN_STRUCT = {
-    "name": "cync-lan",
-    "sw_version": CYNC_VERSION,
-    "support_url": SRC_REPO_URL,
-}
-
-CYNC_MANUFACTURER = "Savant"
 TCP_BLACKHOLE_DELAY: float = os.environ.get("CYNC_TCP_BLACKHOLE_DELAY", 14.75)
 if TCP_BLACKHOLE_DELAY:
     if not isinstance(TCP_BLACKHOLE_DELAY, float):

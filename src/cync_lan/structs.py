@@ -26,10 +26,9 @@ if TYPE_CHECKING:
     import uvloop
 
     from cync_lan.cloud_api import CyncCloudAPI
-    from cync_lan.exporter import ExportServer
-    from cync_lan.main import CyncLAN
-    from cync_lan.mqtt_client import MQTTClient
     from cync_lan.server import nCyncServer
+
+from cync_lan.protocols import MqttSink, StoppableService
 
 
 logger = logging.getLogger(CYNC_LOG_NAME)
@@ -63,11 +62,22 @@ class GlobalObjEnv(BaseModel):
 
 
 class GlobalObject:
-    cync_lan: Optional["CyncLAN"] = None
+    # Addon-only attributes (e.g. `cync_lan` - the standalone CLI entry
+    # point's own instance) are intentionally not declared here: core
+    # cannot import their concrete types without creating a circular
+    # dependency (the addon package depends on core, not the other way
+    # around). Plain Python classes don't enforce annotated attributes at
+    # runtime, so addon code assigning e.g. `g.cync_lan = CyncLAN()` still
+    # works fine without a class-level declaration here.
     ncync_server: Optional["nCyncServer"] = None
-    mqtt_client: Optional["MQTTClient"] = None
+    # mqtt_client/export_server are duck-typed by whatever the consuming
+    # package provides (the real MQTTClient/ExportServer in the addon
+    # package, or custom_components/cync_lan/bridge.py's CyncLanBridge in
+    # the HA integration) - see cync_lan/protocols.py for the exact method
+    # surface this module and utils.py actually call.
+    mqtt_client: Optional["MqttSink"] = None
     loop: Union[uvloop.Loop, asyncio.AbstractEventLoop, None] = None
-    export_server: Optional["ExportServer"] = None
+    export_server: Optional["StoppableService"] = None
     cloud_api: Optional["CyncCloudAPI"] = None
     tasks: List[Optional[asyncio.Task]]
     env: GlobalObjEnv = GlobalObjEnv()

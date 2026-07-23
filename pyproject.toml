@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cync_lan"
-version = "0.0.6b48"
-description = "A Python library for local async MQTT control of Cync/C by GE smart devices (DNS redirection required)"
+name = "cync-lan"
+version = "0.1.0"
+description = "Core async protocol library for local LAN control of Cync/C by GE smart devices - device/session state machine, packet codec, cloud auth, and BLE provisioning"
 readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
 classifiers = [
@@ -18,60 +18,47 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.9"
 dependencies = [
     "pyyaml==6.0.2",
-    "uvloop>=0.21.0",
-    "aiomqtt==2.3.0",
-    "aiohttp>=3.10.8",
-    "fastapi>=0.115.12",
-    "uvicorn>=0.34.3",
+    "pydantic>=2.0.0",
     "tzlocal>=5.3.1",
     "cryptography>=46.0.7",
+    "aiohttp>=3.10.8",
 ]
+
 [project.optional-dependencies]
 dev = [
     "python-dotenv>=1.1.0",
+    "pytest",
+    "pytest-asyncio",
 ]
 ble = [
     "bleak>=0.22.0",
 ]
 
 [project.scripts]
-cync-lan = "cync_lan.main:main"
 cync-lan-ble-provision = "cync_lan.ble_provision:main"
 
 [project.urls]
-Homepage = "https://github.com/baudneo/cync-lan"
-Repository = "https://github.com/baudneo/cync-lan"
-Issues = "https://github.com/baudneo/cync-lan/issues"
+Homepage = "https://github.com/Proxy-alt/cync-lan"
+Repository = "https://github.com/Proxy-alt/cync-lan"
+Issues = "https://github.com/Proxy-alt/cync-lan/issues"
+
+[tool.setuptools.package-data]
+cync_lan = ["py.typed"]
 
 [tool.ruff]
-# Set the maximum line length to 88 (the industry standard set by Black)
 line-length = 88
-
-# Target Python 3.14 based on your project's requires-python
 target-version = "py314"
 
 [tool.ruff.lint]
-# Enable specific rule sets:
-# E: pycodestyle (standard PEP8 formatting errors)
-# F: Pyflakes (syntax errors, undefined names, unused imports)
-# I: isort (automatically sorts your imports alphabetically and by type)
-# B: flake8-bugbear (finds likely bugs and design problems)
-# UP: pyupgrade (automatically upgrades older syntax to modern Python 3.9+ syntax)
 select = ["E", "F", "I", "B"]
-
-# Ignore specific rules if they get too noisy (leave empty to start)
 ignore = []
 
-# Allow Ruff to automatically fix issues when you pass the --fix flag
-#fixable = ["ALL"]
-#unfixable = []
-
 [tool.ruff.format]
-# Enforce standard formatting styles (Drop-in replacement for Black)
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false

@@ -1,24 +1,15 @@
-name: Prerelease - Python package
+name: Prerelease + PyPI publish - core package
 
-# Automatically creates a GitHub prerelease every time pyproject.toml's
-# version changes on this branch - see RELEASING.md. Always a prerelease:
-# this package has never had a formal stable-release process (no tag or
-# release existed for it at all before this workflow). Tagged
-# cync-lan-vX.Y.Z, a distinct prefix from the HA integration's own
-# vX.Y.Z tags (see prerelease_ha_integration.yml and RELEASING.md's note
-# on why the two must not share a tag namespace).
-#
-# Present on both feature/ha-custom-component and python since
-# pyproject.toml is a shared file bumped on either branch (usually
-# feature/ha-custom-component first, then ported) - idempotent (skips if
-# the tag already exists) so the same version landing on both branches
-# only ever produces one release.
+# Runs the test suite on every push, then (only for a version that hasn't
+# been tagged/released yet) tags the commit, creates a GitHub prerelease
+# with that version's CHANGELOG section, and publishes to PyPI via Trusted
+# Publishing (no stored token - see RELEASING.md). Always a prerelease:
+# this package has no "stable" designation yet.
 
 on:
   push:
     branches:
-      - feature/ha-custom-component
-      - python
+      - core
     paths:
       - "pyproject.toml"
   workflow_dispatch:
@@ -27,8 +18,23 @@ permissions:
   contents: write
 
 jobs:
-  prerelease:
+  test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[ble,dev]"
+      - run: pytest tests/ -q
+
+  prerelease:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      exists: ${{ steps.check.outputs.exists }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4.2.2
@@ -76,3 +82,19 @@ jobs:
             --notes-file /tmp/release-notes.md \
             --prerelease \
             --target "${{ github.sha }}"
+
+  publish:
+    needs: prerelease
+    if: needs.prerelease.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    environment: pypi-core
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
