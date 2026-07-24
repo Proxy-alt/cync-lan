@@ -24,7 +24,8 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Optional
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -34,7 +35,7 @@ from .const import DOMAIN
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
-    from cync_lan.structs import EntityState
+    from cync_lan.structs import EntityState, FanSpeed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,7 +111,9 @@ class CyncLanBridge:
         self,
         hass: HomeAssistant,
         entry_id: str,
-        on_unknown_device: Optional[Callable[[], None]] = None,
+        on_unknown_device: Optional[
+            Callable[[], Optional[Coroutine[Any, Any, None]]]
+        ] = None,
     ) -> None:
         self.hass = hass
         self.entry_id = entry_id
@@ -155,7 +158,7 @@ class CyncLanBridge:
     def get_indicator_led(self, dev_id: int) -> IndicatorLedState:
         return self._get(dev_id).indicator_led
 
-    async def set_indicator_led_field(self, node: "CyncDevice", **fields) -> None:
+    async def set_indicator_led_field(self, node: "CyncDevice", **fields: Any) -> None:
         """Merge the given field(s) into the cached IndicatorLedState and
         send the FULL merged state live - CyncDevice.set_indicator_led()
         sends mode/color/brightness/wifi_disconnect_blink as one atomic
@@ -173,7 +176,7 @@ class CyncLanBridge:
         )
         async_dispatcher_send(self.hass, signal_indicator_led_update(self.entry_id, node.id))
 
-    def seed_indicator_led_field(self, node: "CyncDevice", **fields) -> None:
+    def seed_indicator_led_field(self, node: "CyncDevice", **fields: Any) -> None:
         """Restore-on-startup path: update the cache and notify sibling
         entities WITHOUT sending a live command. Deliberately a separate,
         non-async method rather than a send_command=True/False flag on
@@ -224,14 +227,15 @@ class CyncLanBridge:
         async_dispatcher_send(self.hass, signal_entity_update(unique_id))
         return True
 
-    async def pub_online(self, dev_id: int, value: bool) -> None:
+    async def pub_online(self, device_id: int, status: bool) -> bool:
         """Must stay async: devices.py wraps this call directly in
         asyncio.create_task(), which requires a coroutine - a plain sync def
         here would raise "a coroutine was expected, got None" at runtime.
         Confirmed against the real MQTTClient.pub_online, which is async for
         the same reason."""
-        self._set_online(dev_id, value)
-        async_dispatcher_send(self.hass, signal_device_online(dev_id))
+        self._set_online(device_id, status)
+        async_dispatcher_send(self.hass, signal_device_online(device_id))
+        return True
 
     def report_unknown_device_id(self, dev_id: int) -> None:
         """dynamic-devices (gold): called from devices.py's
@@ -274,6 +278,8 @@ class CyncLanBridge:
         self.hass.async_create_task(self._call_on_unknown_device())
 
     async def _call_on_unknown_device(self) -> None:
+        if self._on_unknown_device is None:
+            return
         try:
             result = self._on_unknown_device()
             if result is not None:
@@ -295,7 +301,7 @@ class CyncLanBridge:
             self._app_mesh_active_expiry_unsub()
 
         @callback
-        def _expire(_now) -> None:
+        def _expire(_now: datetime) -> None:
             bucket.app_mesh_active = False
             async_dispatcher_send(self.hass, signal)
             self._app_mesh_active_expiry_unsub = None
@@ -317,7 +323,7 @@ class CyncLanBridge:
             self._app_wifi_active_expiry_unsub()
 
         @callback
-        def _expire(_now) -> None:
+        def _expire(_now: datetime) -> None:
             bucket.app_wifi_active = False
             async_dispatcher_send(self.hass, signal)
             self._app_wifi_active_expiry_unsub = None
@@ -352,30 +358,47 @@ class CyncLanBridge:
             )
         return bucket.entity_state
 
-    async def update_entity_power(self, node: "CyncDevice", state: int, sub_id: int) -> None:
-        self._ensure_entity_state(node, sub_id).power = state
-        unique_id = f"{self.entry_id}_{node.id}" + (f"_{sub_id}" if sub_id else "")
+    async def update_entity_power(
+        self, node: "CyncDevice", state: int, sub_id: Optional[int] = None
+    ) -> bool:
+        _sub_id = sub_id or 0
+        self._ensure_entity_state(node, _sub_id).power = state
+        unique_id = f"{self.entry_id}_{node.id}" + (f"_{_sub_id}" if _sub_id else "")
         async_dispatcher_send(self.hass, signal_entity_update(unique_id))
+        return True
 
-    async def update_brightness(self, node: "CyncDevice", bri: int) -> None:
+    async def update_brightness(
+        self, node: "CyncDevice", bri: int, sub_id: Optional[int] = None
+    ) -> bool:
         self._ensure_entity_state(node).brightness = bri
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        return True
 
-    async def update_temperature(self, node: "CyncDevice", temp: int) -> None:
+    async def update_temperature(
+        self, node: "CyncDevice", temp: int, sub_id: Optional[int] = None
+    ) -> bool:
         self._ensure_entity_state(node).temperature = temp
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        return True
 
-    async def update_rgb(self, node: "CyncDevice", rgb: tuple[int, int, int]) -> None:
+    async def update_rgb(
+        self,
+        node: "CyncDevice",
+        rgb: tuple[int, int, int],
+        sub_id: Optional[int] = None,
+    ) -> bool:
         state = self._ensure_entity_state(node)
         state.red, state.green, state.blue = rgb
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        return True
 
-    async def update_fan_percent(self, node: "CyncDevice", perc: int) -> None:
+    async def update_fan_percent(self, node: "CyncDevice", perc: int) -> bool:
         self._ensure_entity_state(node).brightness = perc
         async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        return True
 
-    async def update_fan_speed(self, node: "CyncDevice", speed) -> None:
-        await self.update_fan_percent(node, speed.to_perc())
+    async def update_fan_speed(self, node: "CyncDevice", speed: "FanSpeed") -> bool:
+        return await self.update_fan_percent(node, speed.to_perc())
 
     # --- MITM debug mode - not yet ported, safe no-ops ---
     # Home Assistant has no MQTT-retained-message equivalent for restoring
@@ -390,7 +413,9 @@ class CyncLanBridge:
     async def remove_mitm_button(self, node: "CyncDevice") -> None:
         return None
 
-    def get_startup_topic_state_sync(self, topic_str: str, timeout_seconds: float = 3.0):
+    def get_startup_topic_state_sync(
+        self, topic_str: str, timeout_seconds: float = 3.0
+    ) -> Optional[str]:
         return None
 
     # --- generic surface used by server.py/exporter.py/utils.py ---
@@ -401,7 +426,13 @@ class CyncLanBridge:
     # bridge to establish, so start()/stop() are no-ops; publish() just
     # records the latest value per topic for diagnostics.py to surface.
 
-    async def publish(self, topic: str, msg_data: bytes, retain: bool = None, qos: int = None) -> bool:
+    async def publish(
+        self,
+        topic: str,
+        msg_data: bytes,
+        retain: Optional[bool] = None,
+        qos: Optional[int] = None,
+    ) -> bool:
         self.raw_topics[topic] = msg_data
         return True
 

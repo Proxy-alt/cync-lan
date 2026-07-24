@@ -9,6 +9,18 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 1.2.0
+
+- Pass `mypy --strict` cleanly (see `mypy.ini`) - quality_scale.yaml's
+  `strict-typing` (platinum) is now done. No functional change to this
+  integration's own code, aside from bumping the `cync-lan` dependency to
+  `>=0.1.2` - that release fixes a real bug this pass caught upstream:
+  `MqttSink.pub_online` was declared as a plain `def` instead of
+  `async def` in `cync-lan`'s `protocols.py`, even though every real
+  implementation (including this integration's own `CyncLanBridge`) is
+  async. Harmless at runtime (Python doesn't enforce `Protocol`
+  conformance dynamically) but was a real static-typing defect.
+
 ### 1.1.0
 
 - Depend on the published `cync-lan` PyPI package instead of a vendored

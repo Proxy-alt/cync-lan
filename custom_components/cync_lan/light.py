@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING, Any, KeysView
 
 from homeassistant.components.group.light import LightGroup
 from homeassistant.components.light import (
@@ -12,9 +13,9 @@ from homeassistant.components.light import (
     ATTR_EFFECT,
     ATTR_RGB_COLOR,
     ATTR_TRANSITION,
-    ColorMode,
     LightEntity,
 )
+from homeassistant.components.light.const import ColorMode, LightEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -28,7 +29,11 @@ from .const import (
     DEFAULT_HIDE_GROUP_MEMBERS,
     DOMAIN,
 )
+from .bridge import CyncLanBridge
 from .entity import CyncLanEntity
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +90,7 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     entities = []
     light_dev_ids = []
@@ -187,7 +193,10 @@ async def async_add_light_groups(
 
 
 def _apply_group_member_visibility(
-    registry: er.EntityRegistry, entry_id: str, groups: dict, hide: bool
+    registry: er.EntityRegistry,
+    entry_id: str,
+    groups: dict[int, dict[str, Any]],
+    hide: bool,
 ) -> None:
     """Hide or reveal each light group's member entities, without
     touching entities the user hid themselves.
@@ -220,7 +229,7 @@ def _apply_group_member_visibility(
 class CyncLanLight(CyncLanEntity, LightEntity):
     _attr_name = None  # has-entity-name: device name is the entity name
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node)
         modes: set[ColorMode] = set()
         if node.supports_temperature:
@@ -231,6 +240,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             self._attr_supported_features = _light_effect_feature()
         if not modes:
             modes.add(ColorMode.BRIGHTNESS)
+        self._supported_color_modes: set[ColorMode] = modes
         self._attr_supported_color_modes = modes
         self._attr_color_mode = next(iter(modes))
         if node.metadata and node.metadata.characteristics:
@@ -259,7 +269,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         and its pub_entity_state color_mode branch), with any 0-100 value
         meaning "currently in CCT mode" instead.
         """
-        modes = self._attr_supported_color_modes
+        modes = self._supported_color_modes
         if ColorMode.RGB in modes and ColorMode.COLOR_TEMP in modes:
             state = self._entity_state()
             if state is not None:
@@ -290,7 +300,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             return None
         return (state.red, state.green, state.blue)
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         if ATTR_RGB_COLOR in kwargs:
             r, g, b = kwargs[ATTR_RGB_COLOR]
             await self._node.set_rgb(r, g, b)
@@ -320,7 +330,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         if not kwargs:
             await self._node.set_power(1)
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._node.set_power(0)
 
 
@@ -363,13 +373,11 @@ class CyncLanLightGroup(LightGroup):
         super().__init__(unique_id, name, entity_ids, mode=False)
 
 
-def _light_run_mode_effects():
-    from cync_lan.devices import LIGHT_RUN_MODE_EFFECTS
+def _light_run_mode_effects() -> KeysView[str]:
+    from cync_lan.const import LIGHT_RUN_MODE_EFFECTS
 
     return LIGHT_RUN_MODE_EFFECTS.keys()
 
 
-def _light_effect_feature():
-    from homeassistant.components.light import LightEntityFeature
-
+def _light_effect_feature() -> LightEntityFeature:
     return LightEntityFeature.EFFECT

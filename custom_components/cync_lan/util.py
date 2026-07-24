@@ -7,11 +7,15 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+
+if TYPE_CHECKING:
+    from cync_lan.cloud_api import CyncCloudAPI
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,7 +105,7 @@ async def configure_environment(hass: HomeAssistant, username: str, password: st
     )
 
 
-def get_cloud_api(hass: HomeAssistant):
+def get_cloud_api(hass: HomeAssistant) -> "CyncCloudAPI":
     """inject-websession (platinum): construct CyncCloudAPI with Home
     Assistant's shared aiohttp session instead of letting it create (and
     leak, if never explicitly closed) its own. CyncCloudAPI is a singleton
@@ -140,10 +144,10 @@ async def refresh_cloud_export(hass: HomeAssistant) -> bool:
             "Reauthenticate via the integration's reauth flow to restore it."
         )
         return False
-    return await api.export_config_file()
+    return bool(await api.export_config_file())
 
 
-def build_device_group_map(groups: dict) -> dict[int, list[int]]:
+def build_device_group_map(groups: dict[int, dict[str, Any]]) -> dict[int, list[int]]:
     """Invert group_id -> {"device_ids": [...]} into device_id -> [group_id, ...].
 
     One-to-many: a device can belong to more than one group - a subgroup
@@ -160,8 +164,10 @@ def build_device_group_map(groups: dict) -> dict[int, list[int]]:
 
 
 def group_sensor_schedules_for_device(
-    groups: dict, device_group_map: dict[int, list[int]], device_id: int
-) -> list[dict]:
+    groups: dict[int, dict[str, Any]],
+    device_group_map: dict[int, list[int]],
+    device_id: int,
+) -> list[dict[str, Any]]:
     """[{"group_id", "group_name", "sensor_schedules"}] for every group
     `device_id` belongs to that has at least one decoded motion-sensor
     schedule slot. [] if the device isn't in any group, or none of its

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .bridge import (
     CyncLanBridge,
@@ -19,6 +20,7 @@ from .const import DOMAIN, MANUFACTURER
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
+    from cync_lan.structs import EntityState
 
 
 def build_device_info(entry_id: str, node: "CyncDevice") -> DeviceInfo:
@@ -66,9 +68,10 @@ class CyncLanEntity(Entity):
         self._entry_id = entry_id
         self._node = node
         self._sub_id = sub_id
-        self._attr_unique_id = f"{entry_id}_{node.id}" + (
+        self._unique_id = f"{entry_id}_{node.id}" + (
             f"_{sub_id}" if sub_id else ""
         ) + unique_id_suffix
+        self._attr_unique_id = self._unique_id
         self._attr_device_info = build_device_info(entry_id, node)
 
     @property
@@ -81,7 +84,7 @@ class CyncLanEntity(Entity):
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
-                signal_entity_update(self._attr_unique_id),
+                signal_entity_update(self._unique_id),
                 self._handle_update,
             )
         )
@@ -111,11 +114,11 @@ class CyncLanEntity(Entity):
         """
         self.async_write_ha_state()
 
-    def _entity_state(self) -> Optional["object"]:
+    def _entity_state(self) -> Optional["EntityState"]:
         return self._bridge.get_state(self._node.id, self._sub_id)
 
 
-class CyncLanIndicatorLedEntity(CyncLanEntity):
+class CyncLanIndicatorLedEntity(CyncLanEntity, RestoreEntity):
     """Shared plumbing for the 4 indicator-LED entities (select x2, number,
     switch) - they all read/write the same per-device IndicatorLedState
     cache (see bridge.py), so all 4 must re-render whenever any one of them
@@ -133,7 +136,9 @@ class CyncLanIndicatorLedEntity(CyncLanEntity):
             )
         )
 
-    async def _restore_led_field(self, field: str, parser) -> None:
+    async def _restore_led_field(
+        self, field: str, parser: Callable[[str], Any]
+    ) -> None:
         """Seed the shared cache from this entity's own last HA-known state
         on startup (RestoreEntity) - `parser` maps the restored state string
         back to the field's real value, returning None to skip restoring

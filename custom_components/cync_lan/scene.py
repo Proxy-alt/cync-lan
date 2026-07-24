@@ -25,11 +25,12 @@ devices.py, not raised here.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.scene import Scene
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, MANUFACTURER
@@ -62,7 +63,7 @@ class CyncLanScene(Scene):
             name="Cync LAN Bridge",
         )
 
-    async def async_activate(self, **kwargs) -> None:
+    async def async_activate(self, **kwargs: Any) -> None:
         from cync_lan.devices import execute_scene
 
         await execute_scene(self._scene_id)

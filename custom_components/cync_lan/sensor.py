@@ -12,6 +12,7 @@ docs/mesh_opcodes.md). See docs/cync_automations.md for the full data model.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -19,8 +20,12 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .bridge import CyncLanBridge
 from .entity import CyncLanEntity
 from .util import build_device_group_map, group_sensor_schedules_for_device
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -39,6 +44,7 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     groups = getattr(entry.runtime_data, "groups", None) or {}
     device_group_map = build_device_group_map(groups)
@@ -89,14 +95,14 @@ class CyncLanMotionScheduleSensor(CyncLanEntity, SensorEntity):
 
     def __init__(
         self,
-        bridge,
+        bridge: CyncLanBridge,
         entry_id: str,
-        node,
+        node: "CyncDevice",
         *,
-        group_id,
+        group_id: int,
         group_name: str,
         slot_name: str,
-        slot: dict,
+        slot: dict[str, Any],
         disambiguate: bool,
     ) -> None:
         super().__init__(
@@ -120,7 +126,7 @@ class CyncLanMotionScheduleSensor(CyncLanEntity, SensorEntity):
         return f"{self._slot.get('start_time')}–{self._slot.get('end_time')}"
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         return {
             "mode": self._slot.get("mode"),
             "brightness": self._slot.get("brightness"),
@@ -145,7 +151,7 @@ class CyncLanIpAddressSensor(CyncLanEntity, SensorEntity):
     _attr_translation_key = "diagnostic_ip_address"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_ip_address")
 
     @property
@@ -167,7 +173,7 @@ class CyncLanRelaySourceSensor(CyncLanEntity, SensorEntity):
     _attr_translation_key = "diagnostic_relay_source"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_relay_source")
 
     @property

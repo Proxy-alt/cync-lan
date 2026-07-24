@@ -466,13 +466,18 @@ rules:
       CyncCloudAPI() with no session kwarg keep self-creating and
       self-closing their own session exactly as before (also tested).
   strict-typing:
-    status: todo
+    status: done
     comment: >-
-      cync-lan (the upstream package) now ships a py.typed marker, and its
+      This integration's own code passes `mypy --strict` cleanly (see
+      mypy.ini; run as `mypy -p custom_components.cync_lan`). cync-lan (the
+      upstream package) ships a py.typed marker, and its
       GlobalObject.mqtt_client/.export_server attributes are typed against
       Protocol classes (cync_lan/protocols.py) instead of importing
-      concrete addon types - partial progress on this rule's "published
-      package has py.typed" half. Still todo: this integration's own code
-      (custom_components/cync_lan/) has no py.typed marker and hasn't been
-      run through strict mypy - a separate effort from the dependency
-      packaging fixed here.
+      concrete addon types - this pass also caught and fixed a real bug in
+      that Protocol (MqttSink.pub_online was declared as a plain `def`
+      instead of `async def`, published as cync-lan 0.1.2). The only
+      remaining strict-mode gaps are entirely inside the installed cync-lan
+      dependency itself (GlobalObject, nCyncServer.start/stop,
+      CyncTCPSession.start_mitm/stop_mitm, CyncCloudAPI.__init__/
+      _check_session lack full annotations) - out of scope for this
+      integration's own code to fix, tracked as a future cync-lan effort.

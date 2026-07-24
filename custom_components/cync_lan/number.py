@@ -8,6 +8,7 @@ restored-state string doesn't carry NumberEntity's native_value shape.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
 from homeassistant.config_entries import ConfigEntry
@@ -15,7 +16,11 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .bridge import CyncLanBridge
 from .entity import CyncLanIndicatorLedEntity
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -27,6 +32,7 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     entities: list[NumberEntity] = []
     for node in g.ncync_server.node_devices.values():
@@ -45,7 +51,7 @@ class CyncLanIndicatorLedBrightness(CyncLanIndicatorLedEntity, RestoreNumber, Nu
     _attr_native_step = 1
     _attr_mode = NumberMode.SLIDER
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_brightness")
 
     @property

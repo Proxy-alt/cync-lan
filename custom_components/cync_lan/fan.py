@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .bridge import CyncLanBridge
 from .entity import CyncLanEntity
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -25,6 +30,7 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     entities = [
         CyncLanFan(bridge, entry.entry_id, node)
@@ -70,7 +76,10 @@ class CyncLanFan(CyncLanEntity, FanEntity):
         return None
 
     async def async_turn_on(
-        self, percentage: int | None = None, preset_mode: str | None = None, **kwargs
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
     ) -> None:
         if percentage is not None:
             await self._node.set_fan_percentage(percentage)
@@ -79,7 +88,7 @@ class CyncLanFan(CyncLanEntity, FanEntity):
         else:
             await self._node.set_power(1)
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._node.set_power(0)
 
     async def async_set_percentage(self, percentage: int) -> None:

@@ -13,8 +13,10 @@ control" section).
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import (
@@ -25,6 +27,11 @@ from homeassistant.helpers import (
 
 from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT
 from .const import DOMAIN
+
+if TYPE_CHECKING:
+    from homeassistant.components import automation as automation_component
+
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,7 +129,9 @@ _FADE = {
 }
 
 
-def _resolve_device(hass: HomeAssistant, device_id: str):
+def _resolve_device(
+    hass: HomeAssistant, device_id: str
+) -> tuple[ConfigEntry, "CyncDevice"]:
     """Resolve a HA device-registry device_id to its (ConfigEntry,
     CyncDevice) pair. Raises ServiceValidationError if it doesn't resolve
     to a real, currently-loaded Cync LAN device - a device from another
@@ -158,7 +167,7 @@ def _resolve_device(hass: HomeAssistant, device_id: str):
     )
 
 
-def _resolve_bridge_entry(hass: HomeAssistant, device_id: str):
+def _resolve_bridge_entry(hass: HomeAssistant, device_id: str) -> ConfigEntry:
     """Resolve a HA device-registry device_id to its config entry, requiring
     it to be the "Cync LAN Bridge" hub device (identifiers=(DOMAIN, entry_id),
     no dev_id suffix - see binary_sensor.py's diagnostic sensors) rather than
@@ -336,7 +345,9 @@ async def _handle_set_multicolor_segments(hass: HomeAssistant, call: ServiceCall
     await node.set_multicolor_segments(segments)
 
 
-def _resolve_cync_light_entity(hass: HomeAssistant, entity_id: str):
+def _resolve_cync_light_entity(
+    hass: HomeAssistant, entity_id: str
+) -> tuple[ConfigEntry, "CyncDevice"]:
     """Resolve a light entity_id to its (ConfigEntry, CyncDevice) pair, for
     validating that a pushed automation's actions target real Cync devices
     only. Deliberately rejects light GROUPS (see light.py's
@@ -384,7 +395,9 @@ def _resolve_cync_light_entity(hass: HomeAssistant, entity_id: str):
     )
 
 
-def _get_automation_entity(hass: HomeAssistant, entity_id: str):
+def _get_automation_entity(
+    hass: HomeAssistant, entity_id: str
+) -> "automation_component.BaseAutomationEntity":
     from homeassistant.components import automation as automation_component
 
     component = hass.data.get(automation_component.DATA_COMPONENT)
@@ -394,7 +407,7 @@ def _get_automation_entity(hass: HomeAssistant, entity_id: str):
     return entity
 
 
-def _extract_time_trigger(raw_config: dict) -> tuple[int, int, int]:
+def _extract_time_trigger(raw_config: dict[str, Any]) -> tuple[int, int, int]:
     """Validate that `raw_config` has exactly one plain time-of-day
     trigger, returning (hour, minute, second). Reads both the pre- and
     post-2024.10 key names (automation/config.py's `_backward_compat_schema`
@@ -455,7 +468,7 @@ def _extract_time_trigger(raw_config: dict) -> tuple[int, int, int]:
     return parsed.hour, parsed.minute, parsed.second
 
 
-def _extract_day_mask(raw_config: dict) -> int:
+def _extract_day_mask(raw_config: dict[str, Any]) -> int:
     """Validate that `raw_config` has zero or one day-of-week condition,
     returning the AddAutomationHubCommand bitmask (all 7 days if no
     condition is present at all)."""
@@ -499,7 +512,9 @@ def _extract_day_mask(raw_config: dict) -> int:
     return mask
 
 
-def _extract_scene_actions(hass: HomeAssistant, raw_config: dict):
+def _extract_scene_actions(
+    hass: HomeAssistant, raw_config: dict[str, Any]
+) -> list[tuple["CyncDevice", Optional[int], Optional[tuple[int, int, int]]]]:
     """Validate that `raw_config`'s actions are all `light.turn_on` calls
     targeting Cync LAN lights with exactly one color (rgb_color or
     color_temp_kelvin - the only two forms CyncDevice.add_to_scene()'s
@@ -754,7 +769,7 @@ _SERVICE_SCHEMAS = {
     ),
 }
 
-_HANDLERS = {
+_HANDLERS: dict[str, Callable[[HomeAssistant, ServiceCall], Coroutine[Any, Any, None]]] = {
     SERVICE_SET_INDICATOR_LED: _handle_set_indicator_led,
     SERVICE_SET_MOTION_SENSOR_SETTINGS: _handle_set_motion_sensor_settings,
     SERVICE_EXECUTE_SCENE: _handle_execute_scene,
@@ -783,7 +798,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
             continue
         handler = _HANDLERS[service]
 
-        async def _call(call: ServiceCall, _handler=handler) -> None:
+        async def _call(
+            call: ServiceCall,
+            _handler: Callable[
+                [HomeAssistant, ServiceCall], Coroutine[Any, Any, None]
+            ] = handler,
+        ) -> None:
             await _handler(hass, call)
 
         hass.services.async_register(DOMAIN, service, _call, schema=schema)

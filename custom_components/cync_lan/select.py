@@ -12,6 +12,7 @@ restarts via RestoreEntity.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -20,8 +21,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT
+from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT, CyncLanBridge
 from .entity import CyncLanIndicatorLedEntity
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -33,6 +37,7 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     entities: list[SelectEntity] = []
     for node in g.ncync_server.node_devices.values():
@@ -49,7 +54,7 @@ class CyncLanIndicatorLedModeSelect(CyncLanIndicatorLedEntity, RestoreEntity, Se
     _attr_assumed_state = True
     _attr_options = list(LED_MODE_TO_INT)
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_mode")
 
     @property
@@ -72,7 +77,7 @@ class CyncLanIndicatorLedColorSelect(CyncLanIndicatorLedEntity, RestoreEntity, S
     _attr_assumed_state = True
     _attr_options = list(LED_COLOR_TO_INT)
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_color")
 
     @property

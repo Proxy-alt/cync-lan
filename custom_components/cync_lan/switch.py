@@ -9,18 +9,23 @@ mirrored by the exclusion here.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .bridge import CyncLanBridge
 from .const import DEFAULT_DISABLED_ENTITIES, DOMAIN, MANUFACTURER
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -32,13 +37,14 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     entities: list[SwitchEntity] = []
     for node in g.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         if node.is_switch and not node.is_fan_controller:
-            if node.has_multi_entities:
+            if node.has_multi_entities and node.entities is not None:
                 for sub_id in node.entities:
                     entities.append(CyncLanSwitch(bridge, entry.entry_id, node, sub_id))
             else:
@@ -73,26 +79,24 @@ async def async_setup_entry(
 
 
 class CyncLanSwitch(CyncLanEntity, SwitchEntity):
-    def __init__(self, bridge, entry_id: str, node, sub_id: int = 0) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice", sub_id: int = 0) -> None:
         super().__init__(bridge, entry_id, node, sub_id=sub_id)
         # entity-device-class (gold): outlet vs generic switch.
         self._attr_device_class = (
             SwitchDeviceClass.OUTLET if node.is_plug else SwitchDeviceClass.SWITCH
         )
-        if sub_id and node.entities.get(sub_id) is not None:
-            self._attr_name = node.entities[sub_id].name
-        else:
-            self._attr_name = None
+        entity_state = node.entities.get(sub_id) if sub_id and node.entities else None
+        self._attr_name = entity_state.name if entity_state is not None else None
 
     @property
     def is_on(self) -> bool | None:
         state = self._entity_state()
         return bool(state.power) if state else None
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         await self._node.set_power(1, sub_id=self._sub_id or None)
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._node.set_power(0, sub_id=self._sub_id or None)
 
 
@@ -122,7 +126,7 @@ class CyncLanMitmModeSwitch(CyncLanEntity, SwitchEntity):
     _attr_entity_registry_enabled_default = "mitm_mode" not in DEFAULT_DISABLED_ENTITIES
     _attr_assumed_state = True
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_mitm_mode")
 
     @property
@@ -141,7 +145,7 @@ class CyncLanMitmModeSwitch(CyncLanEntity, SwitchEntity):
         # that instead of showing a control that would silently no-op.
         return self._node.tcp_session is not None
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         session = self._node.tcp_session
         if session is None:
             raise HomeAssistantError(
@@ -150,7 +154,7 @@ class CyncLanMitmModeSwitch(CyncLanEntity, SwitchEntity):
         await session.start_mitm()
         self.async_write_ha_state()
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         session = self._node.tcp_session
         if session is None:
             raise HomeAssistantError(
@@ -170,7 +174,7 @@ class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, RestoreEntit
     _attr_entity_category = EntityCategory.CONFIG
     _attr_assumed_state = True
 
-    def __init__(self, bridge, entry_id: str, node) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_wifi_blink")
 
     @property
@@ -189,10 +193,10 @@ class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, RestoreEntit
 
         await self._restore_led_field("wifi_disconnect_blink", _parse)
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         await self._bridge.set_indicator_led_field(self._node, wifi_disconnect_blink=True)
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._bridge.set_indicator_led_field(self._node, wifi_disconnect_blink=False)
 
 
@@ -241,10 +245,10 @@ class CyncLanScheduleSwitch(RestoreEntity, SwitchEntity):
         if last_state is not None:
             self._attr_is_on = last_state.state == "on"
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         await self._set_enabled(True)
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._set_enabled(False)
 
     async def _set_enabled(self, enabled: bool) -> None:

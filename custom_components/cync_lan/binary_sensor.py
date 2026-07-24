@@ -5,17 +5,25 @@ active" entity."""
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .bridge import CyncLanBridge
 from .const import DEFAULT_DISABLED_ENTITIES, DOMAIN, MANUFACTURER
 from .entity import CyncLanEntity
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -27,6 +35,7 @@ async def async_setup_entry(
     from cync_lan.structs import GlobalObject
 
     g = GlobalObject()
+    assert g.ncync_server is not None
     bridge = entry.runtime_data.bridge
     entities: list[BinarySensorEntity] = []
     for node in g.ncync_server.node_devices.values():
@@ -45,7 +54,7 @@ async def async_setup_entry(
 
 
 class CyncLanMotionSensor(CyncLanEntity, BinarySensorEntity):
-    def __init__(self, bridge, entry_id: str, node, is_secondary: bool) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice", is_secondary: bool) -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_motion" if is_secondary else "")
         # entity-translations (gold): resolve the name through strings.json's
         # entity.binary_sensor.motion.name instead of a hardcoded literal, so
@@ -53,9 +62,11 @@ class CyncLanMotionSensor(CyncLanEntity, BinarySensorEntity):
         # entities (alongside a light/switch's own primary entity) get a name
         # at all - a standalone sensor's only entity uses the device name.
         self._attr_translation_key = "motion" if is_secondary else None
-        device_class = "motion"
+        device_class = BinarySensorDeviceClass.MOTION
         if node.metadata and node.metadata.capabilities:
-            device_class = node.metadata.capabilities.sensor_device_class
+            device_class = BinarySensorDeviceClass(
+                node.metadata.capabilities.sensor_device_class
+            )
         self._attr_device_class = device_class
 
     @property
@@ -71,11 +82,11 @@ class CyncLanAppMeshActiveSensor(BinarySensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "app_mesh_active"
-    _attr_device_class = "occupancy"
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = "app_mesh_active" not in DEFAULT_DISABLED_ENTITIES
 
-    def __init__(self, bridge, entry_id: str) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str) -> None:
         self._bridge = bridge
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_app_mesh_active"
@@ -114,11 +125,11 @@ class CyncLanAppWifiActiveSensor(BinarySensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "app_wifi_active"
-    _attr_device_class = "occupancy"
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = "app_wifi_active" not in DEFAULT_DISABLED_ENTITIES
 
-    def __init__(self, bridge, entry_id: str) -> None:
+    def __init__(self, bridge: CyncLanBridge, entry_id: str) -> None:
         self._bridge = bridge
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_app_wifi_active"

@@ -163,6 +163,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
+            assert self._username is not None
             return self.async_create_entry(
                 title=self._username,
                 data={
@@ -193,6 +194,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             self._password = user_input[CONF_ACCOUNT_PASSWORD]
+            assert self._username is not None
             await configure_environment(self.hass, self._username, self._password)
             try:
                 api = get_cloud_api(self.hass)
@@ -388,6 +390,7 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
         app's own equivalent code path would itself have faked success
         on without transmitting."""
         nodes = self._motion_sensor_nodes()
+        assert self._motion_sensor_dev_id is not None
         node = nodes.get(self._motion_sensor_dev_id)
         if node is None:
             return self.async_abort(reason="no_motion_sensors")
@@ -416,6 +419,7 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         nodes = self._motion_sensor_nodes()
+        assert self._motion_sensor_dev_id is not None
         node = nodes.get(self._motion_sensor_dev_id)
         if node is None:
             return self.async_abort(reason="no_motion_sensors")

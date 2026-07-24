@@ -16,13 +16,16 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
 from .bridge import CyncLanBridge
@@ -37,6 +40,10 @@ from .const import (
 )
 from .services import async_setup_services, async_unload_services
 from .util import configure_environment, refresh_cloud_export
+
+if TYPE_CHECKING:
+    from cync_lan.server import nCyncServer
+    from cync_lan.structs import GlobalObject
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,23 +93,31 @@ class CyncLanRuntimeData:
     """Stored on ConfigEntry.runtime_data (runtime-data, bronze)."""
 
     bridge: CyncLanBridge
-    ncync_server: "object"  # cync_lan.server.nCyncServer
-    server_task: asyncio.Task
-    groups: dict = None  # {group_id: {"name", "device_ids", "is_subgroup"}}
-    scenes: dict = None  # {scene_id: {"name"}}
-    schedules: dict = None  # {schedule_id: {"name", "scene_id", "enabled"}}
-    unsub_refresh: object = None
-    unsub_no_devices_check: object = None
+    ncync_server: "nCyncServer"
+    server_task: "asyncio.Task[None]"
+    groups: Optional[dict[int, dict[str, Any]]] = None  # {group_id: {"name", "device_ids", "is_subgroup"}}
+    scenes: Optional[dict[int, dict[str, Any]]] = None  # {scene_id: {"name"}}
+    schedules: Optional[dict[int, dict[str, Any]]] = None  # {schedule_id: {"name", "scene_id", "enabled"}}
+    unsub_refresh: Optional[CALLBACK_TYPE] = None
+    unsub_no_devices_check: Optional[CALLBACK_TYPE] = None
     # Stashed by light.py's async_setup_entry so light groups can be added
     # later - e.g. from the options flow when the user enables/refreshes
     # them - without forcing a full entry reload, which would drop every
     # device's TCP connection just to add a handful of group entities. See
     # light.async_add_light_groups().
-    light_add_entities: object = None  # AddEntitiesCallback
-    created_light_group_ids: set = None  # group_ids already added as entities
+    light_add_entities: Optional[AddEntitiesCallback] = None
+    created_light_group_ids: Optional[set[int]] = None  # group_ids already added
 
 
-def _import_cync_lan_symbols():
+def _import_cync_lan_symbols() -> tuple[
+    str,
+    type["nCyncServer"],
+    type["GlobalObject"],
+    Callable[[Path], Coroutine[Any, Any, dict[int, Any]]],
+    Callable[[Path], Coroutine[Any, Any, dict[int, Any]]],
+    Callable[[Path], Coroutine[Any, Any, dict[int, Any]]],
+    Callable[[Path], Coroutine[Any, Any, dict[int, Any]]],
+]:
     """Import the upstream cync_lan package's heavy modules - meant to run
     inside an executor, not called directly from the event loop.
 
@@ -180,7 +195,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # docs/cync_automations.md. light.py independently re-checks the option
     # before creating any group entities, so this doesn't change when those
     # appear.
-    groups: dict = {}
+    groups: dict[int, Any] = {}
     try:
         groups = await parse_groups(cfg_file)
     except Exception:  # noqa: BLE001 - groups are optional, must not block setup
@@ -189,13 +204,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Scenes/Schedules ("Routines") - same best-effort, non-fatal pattern as
     # groups above. Source for scene.py's activatable scene entities and
     # switch.py's schedule-enable switches - see docs/cync_automations.md.
-    scenes: dict = {}
+    scenes: dict[int, Any] = {}
     try:
         scenes = await parse_scenes(cfg_file)
     except Exception:  # noqa: BLE001 - scenes are optional, must not block setup
         _LOGGER.exception("Failed to parse Cync scenes, continuing without them")
 
-    schedules: dict = {}
+    schedules: dict[int, Any] = {}
     try:
         schedules = await parse_schedules(cfg_file)
     except Exception:  # noqa: BLE001 - schedules are optional, must not block setup
@@ -261,14 +276,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if refresh_hours > 0:
         from datetime import timedelta
 
-        async def _periodic_refresh(_now) -> None:
+        async def _periodic_refresh(_now: datetime) -> None:
             await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)
 
         runtime_data.unsub_refresh = async_track_time_interval(
             hass, _periodic_refresh, timedelta(hours=refresh_hours)
         )
 
-    async def _check_no_devices_connected(_now) -> None:
+    async def _check_no_devices_connected(_now: datetime) -> None:
         await _check_and_report_no_devices(hass, entry, ncync_server)
 
     runtime_data.unsub_no_devices_check = async_call_later(
@@ -285,7 +300,7 @@ def _no_devices_issue_id(entry_id: str) -> str:
 
 
 async def _check_and_report_no_devices(
-    hass: HomeAssistant, entry: ConfigEntry, ncync_server
+    hass: HomeAssistant, entry: ConfigEntry, ncync_server: "nCyncServer"
 ) -> None:
     """repair-issues (gold): if nothing has connected by the time this
     fires, that's a near-certain sign the DNS redirection prerequisite
