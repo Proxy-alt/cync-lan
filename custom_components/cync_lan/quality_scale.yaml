@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (419 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (422 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -291,15 +291,28 @@ rules:
     comment: diagnostics.py, redacts credentials and MAC addresses. Tested.
   discovery-update-info:
     status: exempt
-    comment: No LAN discovery protocol applies (see discovery below) - nothing to update from.
-  discovery:
-    status: exempt
     comment: >-
-      Cync devices don't self-announce on the LAN via any HA-supported
-      discovery protocol (no mDNS/SSDP/DHCP broadcast, by design - they
-      phone home to Cync's cloud instead). New devices are found via the
-      periodic cloud re-export mechanism instead, which is a fundamentally
-      different mechanism than "discovery" in HA's sense.
+      Discovery (see below) is account-level, not per-device - it only
+      ever triggers setup of a brand-new config entry (or aborts if one
+      already exists). There's no scenario where a discovery event should
+      update an *existing* entry's stored data, since that data is cloud
+      account credentials, not network/device info a DHCP match could
+      refresh.
+  discovery:
+    status: done
+    comment: >-
+      Cync devices don't self-announce via mDNS/SSDP, but they do get a
+      DHCP lease with a recognizable hostname pattern (manifest.json's
+      "dhcp": [{"hostname": "ge_*"}]) - confirmed against real devices on
+      the network. async_step_dhcp nudges the user into the normal
+      account-credentials flow rather than requiring them to find this
+      integration manually; a fixed sentinel unique_id collapses multiple
+      devices' DHCP matches into a single discovery flow instead of one
+      per device. Bluetooth-advertisement-based discovery is also
+      possible for at least some devices but not yet implemented - a
+      separate, heavier addition (would need the bluetooth integration as
+      a dependency) tracked as a future improvement, not required for
+      this rule.
   docs-data-update:
     status: done
     comment: README.md "How data updates".

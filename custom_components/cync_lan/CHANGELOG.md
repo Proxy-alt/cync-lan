@@ -9,6 +9,17 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 1.3.0
+
+- Add DHCP discovery: Home Assistant now proactively offers to set up this
+  integration when a device with a Cync-pattern DHCP hostname (`GE_*`)
+  appears on the network, instead of requiring you to find it yourself in
+  **Add Integration**. Still leads to the same account-credentials form -
+  this integration is set up per Cync account, not per device, so
+  discovery is a nudge into setup, not a replacement for entering your
+  Cync account email/password. See `quality_scale.yaml`'s `discovery`
+  entry.
+
 ### 1.2.0
 
 - Pass `mypy --strict` cleanly (see `mypy.ini`) - quality_scale.yaml's

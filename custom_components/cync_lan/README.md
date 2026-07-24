@@ -60,12 +60,22 @@ history (independent of the underlying `cync-lan` package's own versioning
 
 #### Finishing setup
 
+Home Assistant may prompt you to set this integration up on its own -
+Cync devices get a DHCP lease with a recognizable hostname pattern
+(`GE_*`), so **Settings → Devices & Services** may already show a
+"Cync LAN" discovered card once a device shows up on your network. If
+not (or you'd rather start it yourself):
+
 1. Go to **Settings → Devices & Services → Add Integration**, search for
    "Cync LAN".
 2. Enter your Cync account email and password.
 3. If prompted, enter the one-time verification code emailed to your
    account.
 6. Confirm the device count found on your account to finish setup.
+
+Either way leads to the same account-credentials form - discovery just
+saves you from finding the integration yourself, it doesn't skip entering
+your Cync account details.
 
 ### Removing the integration
 

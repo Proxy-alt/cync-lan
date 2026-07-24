@@ -22,6 +22,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from .const import (
     CONF_ACCOUNT_PASSWORD,
@@ -74,6 +75,29 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str | None = None
         self._password: str | None = None
         self._device_count: int = 0
+
+    async def async_step_dhcp(
+        self, discovery_info: DhcpServiceInfo
+    ) -> config_entries.ConfigFlowResult:
+        """discovery (gold): a device with a Cync-pattern DHCP hostname
+        (see manifest.json's "dhcp" matcher) was seen on the network -
+        nudge the user into the normal cloud-account setup flow instead of
+        requiring them to find this integration manually. Doesn't skip
+        account credentials (see module docstring: setup is
+        account-based, not per-device), just triggers the same flow
+        proactively.
+
+        A fixed sentinel unique_id (not the eventual account username,
+        which isn't known yet) makes Home Assistant collapse multiple
+        DHCP matches - e.g. every Cync device on the network sending a
+        matching hostname - into a single discovery flow instead of one
+        per device.
+        """
+        if self._async_current_entries():
+            return self.async_abort(reason="already_configured")
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+        return await self.async_step_user()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

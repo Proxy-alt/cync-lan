@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from custom_components.cync_lan.const import DOMAIN
 
@@ -129,6 +130,54 @@ async def test_duplicate_account_aborts(hass, mock_cloud_api, mock_parse_config)
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def _start_dhcp_step(hass, hostname: str = "ge_light1"):
+    return await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_DHCP},
+        data=DhcpServiceInfo(
+            ip="192.168.1.50", hostname=hostname, macaddress="aabbccddeeff"
+        ),
+    )
+
+
+async def test_dhcp_discovery_starts_user_flow(hass):
+    """discovery (gold): a Cync-pattern DHCP hostname nudges straight into
+    the normal account-credentials form, not a separate discovery-specific
+    step - this integration's setup is account-based, not per-device."""
+    result = await _start_dhcp_step(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+
+async def test_dhcp_discovery_aborts_if_already_configured(hass):
+    """unique-config-entry: DHCP discovery must not prompt a second setup
+    once an account is already configured."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+    ).add_to_hass(hass)
+
+    result = await _start_dhcp_step(hass)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+async def test_dhcp_discovery_deduplicates_concurrent_flows(hass):
+    """A second Cync device's DHCP hostname match, while the first
+    discovery flow (from a different device) is still in progress, should
+    collapse into that same flow rather than showing a second "discovered"
+    card - both share the same sentinel unique_id."""
+    first = await _start_dhcp_step(hass, hostname="ge_light1")
+    assert first["type"] is FlowResultType.FORM
+
+    second = await _start_dhcp_step(hass, hostname="ge_switch2")
+    assert second["type"] is FlowResultType.ABORT
+    assert second["reason"] == "already_in_progress"
 
 
 async def test_reauth_flow_success(hass, mock_cloud_api, mock_parse_config):
