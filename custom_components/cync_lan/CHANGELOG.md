@@ -9,6 +9,19 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 1.4.0
+
+- Add Bluetooth discovery for factory-default (never-provisioned) Cync
+  devices (`manifest.json`'s new `"bluetooth"` matcher: local name
+  `telink_mesh1`, Telink's manufacturer ID). Unlike DHCP discovery, this
+  does **not** lead into the account-setup flow - a factory-fresh device
+  isn't part of any Cync account yet, so doing that would be premature.
+  Instead it shows an informational step pointing at the official Cync
+  app or the `cync-lan-ble-provision` CLI tool. Doesn't declare
+  `"bluetooth"` as a manifest dependency, since this integration never
+  calls the runtime bluetooth API - only receives the discovery match.
+  See `quality_scale.yaml`'s `discovery` entry.
+
 ### 1.3.0
 
 - Add DHCP discovery: Home Assistant now proactively offers to set up this

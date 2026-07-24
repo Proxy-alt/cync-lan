@@ -1,6 +1,12 @@
 {
   "domain": "cync_lan",
   "name": "Cync LAN",
+  "bluetooth": [
+    {
+      "local_name": "telink_mesh1",
+      "manufacturer_id": 529
+    }
+  ],
   "codeowners": ["@Proxy-alt"],
   "config_flow": true,
   "dependencies": [],
@@ -17,5 +23,5 @@
     "cync-lan>=0.1.2",
     "pyyaml>=6.0.2"
   ],
-  "version": "1.3.0"
+  "version": "1.4.0"
 }

@@ -1,6 +1,6 @@
 # Self-assessment against developers.home-assistant.io/docs/core/integration-quality-scale/checklist
 # Every "done" claim below was verified by an actual pytest run against
-# pytest-homeassistant-custom-component (422 tests, 97% line coverage on
+# pytest-homeassistant-custom-component (425 tests, 97% line coverage on
 # custom_components/cync_lan as of this writing - not just static review).
 # "todo" items are real, identified gaps, not hedging.
 
@@ -301,18 +301,33 @@ rules:
   discovery:
     status: done
     comment: >-
-      Cync devices don't self-announce via mDNS/SSDP, but they do get a
-      DHCP lease with a recognizable hostname pattern (manifest.json's
-      "dhcp": [{"hostname": "ge_*"}]) - confirmed against real devices on
-      the network. async_step_dhcp nudges the user into the normal
-      account-credentials flow rather than requiring them to find this
-      integration manually; a fixed sentinel unique_id collapses multiple
-      devices' DHCP matches into a single discovery flow instead of one
-      per device. Bluetooth-advertisement-based discovery is also
-      possible for at least some devices but not yet implemented - a
-      separate, heavier addition (would need the bluetooth integration as
-      a dependency) tracked as a future improvement, not required for
-      this rule.
+      Two independent discovery paths, both confirmed against real device
+      behavior:
+
+      DHCP: Cync devices get a lease with a recognizable hostname pattern
+      (manifest.json's "dhcp": [{"hostname": "ge_*"}]). async_step_dhcp
+      nudges the user into the normal account-credentials flow rather
+      than requiring them to find this integration manually; a fixed
+      sentinel unique_id collapses multiple devices' DHCP matches into a
+      single discovery flow instead of one per device.
+
+      Bluetooth: manifest.json's "bluetooth" matcher (local_name
+      "telink_mesh1", manufacturer_id 529/0x0211 - Telink's Bluetooth SIG
+      company ID) only ever fires for a factory-default, never-provisioned
+      device - its advertised name changes the instant it's actually
+      provisioned into a mesh (see cync_lan.ble_provision's
+      FACTORY_ADVERTISED_NAME). That's a fundamentally different signal
+      than DHCP's: a factory-fresh device isn't part of any Cync account
+      yet, so async_step_bluetooth deliberately does NOT nudge into
+      account setup (which would be premature) - it surfaces an
+      informational step pointing at the Cync app or the
+      cync-lan-ble-provision CLI tool instead. Doesn't declare "bluetooth"
+      as a manifest dependency (deliberately - this integration never
+      calls the runtime bluetooth API, only receives the discovery match,
+      so requiring the bluetooth component to actually initialize would
+      be over-broad and was confirmed to break setup in a bare test
+      environment missing an unrelated transitive dependency of HA's own
+      usb component).
   docs-data-update:
     status: done
     comment: README.md "How data updates".

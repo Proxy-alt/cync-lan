@@ -22,6 +22,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.service_info.bluetooth import BluetoothServiceInfo
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from .const import (
@@ -98,6 +99,33 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
         return await self.async_step_user()
+
+    async def async_step_bluetooth(
+        self, discovery_info: BluetoothServiceInfo
+    ) -> config_entries.ConfigFlowResult:
+        """discovery (gold): manifest.json's "bluetooth" matcher only ever
+        fires for a factory-default, never-provisioned Telink device (its
+        advertised local name reverts to something device-specific the
+        instant it's actually provisioned into a mesh - see
+        cync_lan.ble_provision's FACTORY_ADVERTISED_NAME/scan_for_unprovisioned_devices).
+        That's a fundamentally different situation than DHCP discovery: a
+        factory-fresh device isn't part of any Cync account yet, so
+        nudging straight into the account-setup flow (like async_step_dhcp
+        does) would be premature - the user still needs to add it to
+        their account via the Cync app, or provision it directly onto
+        their WiFi via the cync-lan-ble-provision CLI tool, before this
+        integration has anything to do with it. Surfaced as an
+        informational nudge toward that tool instead via
+        async_step_bluetooth_confirm, not as account setup.
+        """
+        return await self.async_step_bluetooth_confirm()
+
+    async def async_step_bluetooth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        if user_input is not None:
+            return self.async_abort(reason="unprovisioned_device_found")
+        return self.async_show_form(step_id="bluetooth_confirm")
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

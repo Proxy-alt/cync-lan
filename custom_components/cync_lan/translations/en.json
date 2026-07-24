@@ -26,6 +26,10 @@
         "data": {
           "account_password": "Password"
         }
+      },
+      "bluetooth_confirm": {
+        "title": "Factory-default Cync device found",
+        "description": "A Cync/Telink device broadcasting its factory-default Bluetooth identity was found nearby - this means it hasn't been added to any Cync account yet. Cync LAN controls devices already on your Cync account and network; it doesn't set up brand-new devices. Add it to your account with the official Cync app first, or see this integration's README for provisioning it directly onto your WiFi network without the Cync app."
       }
     },
     "error": {
@@ -35,7 +39,8 @@
       "no_devices": "No devices were found on this Cync account."
     },
     "abort": {
-      "already_configured": "This Cync account is already configured. Only one Cync LAN account is supported per Home Assistant instance."
+      "already_configured": "This Cync account is already configured. Only one Cync LAN account is supported per Home Assistant instance.",
+      "unprovisioned_device_found": "This device hasn't been added to a Cync account yet, so there's nothing for Cync LAN to set up - see the previous screen for how to add it."
     }
   },
   "options": {

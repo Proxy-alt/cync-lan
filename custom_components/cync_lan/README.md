@@ -77,6 +77,15 @@ Either way leads to the same account-credentials form - discovery just
 saves you from finding the integration yourself, it doesn't skip entering
 your Cync account details.
 
+>[!NOTE]
+> If Home Assistant instead shows a "Factory-default Cync device found"
+> card (triggered by Bluetooth, not DHCP), that's a *different* signal: it
+> means a brand-new device nearby hasn't been added to any Cync account
+> yet. This integration only controls devices already on your account -
+> add it via the official Cync app first (or see the root repository's
+> `cync-lan-ble-provision` CLI tool to skip the Cync app entirely), then
+> come back here.
+
 ### Removing the integration
 
 **Settings → Devices & Services → Cync LAN → ⋮ → Delete.** This stops the

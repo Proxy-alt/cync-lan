@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.bluetooth import BluetoothServiceInfo
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from custom_components.cync_lan.const import DOMAIN
@@ -178,6 +179,56 @@ async def test_dhcp_discovery_deduplicates_concurrent_flows(hass):
     second = await _start_dhcp_step(hass, hostname="ge_switch2")
     assert second["type"] is FlowResultType.ABORT
     assert second["reason"] == "already_in_progress"
+
+
+async def _start_bluetooth_step(hass, name: str = "telink_mesh1"):
+    return await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_BLUETOOTH},
+        data=BluetoothServiceInfo(
+            name=name,
+            address="AA:BB:CC:DD:EE:FF",
+            rssi=-60,
+            manufacturer_data={529: b"\x00"},
+            service_data={},
+            service_uuids=[],
+            source="local",
+        ),
+    )
+
+
+async def test_bluetooth_discovery_shows_informational_confirm_step(hass):
+    """discovery (gold): manifest.json's "bluetooth" matcher only ever
+    fires for a factory-default, never-provisioned device - surfaced as an
+    informational nudge toward BLE provisioning, not the account-setup
+    flow (see async_step_bluetooth's docstring for why)."""
+    result = await _start_bluetooth_step(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "bluetooth_confirm"
+
+
+async def test_bluetooth_discovery_confirm_aborts_with_explanation(hass):
+    result = await _start_bluetooth_step(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unprovisioned_device_found"
+
+
+async def test_bluetooth_discovery_shown_even_if_already_configured(hass):
+    """Unlike DHCP discovery, an already-configured account doesn't change
+    this outcome - the informational message is about the discovered
+    device, not about whether Cync LAN itself is set up."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        data={"account_username": "user@example.com", "account_password": "x"},
+    ).add_to_hass(hass)
+
+    result = await _start_bluetooth_step(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "bluetooth_confirm"
 
 
 async def test_reauth_flow_success(hass, mock_cloud_api, mock_parse_config):
