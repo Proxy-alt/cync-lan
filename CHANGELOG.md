@@ -7,6 +7,13 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.1.1
+
+- No functional change - verifies the CI publish workflow's PyPI Trusted
+  Publishing step end-to-end now that the `cync-lan` project exists on
+  PyPI (0.1.0 was published manually after the pending publisher wasn't
+  yet recognized on the first automated attempt).
+
 ### 0.1.0
 
 - First published release. Extracted from what was previously vendored
