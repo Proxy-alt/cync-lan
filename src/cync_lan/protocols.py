@@ -28,7 +28,7 @@ class MqttSink(Protocol):
 
     topic: str
 
-    def pub_online(self, device_id: int, status: bool) -> bool: ...
+    async def pub_online(self, device_id: int, status: bool) -> bool: ...
 
     async def parse_entity_state(
         self, entity_state: "EntityState", from_pkt: Optional[str] = None

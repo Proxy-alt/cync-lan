@@ -7,6 +7,18 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.1.2
+
+- Fix `protocols.py`'s `MqttSink.pub_online` being declared as a plain
+  `def` instead of `async def` - every real implementation (the MQTT
+  add-on's `MQTTClient.pub_online`, the HA integration's
+  `CyncLanBridge.pub_online`) is async, since `devices.py` wraps this call
+  in `asyncio.create_task()`, which requires a coroutine. Caught by running
+  the HA integration's own strict-mypy pass against this package - the
+  mismatch was invisible at runtime (Python doesn't enforce `Protocol`
+  conformance dynamically) but broke static type-checking for anything
+  assigning a real implementation to `GlobalObject.mqtt_client`.
+
 ### 0.1.1
 
 - No functional change - verifies the CI publish workflow's PyPI Trusted
