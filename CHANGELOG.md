@@ -1,3 +1,10 @@
+### 0.1.1
+
+- No functional change - verifies the CI publish workflow's PyPI Trusted
+  Publishing step end-to-end now that the `cync-lan-mqtt` project exists
+  on PyPI (0.1.0 was published manually after the pending publisher wasn't
+  yet recognized on the first automated attempt).
+
 ### 0.1.0
 
 - Renamed from `cync-lan` (version scheme `0.0.6bNN`) to `cync-lan-mqtt`,

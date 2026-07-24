@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cync-lan-mqtt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Docker/MQTT add-on for local async MQTT control of Cync/C by GE smart devices (DNS redirection required) - built on the cync-lan core protocol library"
 readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
