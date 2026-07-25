@@ -22,7 +22,16 @@ from custom_components.cync_lan.button import (
 from custom_components.cync_lan.const import CONF_ENABLE_EXPERIMENTAL, DOMAIN
 
 
-def _entry(experimental: bool, scenes=None, schedules=None, groups=None):
+@pytest.fixture(autouse=True)
+def _seed_hass(hass):
+    _HASS[0] = hass
+    yield
+    _HASS[0] = None
+
+
+def _entry(experimental: bool, scenes=None, schedules=None, groups=None, nodes=None):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.options = {CONF_ENABLE_EXPERIMENTAL: experimental}
@@ -30,8 +39,14 @@ def _entry(experimental: bool, scenes=None, schedules=None, groups=None):
         scenes=scenes or {},
         schedules=schedules or {},
         groups=groups or {},
+        bridge=CyncLanBridge(_HASS[0], "entry1"),
+        ncync_server=SimpleNamespace(node_devices=nodes or {}),
     )
     return entry
+
+
+# the entry factory is sync but needs a hass for the bridge; stashed by _setup
+_HASS: list = [None]
 
 
 async def _setup(hass, entry):
@@ -79,11 +94,13 @@ async def test_one_delete_button_per_scene_and_schedule(hass):
     }
 
 
-async def test_an_account_with_no_scenes_still_gets_the_query_button(hass):
+async def test_an_account_with_no_scenes_still_gets_the_bridge_buttons(hass):
+    """The bridge-level buttons do not depend on any scene, schedule or
+    device existing."""
     added = await _setup(hass, _entry(True))
 
-    assert len(added) == 1
-    assert isinstance(added[0], CyncLanQueryMeshCredentialsButton)
+    assert any(isinstance(e, CyncLanQueryMeshCredentialsButton) for e in added)
+    assert not any(isinstance(e, CyncLanDeleteSceneButton) for e in added)
 
 
 # ---------------------------------------------------------------------------
@@ -242,3 +259,40 @@ async def test_new_delete_buttons_are_also_disabled_by_default(hass):
     for b in added:
         if isinstance(b, (CyncLanDeleteAutomationButton, CyncLanDeleteGroupButton)):
             assert b.entity_registry_enabled_default is False
+
+
+async def test_identify_button_exists_per_device_and_uses_ha_device_class(hass):
+    """Rendered as Home Assistant's standard identify affordance rather than
+    another experimental button."""
+    from homeassistant.components.button import ButtonDeviceClass
+
+    from custom_components.cync_lan.button import CyncLanIdentifyButton
+
+    node = MagicMock(id=5)
+    node.name = "Hall"
+    node.mac = "AA:BB:CC:DD:EE:FF"
+    node.wifi_mac = "11:22:33:44:55:66"
+    node.bt_only = False
+    node.metadata = MagicMock(supported=True)
+    node.metadata.model_string = "Model"
+    node.identify = AsyncMock()
+
+    added = await _setup(hass, _entry(True, nodes={5: node}))
+
+    buttons = [e for e in added if isinstance(e, CyncLanIdentifyButton)]
+    assert len(buttons) == 1
+    assert buttons[0].device_class is ButtonDeviceClass.IDENTIFY
+
+    await buttons[0].async_press()
+    node.identify.assert_awaited_once_with(True)
+
+
+async def test_sync_hub_clock_button_pushes_current_time(hass):
+    from custom_components.cync_lan.button import CyncLanSyncHubClockButton
+
+    button = CyncLanSyncHubClockButton("entry1")
+
+    with patch("cync_lan.devices.set_time", new=AsyncMock()) as mock:
+        await button.async_press()
+
+    mock.assert_awaited_once_with()

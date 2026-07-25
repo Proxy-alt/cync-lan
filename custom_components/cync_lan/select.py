@@ -18,9 +18,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT, CyncLanBridge
-from .entity import CyncLanIndicatorLedEntity
+from .const import CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
@@ -39,6 +41,17 @@ async def async_setup_entry(
             continue
         entities.append(CyncLanIndicatorLedModeSelect(bridge, entry.entry_id, node))
         entities.append(CyncLanIndicatorLedColorSelect(bridge, entry.entry_id, node))
+
+    if entry.options.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL):
+        for node in runtime_data.ncync_server.node_devices.values():
+            if node.metadata is None or not node.metadata.supported:
+                continue
+            # The level bar exists on dimmers, not on binary switches.
+            if node.is_dimmable and not node.is_light:
+                entities.append(
+                    CyncLanDimmerLedModeSelect(bridge, entry.entry_id, node)
+                )
+
     async_add_entities(entities)
 
 
@@ -86,3 +99,38 @@ class CyncLanIndicatorLedColorSelect(CyncLanIndicatorLedEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         await self._bridge.set_indicator_led_field(self._node, color=option)
+
+
+# DimmingLedsIndicatorMode.java's only two values - there is deliberately no
+# "off" option, because the enum does not have one.
+DIMMER_LED_MODES = {"briefly_display": 1, "always_on": 2}
+
+
+class CyncLanDimmerLedModeSelect(CyncLanEntity, RestoreEntity, SelectEntity):
+    """How a dimmer's row of level LEDs behaves.
+
+    Distinct from the indicator-LED entities above, which control the small
+    status light. Assumed state for the same reason: the device never reports
+    this back, so the last value set is restored across restarts rather than
+    read from hardware.
+    """
+
+    _attr_translation_key = "dimmer_led_mode"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_assumed_state = True
+    _attr_options = list(DIMMER_LED_MODES)
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_dimmer_led_mode")
+        self._attr_current_option = "always_on"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in DIMMER_LED_MODES:
+            self._attr_current_option = last.state
+
+    async def async_select_option(self, option: str) -> None:
+        await self._node.set_dimmer_led_mode(DIMMER_LED_MODES[option])
+        self._attr_current_option = option
+        self.async_write_ha_state()

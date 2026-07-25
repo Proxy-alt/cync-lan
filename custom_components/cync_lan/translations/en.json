@@ -200,6 +200,13 @@
           "green": "Green",
           "blue": "Blue"
         }
+      },
+      "dimmer_led_mode": {
+        "name": "Dimmer LED bar",
+        "state": {
+          "briefly_display": "Briefly display",
+          "always_on": "Always on"
+        }
       }
     },
     "number": {
@@ -208,6 +215,9 @@
       },
       "multicolor_segment_count": {
         "name": "MultiColor segment count"
+      },
+      "dimmer_led_brightness": {
+        "name": "Dimmer LED brightness"
       }
     },
     "switch": {
@@ -268,6 +278,12 @@
       },
       "delete_group": {
         "name": "Delete group {group_name}"
+      },
+      "identify": {
+        "name": "Identify"
+      },
+      "sync_hub_clock": {
+        "name": "Sync hub clock"
       }
     }
   },

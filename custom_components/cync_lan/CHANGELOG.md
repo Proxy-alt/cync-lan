@@ -9,6 +9,36 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.2.0
+
+Requires `cync-lan` 0.4.0.
+
+**New: an Identify button on every device.** Press it and the device
+announces itself, so you can work out which physical bulb or switch an entity
+actually is. It uses Home Assistant's own identify device class, so it shows
+up as the standard affordance rather than another experimental button - and
+it is the most likely of the experimental commands to work, because it rides
+the same path as the indicator-LED command, the one confirmed against real
+hardware.
+
+Unlike the rest of the experimental set, Identify is **not** gated - it is
+non-destructive, self-limiting, and useless if you have to go turn something
+on before you can find a light.
+
+**New (experimental, dimmers only): Dimmer LED bar and Dimmer LED
+brightness.** These control the row of level LEDs on a dimmer switch, which
+is a different thing from the small status LED the existing indicator-LED
+entities drive. The mode has exactly two options, "briefly display" and
+"always on" - the protocol has no "off", so the bar cannot be disabled.
+
+Not created for binary switches, which have no level bar.
+
+**New (experimental): Sync hub clock**, on the bridge. 2.1.0 added a Hub
+clock sensor that shows drift; this corrects it, pushing Home Assistant's
+current time and UTC offset to the hub. Native Cync Schedules fire off the
+hub's clock rather than Home Assistant's, so drift there shifts when they run
+and nothing on the HA side compensates.
+
 ### 2.1.0
 
 Requires `cync-lan` 0.3.0.

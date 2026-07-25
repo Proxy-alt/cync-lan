@@ -447,3 +447,95 @@ async def test_segment_count_restores_its_assumed_state(hass):
         await number.async_added_to_hass()
 
     assert number.native_value == 12
+
+
+# ---------------------------------------------------------------------------
+# dimmer level-bar LEDs
+# ---------------------------------------------------------------------------
+
+
+def _dimmer(dev_id=5, *, dimmable=True, is_light=False):
+    node = _node(dev_id)
+    node.is_dimmable = dimmable
+    node.is_light = is_light
+    node.supports_rgb = False
+    node.set_dimmer_led_mode = AsyncMock()
+    node.set_dimmer_led_brightness = AsyncMock()
+    return node
+
+
+@pytest.mark.parametrize("experimental", [False, True])
+async def test_dimmer_led_entities_follow_the_gate(hass, experimental):
+    from custom_components.cync_lan.number import (
+        CyncLanDimmerLedBrightness,
+        async_setup_entry as number_setup,
+    )
+    from custom_components.cync_lan.select import (
+        CyncLanDimmerLedModeSelect,
+        async_setup_entry as select_setup,
+    )
+
+    entry = _platform_entry(hass, experimental=experimental, nodes={5: _dimmer()})
+    selects: list = []
+    numbers: list = []
+    await select_setup(hass, entry, lambda e: selects.extend(e))
+    await number_setup(hass, entry, lambda e: numbers.extend(e))
+
+    assert any(isinstance(e, CyncLanDimmerLedModeSelect) for e in selects) is experimental
+    assert any(isinstance(e, CyncLanDimmerLedBrightness) for e in numbers) is experimental
+
+
+async def test_dimmer_led_entities_skip_non_dimmers(hass):
+    """A binary switch has no level bar."""
+    from custom_components.cync_lan.select import (
+        CyncLanDimmerLedModeSelect,
+        async_setup_entry as select_setup,
+    )
+
+    entry = _platform_entry(
+        hass, experimental=True, nodes={5: _dimmer(dimmable=False)}
+    )
+    added: list = []
+    await select_setup(hass, entry, lambda e: added.extend(e))
+
+    assert not any(isinstance(e, CyncLanDimmerLedModeSelect) for e in added)
+
+
+async def test_dimmer_led_mode_sends_the_selected_value(hass):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.select import CyncLanDimmerLedModeSelect
+
+    node = _dimmer()
+    entity = CyncLanDimmerLedModeSelect(CyncLanBridge(hass, "e1"), "e1", node)
+    entity.hass = hass
+    entity.async_write_ha_state = MagicMock()
+
+    await entity.async_select_option("briefly_display")
+
+    node.set_dimmer_led_mode.assert_awaited_once_with(1)
+    assert entity.current_option == "briefly_display"
+
+
+async def test_dimmer_led_mode_offers_only_the_two_real_values(hass):
+    """DimmingLedsIndicatorMode has no "off" - the bar cannot be disabled."""
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.select import CyncLanDimmerLedModeSelect
+
+    entity = CyncLanDimmerLedModeSelect(CyncLanBridge(hass, "e1"), "e1", _dimmer())
+
+    assert set(entity.options) == {"briefly_display", "always_on"}
+
+
+async def test_dimmer_led_brightness_sends_and_assumes_state(hass):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.number import CyncLanDimmerLedBrightness
+
+    node = _dimmer()
+    entity = CyncLanDimmerLedBrightness(CyncLanBridge(hass, "e1"), "e1", node)
+    entity.hass = hass
+    entity.async_write_ha_state = MagicMock()
+
+    await entity.async_set_native_value(40)
+
+    node.set_dimmer_led_brightness.assert_awaited_once_with(40)
+    assert entity.native_value == 40

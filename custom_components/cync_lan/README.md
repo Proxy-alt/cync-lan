@@ -185,6 +185,14 @@ Supported entity types in this integration specifically:
   | **Ready to control** | Whether the device's connection will actually accept commands. A device can be connected and still silently drop them until its session finishes handshaking; without this, that is indistinguishable from a working device. WiFi-capable devices only. |
   | **Cync device ID** | The numeric mesh ID, which appears in debug logs and in every raw `experimental_*` action. Disabled by default - it never changes, so it is there for filing a bug report rather than for a dashboard. |
 
+  Every device also gets an **Identify** button, which makes it announce
+  itself so you can tell which physical device an entity is. It is not gated
+  behind experimental commands - it is non-destructive and self-limiting.
+
+  Dimmer switches additionally get **Dimmer LED bar** and **Dimmer LED
+  brightness** (experimental) for the row of level LEDs, which is separate
+  from the small status LED the indicator-LED entities drive.
+
   With experimental commands enabled, the bridge also gains **Hub firmware
   version** and **Hub clock** (both disabled by default - each poll sends a
   real command to the hub). The clock is the useful one: native Cync

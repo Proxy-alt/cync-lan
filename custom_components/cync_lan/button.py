@@ -20,8 +20,9 @@ deliberate two-step, the same treatment switch.py already gives MITM mode.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -29,12 +30,17 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .bridge import CyncLanBridge
+from .entity import CyncLanEntity
 from .const import (
     CONF_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_EXPERIMENTAL,
     DOMAIN,
     MANUFACTURER,
 )
+
+if TYPE_CHECKING:
+    from cync_lan.devices import CyncDevice
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -49,7 +55,14 @@ async def async_setup_entry(
     runtime_data = entry.runtime_data
     entities: list[ButtonEntity] = [
         CyncLanQueryMeshCredentialsButton(entry.entry_id),
+        CyncLanSyncHubClockButton(entry.entry_id),
     ]
+
+    bridge = runtime_data.bridge
+    for node in runtime_data.ncync_server.node_devices.values():
+        if node.metadata is None or not node.metadata.supported:
+            continue
+        entities.append(CyncLanIdentifyButton(bridge, entry.entry_id, node))
 
     for scene_id, scene in (runtime_data.scenes or {}).items():
         entities.append(
@@ -241,3 +254,51 @@ class CyncLanDeleteGroupButton(_CyncLanDestructiveButton):
 
         await delete_group(self._group_id)
         _LOGGER.info("Sent delete for Cync group_id=%s", self._group_id)
+
+
+class CyncLanIdentifyButton(CyncLanEntity, ButtonEntity):
+    """Make this device announce itself, so you can tell which one it is.
+
+    Uses Home Assistant's own IDENTIFY device class, so it renders as the
+    standard identify affordance rather than yet another experimental button.
+    Non-destructive and self-limiting - the device stops on its own or on a
+    second press.
+
+    Of everything in the experimental set this is the most likely to actually
+    work: it rides the same 0x8E dispatch as the indicator-LED command, which
+    is the one command in this family confirmed against real hardware.
+    """
+
+    _attr_device_class = ButtonDeviceClass.IDENTIFY
+    _attr_translation_key = "identify"
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_identify")
+
+    async def async_press(self) -> None:
+        await self._node.identify(True)
+
+
+class CyncLanSyncHubClockButton(_CyncLanBridgeButton):
+    """Push Home Assistant's current time to the hub.
+
+    The Hub clock sensor shows drift; this corrects it. Worth having because
+    native Cync Schedules fire off the hub's clock rather than Home
+    Assistant's, so drift silently shifts when they run and no amount of
+    HA-side configuration compensates.
+
+    Sends HA's own local time, including its UTC offset - so the hub ends up
+    agreeing with the instance that manages it.
+    """
+
+    _attr_translation_key = "sync_hub_clock"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, entry_id: str) -> None:
+        super().__init__(entry_id, "sync_hub_clock")
+
+    async def async_press(self) -> None:
+        from cync_lan.devices import set_time
+
+        await set_time()
+        _LOGGER.info("Pushed Home Assistant's current time to the Cync hub")

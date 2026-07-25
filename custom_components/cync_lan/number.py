@@ -46,6 +46,11 @@ async def async_setup_entry(
                 entities.append(
                     CyncLanMultiColorSegmentCount(bridge, entry.entry_id, node)
                 )
+            # The level bar exists on dimmer switches, not binary ones.
+            if node.is_dimmable and not node.is_light:
+                entities.append(
+                    CyncLanDimmerLedBrightness(bridge, entry.entry_id, node)
+                )
 
     async_add_entities(entities)
 
@@ -110,5 +115,40 @@ class CyncLanMultiColorSegmentCount(CyncLanEntity, RestoreNumber, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         await self._node.set_multicolor_segment_count(int(value))
+        self._attr_native_value = int(value)
+        self.async_write_ha_state()
+
+
+class CyncLanDimmerLedBrightness(CyncLanEntity, RestoreNumber, NumberEntity):
+    """Brightness of a dimmer's row of level LEDs.
+
+    Assumed state, restored across restarts - the device never reports this
+    back. Each change sends two packets (Preview then Save); see
+    CyncDevice.set_dimmer_led_brightness for why a single one would commit
+    whatever the device happened to be previewing.
+    """
+
+    _attr_translation_key = "dimmer_led_brightness"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_assumed_state = True
+    _attr_native_min_value = 0
+    _attr_native_max_value = 100
+    _attr_native_step = 1
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_dimmer_led_brightness"
+        )
+        self._attr_native_value = 100
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._attr_native_value = int(last.native_value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self._node.set_dimmer_led_brightness(int(value))
         self._attr_native_value = int(value)
         self.async_write_ha_state()
