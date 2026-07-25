@@ -107,15 +107,7 @@ class CyncLanQueryMeshCredentialsButton(_CyncLanBridgeButton):
     async def async_press(self) -> None:
         from homeassistant.components import persistent_notification
 
-        try:
-            from cync_lan.devices import (  # type: ignore[attr-defined]
-                query_hub_mesh_credentials,
-            )
-        except ImportError as err:
-            raise HomeAssistantError(
-                "This button needs a newer cync-lan library than the one "
-                "installed. Update the integration and restart Home Assistant."
-            ) from err
+        from cync_lan.devices import query_hub_mesh_credentials
 
         result = await query_hub_mesh_credentials()
         if result is None:

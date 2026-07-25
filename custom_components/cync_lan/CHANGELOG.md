@@ -9,6 +9,73 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.0.0
+
+**Breaking: the `experimental_*` actions are now opt-in.** If you call any of
+them from an automation or script, enable them first or those calls will fail:
+
+> Settings -> Devices & services -> Cync LAN -> **Configure** -> General
+> settings -> **"Enable experimental commands (advanced)"**
+
+They are off by default because every one sends a mesh command whose wire
+format is *predicted* from a length formula rather than confirmed against a
+real packet capture, and most have never been exercised on real hardware.
+Previously they sat in Developer Tools and the automation picker looking as
+ordinary as any other action, with only the name prefix as a warning.
+
+**Requires `cync-lan` 0.2.0**, which brings a fix worth knowing about: six hub
+commands (create/delete scene, create/delete schedule, add/toggle automation)
+were sending a length field one byte short, so device firmware read a
+truncated body and the command silently did nothing. If you tried these and
+nothing happened, that is why. They are still experimental - the framing is
+correct now, which is not the same as confirmed working.
+
+**Fixed: reauthentication could never complete.** When the cached cloud token
+expired, the reauth flow crashed on its final step - Home Assistant rejects
+creating a new entry from a reauth flow, which is what this did. It now
+updates the existing entry in place. Anyone who hit an expired token and could
+not get back in should be able to now.
+
+**Fixed: several operations blocked Home Assistant's event loop**, which shows
+up as the whole instance stuttering: creating the config directory, checking
+the export file, and the periodic refresh all did file I/O directly on the
+loop.
+
+**Fixed:** command acknowledgements for brightness, colour temperature and RGB
+ignored the sub-device id, so on a multi-outlet device they could update the
+wrong entity's state.
+
+**New: every experimental command is now reachable from the UI**, instead of
+only from Developer Tools where each one wanted a numeric scene or group ID
+that the Cync app never shows you. With the option enabled:
+
+- **Buttons** on the Cync LAN Bridge device: *Query mesh credentials*, and a
+  *Delete scene* / *Delete schedule* button per scene and schedule, each
+  carrying its own ID. The delete buttons arrive **disabled** - Home Assistant
+  has no "are you sure?" dialog for a button, and recreating a deleted scene
+  means going back to the phone app, so enabling the entity is the
+  confirmation step.
+- **Entities** for the commands that have state: group power (per group), and
+  MultiColor gradient mode and segment count (per colour-capable device).
+- **Guided forms** under Configure -> Experimental commands for the rest -
+  push an automation to the hub, add or remove a device in a scene or group,
+  write a motion-sensor schedule slot, and program MultiColor segments. These
+  take several parameters and have nothing to read back, so a form with real
+  device/scene/group pickers fits better than an entity.
+
+**New action: `experimental_query_mesh_credentials`** reads your BTLE mesh name
+and password from a connected hub. These are what `cync-lan-ble-provision`
+needs to add a new device to your *existing* mesh rather than only a
+factory-default one. The password is your mesh's shared secret, so it is
+returned as action response data (or shown in a dismissible notification from
+the button) rather than written to the log. Experimental: the response channel
+is unconfirmed and may simply time out on your hardware.
+
+Internal: the test suite could not be collected at all - a misplaced pytest
+declaration meant all 461 tests had been silently not running, and no workflow
+ran them either. Both fixed; tests and type checks now run on every push and
+pull request.
+
 ### 1.4.0
 
 - Add Bluetooth discovery for factory-default (never-provisioned) Cync

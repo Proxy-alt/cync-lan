@@ -1671,7 +1671,6 @@ async def test_query_mesh_credentials_returns_response_data(hass):
     with patch(
         "cync_lan.devices.query_hub_mesh_credentials",
         new=AsyncMock(return_value=("my_mesh", "s3cret")),
-        create=True,
     ):
         result = await hass.services.async_call(
             DOMAIN,
@@ -1700,7 +1699,6 @@ async def test_query_mesh_credentials_raises_on_timeout(hass):
     with patch(
         "cync_lan.devices.query_hub_mesh_credentials",
         new=AsyncMock(return_value=None),
-        create=True,
     ):
         with pytest.raises(HomeAssistantError):
             await hass.services.async_call(

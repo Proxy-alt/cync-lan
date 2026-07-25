@@ -161,7 +161,6 @@ async def test_query_button_notifies_instead_of_logging_the_password(hass, caplo
     with patch(
         "cync_lan.devices.query_hub_mesh_credentials",
         new=AsyncMock(return_value=("my_mesh", "sup3rs3cret")),
-        create=True,
     ):
         await button.async_press()
 
@@ -182,7 +181,6 @@ async def test_query_button_raises_a_clear_error_on_timeout(hass):
     with patch(
         "cync_lan.devices.query_hub_mesh_credentials",
         new=AsyncMock(return_value=None),
-        create=True,
     ):
         with pytest.raises(HomeAssistantError, match="did not|timeout|answer"):
             await button.async_press()

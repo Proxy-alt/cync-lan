@@ -350,19 +350,7 @@ async def _handle_query_mesh_credentials(
     mesh's shared secret, and HA's own log is a much wider audience than
     the person who deliberately invoked this action.
     """
-    try:
-        from cync_lan.devices import (  # type: ignore[attr-defined]
-            query_hub_mesh_credentials,
-        )
-    except ImportError as err:
-        # Added to cync-lan after 0.1.2. manifest.json pins the minimum, but
-        # a user on an older wheel would otherwise get a bare ImportError
-        # traceback instead of being told what to do about it.
-        raise HomeAssistantError(
-            "This action needs a newer cync-lan library than the one "
-            "installed. Update the integration (or the cync-lan package) and "
-            "restart Home Assistant."
-        ) from err
+    from cync_lan.devices import query_hub_mesh_credentials
 
     _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
     result: Optional[tuple[str, str]] = await query_hub_mesh_credentials()

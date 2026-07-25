@@ -7,7 +7,9 @@
       "manufacturer_id": 529
     }
   ],
-  "codeowners": ["@Proxy-alt"],
+  "codeowners": [
+    "@Proxy-alt"
+  ],
   "config_flow": true,
   "dependencies": [],
   "dhcp": [
@@ -20,8 +22,8 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Proxy-alt/cync-lan/issues",
   "requirements": [
-    "cync-lan>=0.1.2",
+    "cync-lan>=0.2.0",
     "pyyaml>=6.0.2"
   ],
-  "version": "1.4.0"
+  "version": "2.0.0"
 }
