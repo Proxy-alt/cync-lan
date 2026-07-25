@@ -26,6 +26,61 @@ on `feature/ha-custom-component` for how the three artifacts relate.
   PyPI (0.1.0 was published manually after the pending publisher wasn't
   yet recognized on the first automated attempt).
 
+### 0.2.0
+
+**Minimum Python is now 3.12.** The package previously declared `>=3.9`, but
+that was never true: `structs.py` imports `enum.StrEnum` (3.11+) and
+`devices.py` uses a PEP 701 nested-quote f-string (3.12+). Installing on
+3.9-3.11 resolved and then failed on the first import. The declared floor now
+matches what the code actually needs, and CI runs against it.
+
+**Fixed: six hub commands sent a malformed length field.** `cmd_code` is the
+byte length of everything after the packet header, and `create_scene`,
+`create_schedule`, `delete_scene`, `delete_schedule`, `toggle_automation` and
+`add_automation` all computed it one byte short. A short length field makes
+device firmware read a truncated body, which presents as the command silently
+doing nothing. If you tried these and nothing happened, this is why. They are
+still EXPERIMENTAL - the fix makes the framing correct, it does not confirm
+the commands work on real hardware.
+
+`scripts/cmd_code.py` computes the field for a new command and audits every
+existing one against it; the audit runs in CI. It is what found this.
+
+**Fixed: three crashes on error and shutdown paths.**
+
+- A network failure during token refresh or OTP submission raised
+  `NameError: name 'lp' is not defined` instead of reporting a clean auth
+  failure. `aiohttp`'s connection and timeout errors are not
+  `ClientResponseError`, so they hit the generic handler, which referenced a
+  variable that was never defined there.
+- Stopping MITM mode raised `NameError: name 'name' is not defined` from the
+  cancellation handler, so the proxy task never shut down cleanly.
+- Closing a connection with mismatched state raised `NameError` from a
+  malformed f-string.
+
+**Fixed: MITM mode spun a CPU core after the cloud disconnected.** The proxy
+loop treated an empty read as "nothing to do" and looped. A stream returns
+empty forever once the peer closes, so this ran flat out for as long as MITM
+stayed enabled. It now stops on EOF.
+
+**Fixed: the packet parser could freeze for 3 seconds per device.** Checking a
+device's retained MITM state opened a blocking broker connection from inside
+the inbound packet parser, stalling all other devices' traffic for the
+duration. Moved off the event loop.
+
+**Added: `query_hub_mesh_credentials()`** - reads the BTLE mesh name and
+password from a connected hub (op_code `0x8A`). These are the two values
+`ble_provision`'s key derivation needs, so this is what allows provisioning a
+new device onto an *existing* mesh rather than only a factory-default one.
+EXPERIMENTAL: the response channel is unconfirmed and may time out.
+
+**Removed** `parse_packet_OLD`, 769 lines of superseded dead code.
+
+Housekeeping: ruff now runs in CI (it was configured but had never been run -
+444 violations, including the three undefined names above). Tests run on every
+push and pull request, not only on a version bump. `server.py` went from no
+test coverage to 80%; the suite is 123 -> 157 tests.
+
 ### 0.1.0
 
 - First published release. Extracted from what was previously vendored
