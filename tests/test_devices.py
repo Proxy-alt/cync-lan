@@ -464,7 +464,9 @@ async def test_delete_scene_payload_shape():
         target_id=0x00,
         sub_id=0,
         op_code=0x1F,
-        cmd_code=9,
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=10,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -496,7 +498,9 @@ async def test_delete_schedule_payload_shape():
         target_id=0x00,
         sub_id=0,
         op_code=0x94,
-        cmd_code=9,
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=10,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -528,7 +532,9 @@ async def test_toggle_automation_payload_shape():
         target_id=0x00,
         sub_id=0,
         op_code=0x93,
-        cmd_code=7 + 52,
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=8 + 52,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -558,7 +564,9 @@ async def test_toggle_automation_disabled_flag_byte():
         target_id=0x00,
         sub_id=0,
         op_code=0x93,
-        cmd_code=7 + 52,
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=8 + 52,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -917,7 +925,9 @@ async def test_create_scene_payload_shape_and_success_response():
         target_id=0x00,
         sub_id=0x00,
         op_code=0x10,
-        cmd_code=7 + len(expected_payload),
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=8 + len(expected_payload),
         command_payload=expected_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -1020,7 +1030,9 @@ async def test_create_schedule_payload_shape_and_success_response():
         target_id=0x00,
         sub_id=0x00,
         op_code=0x92,
-        cmd_code=7 + len(expected_payload),
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=8 + len(expected_payload),
         command_payload=expected_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -1076,7 +1088,9 @@ async def test_add_automation_payload_shape():
         target_id=0x00,
         sub_id=0x00,
         op_code=0x95,
-        cmd_code=7 + len(expected_payload),
+        # 8, not 7: routing(7) + op_prefix(1) + payload. This family emits
+        # the op_prefix byte - see scripts/cmd_code.py.
+        cmd_code=8 + len(expected_payload),
         command_payload=expected_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(

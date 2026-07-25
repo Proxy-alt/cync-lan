@@ -20,10 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Must cover the floor declared by pyproject's requires-python:
-        # structs.py imports enum.StrEnum and cloud_api.py uses
-        # datetime.UTC, both 3.11+, so anything older cannot even import.
-        python-version: ["3.11", "3.13"]
+        # Must cover the floor declared by pyproject's requires-python.
+        # 3.12, not 3.11: structs.py's enum.StrEnum and cloud_api.py's
+        # datetime.UTC put the floor at 3.11, but devices.py also uses a
+        # PEP 701 nested-quote f-string, which is 3.12+. Running the floor
+        # here is the point - it is what catches syntax the local
+        # interpreter happens to accept.
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: actions/setup-python@v5
@@ -46,5 +49,21 @@ jobs:
       # pyproject has configured ruff since the package was split out, but
       # nothing ever ran it - there were 444 outstanding violations,
       # including three undefined names that raised NameError at runtime.
-      - run: ruff check src/ tests/
-      - run: ruff format --check src/ tests/
+      - run: ruff check src/ tests/ scripts/
+      - run: ruff format --check src/ tests/ scripts/
+
+  cmd-code-audit:
+    name: cmd_code audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[ble,dev]"
+      # Every command's cmd_code length field must match the body it
+      # describes. This caught a systematic off-by-one across all six hub
+      # commands, which would make firmware read a truncated body and fail
+      # silently.
+      - run: python scripts/cmd_code.py audit

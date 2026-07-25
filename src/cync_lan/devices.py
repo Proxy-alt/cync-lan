@@ -60,6 +60,7 @@ __all__ = [
     "delete_schedule",
     "toggle_automation",
     "create_scene",
+    "query_hub_mesh_credentials",
     "create_schedule",
     "add_automation",
     "try_resolve_xlink_notification",
@@ -619,7 +620,14 @@ async def delete_scene(scene_id: int) -> None:
         return
     op = 0x1F
     payload = struct.pack("<H", scene_id)
-    cmd_ = 7 + len(payload)
+    # cmd_code is the length of everything after the 8-byte header:
+    # routing(7) + op_prefix(1, because repeat_op_code defaults True for this
+    # hub-command family) + payload. This read `7 + len(payload)` - the
+    # 0x8E-mesh-relay form, where the payload already carries its own inner
+    # opcode array and no op_prefix byte is emitted. These hub commands are
+    # not that family: their payload is bare (delete_scene's is just a u16),
+    # so the op_code IS emitted and the length field was one byte short.
+    cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
@@ -647,7 +655,14 @@ async def delete_schedule(schedule_id: int) -> None:
         return
     op = 0x94
     payload = struct.pack("<H", schedule_id)
-    cmd_ = 7 + len(payload)
+    # cmd_code is the length of everything after the 8-byte header:
+    # routing(7) + op_prefix(1, because repeat_op_code defaults True for this
+    # hub-command family) + payload. This read `7 + len(payload)` - the
+    # 0x8E-mesh-relay form, where the payload already carries its own inner
+    # opcode array and no op_prefix byte is emitted. These hub commands are
+    # not that family: their payload is bare (delete_scene's is just a u16),
+    # so the op_code IS emitted and the length field was one byte short.
+    cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
@@ -713,9 +728,87 @@ async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> N
         + struct.pack(">B", 0)
         + bytes(16)
     )
-    cmd_ = 7 + len(payload)
+    # cmd_code is the length of everything after the 8-byte header:
+    # routing(7) + op_prefix(1, because repeat_op_code defaults True for this
+    # hub-command family) + payload. This read `7 + len(payload)` - the
+    # 0x8E-mesh-relay form, where the payload already carries its own inner
+    # opcode array and no op_prefix byte is emitted. These hub commands are
+    # not that family: their payload is bare (delete_scene's is just a u16),
+    # so the op_code IS emitted and the length field was one byte short.
+    cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def query_hub_mesh_credentials(
+    timeout: float = 10.0,
+) -> Optional[Tuple[str, str]]:
+    """EXPERIMENTAL: ask a connected hub for the BTLE mesh's name and
+    password, returning them as `(mesh_name, mesh_password)`.
+
+    These are the two values every Telink pairing derivation needs:
+    `cync_lan.ble_provision.key_encrypt()` and `generate_sk()` both build
+    their AES key from `XOR(pad16(name), pad16(password))`. Today
+    `ble_provision` can only work against a factory-default device, because
+    the only credentials it knows are the factory constants
+    (`FACTORY_MESH_NAME`/`FACTORY_MESH_PASSWORD`). With this, an
+    already-provisioned mesh's real credentials can be read off the LAN
+    instead of being unavailable.
+
+    Confirmed via `QueryHubMeshNameAndPasswordCommand.java` (op_code
+    `(byte) -118` = 0x8A, dispatched through
+    `XlinkTranslatorKt.m14449a(seq, op, buffer)` - the hub-command path
+    where the byte argument IS the real outer op_code, unlike the
+    0x8E-mesh-relay family). The request writes nothing into its
+    `WriteBuffer(64)`, so the payload is 64 zero bytes.
+
+    Response (`HubMeshNameAndPasswordNotification.XlinkParser`, confirmed):
+    two fixed 48-byte NUL-padded ASCII fields, 96 bytes total -
+    `[0:48]` mesh name, `[48:96]` mesh password.
+
+    cmd_ is PREDICTED via the length formula, not confirmed, and the
+    response channel carries the same unconfirmed-transport caveat as
+    create_scene() - see `_await_xlink_notification()`. Returns None on
+    timeout or a malformed reply.
+
+    SECURITY: the returned password is the mesh's real shared secret.
+    Callers must not log it; this function deliberately logs only the name.
+    """
+    lp = "query_hub_mesh_credentials:"
+    _warn_experimental_cmd_code(lp, "query_hub_mesh_credentials")
+    _warn_experimental_transport_unconfirmed(lp, "query_hub_mesh_credentials")
+
+    op = 0x8A
+    payload = bytes(64)
+    # See delete_scene() for why this is 8 and not 7: routing(7) +
+    # op_prefix(1) + payload, and this hub-command family does emit the
+    # op_prefix byte.
+    cmd_ = 8 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+    response = await _await_xlink_notification(op, timeout=timeout)
+    if response is None:
+        logger.warning(
+            f"{lp} No response received within {timeout}s - either this "
+            f"notification channel doesn't ride the TCP relay cync-lan "
+            f"intercepts (see docstring), or no connected device answered."
+        )
+        return None
+    if len(response) < 96:
+        logger.error(
+            f"{lp} Malformed response (expected >=96 bytes, got {len(response)})"
+        )
+        return None
+
+    mesh_name = response[0:48].split(b"\x00", 1)[0].decode("utf-8", "replace")
+    mesh_password = response[48:96].split(b"\x00", 1)[0].decode("utf-8", "replace")
+    if not mesh_name:
+        logger.error(f"{lp} Response contained an empty mesh name")
+        return None
+    # Never log mesh_password - it is the mesh's shared secret.
+    logger.info(f"{lp} Retrieved mesh credentials for network '{mesh_name}'")
+    return mesh_name, mesh_password
 
 
 async def create_scene(name: str, timeout: float = 10.0) -> Optional[int]:
@@ -755,7 +848,10 @@ async def create_scene(name: str, timeout: float = 10.0) -> Optional[int]:
     name_bytes = name.encode("utf-8")[:30].ljust(30, b"\x00")
     op = 0x10
     payload = name_bytes + struct.pack("<H", 0) + bytes(18)
-    cmd_ = 7 + len(payload)
+    # See delete_scene() for why this is 8 and not 7: routing(7) +
+    # op_prefix(1) + payload, and this hub-command family does emit the
+    # op_prefix byte.
+    cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
@@ -824,7 +920,10 @@ async def create_schedule(
         + struct.pack(">B", 0)
         + bytes(16)
     )
-    cmd_ = 7 + len(payload)
+    # See delete_scene() for why this is 8 and not 7: routing(7) +
+    # op_prefix(1) + payload, and this hub-command family does emit the
+    # op_prefix byte.
+    cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
@@ -930,7 +1029,14 @@ async def add_automation(
         + struct.pack("<i", time_value)
         + struct.pack("<H", scene_id)
     )
-    cmd_ = 7 + len(payload)
+    # cmd_code is the length of everything after the 8-byte header:
+    # routing(7) + op_prefix(1, because repeat_op_code defaults True for this
+    # hub-command family) + payload. This read `7 + len(payload)` - the
+    # 0x8E-mesh-relay form, where the payload already carries its own inner
+    # opcode array and no op_prefix byte is emitted. These hub commands are
+    # not that family: their payload is bare (delete_scene's is just a u16),
+    # so the op_code IS emitted and the length field was one byte short.
+    cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
@@ -4129,7 +4235,7 @@ class CyncTCPSession:
                     self.writer.close()
                     task = self.writer.wait_closed()
                     await asyncio.wait_for(task, 3.0)
-        except AttributeError, TimeoutError:
+        except (AttributeError, TimeoutError):
             pass
         except Exception as e:
             logger.debug(f"{lp}writer: EXCEPTION: {e}")

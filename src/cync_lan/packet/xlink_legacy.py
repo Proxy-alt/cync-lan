@@ -122,7 +122,7 @@ def decode_xlink_frame(data: bytes) -> Optional[XlinkFrame]:
         calc_checksum = sum(inner[5:payload_end]) % 256
         if checksum != calc_checksum:
             return None
-    except struct.error, IndexError:
+    except (struct.error, IndexError):
         return None
 
     return XlinkFrame(

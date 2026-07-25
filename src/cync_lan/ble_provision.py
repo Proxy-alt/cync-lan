@@ -84,6 +84,19 @@ FACTORY_MESH_NAME = "telink_mesh1"
 FACTORY_MESH_PASSWORD = "123"
 FACTORY_ADVERTISED_NAME = "telink_mesh1"
 
+# These factory constants only get a device as far as the initial pairing
+# handshake. Provisioning it onto an EXISTING mesh needs that mesh's own
+# name/password, which this module has no way to discover on its own - it
+# speaks BLE, and the credentials live on the hub.
+#
+# `cync_lan.devices.query_hub_mesh_credentials()` reads them over the LAN
+# (op_code 0x8A, confirmed via QueryHubMeshNameAndPasswordCommand.java). It
+# needs a live nCyncServer with at least one connected device, so it is
+# usable from the Home Assistant integration or the MQTT add-on - both of
+# which run a server in-process - but not from this file's standalone CLI,
+# which has no server. Pass the values it returns as `provision`'s
+# mesh_name/mesh_password arguments.
+
 # Confirmed via Telink.java's static initializer: f28877k = {0xA0..0xA7,
 # zero-padded to 16}. NOT SecureRandom output despite superficially
 # resembling one - it's a `final` field written once, used AS-IS at two
