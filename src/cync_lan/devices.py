@@ -60,6 +60,11 @@ __all__ = [
     "delete_schedule",
     "toggle_automation",
     "create_scene",
+    "delete_automation",
+    "delete_group",
+    "query_hub_info",
+    "query_device_time",
+    "query_sol_config",
     "query_hub_mesh_credentials",
     "create_schedule",
     "add_automation",
@@ -738,6 +743,186 @@ async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> N
     cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def delete_automation(schedule_id: int) -> None:
+    """EXPERIMENTAL: removes the trigger binding a Schedule fires on.
+
+    Closes an obvious gap: create_schedule (0x92), toggle_automation (0x93)
+    and delete_schedule (0x94) all exist, but nothing removed the automation
+    binding add_automation (0x95) creates.
+
+    Confirmed via DeleteAutomationHubCommand.java (real op_code (byte)-105 =
+    0x97, dispatched through XlinkTranslatorKt.m14449a() - the hub-command
+    path where the byte argument IS the outer op_code). Payload is a
+    6-byte WriteBuffer with only scheduleId written as a 2-byte
+    little-endian int, so the last 4 bytes are zero padding that is
+    genuinely on the wire, not an artifact.
+
+    cmd_ is PREDICTED via the length formula, not confirmed, and the
+    transport carries the same unconfirmed caveat as its siblings.
+    """
+    lp = "delete_automation:"
+    _warn_experimental_cmd_code(lp, "delete_automation")
+    _warn_experimental_transport_unconfirmed(lp, "delete_automation")
+
+    op = 0x97
+    payload = struct.pack("<H", schedule_id) + bytes(4)
+    # See delete_scene() for why this is 8 and not 7.
+    cmd_ = 8 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def delete_group(group_address: int) -> None:
+    """EXPERIMENTAL: deletes a device group from the mesh.
+
+    The delete counterpart to set_group_membership's 0xD7. Takes a group
+    MeshAddress, not a group index - MeshAddress.java's
+    GROUP_ADDRESS_RANGE is 32768..65535 with groupId = address - 32768 (see
+    docs/mesh_opcodes.md's "Groups control").
+
+    Confirmed via DeleteGroupHubCommand.java (real op_code (byte)50 = 0x32).
+    Payload: the group address as a 2-byte little-endian UShort.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "delete_group:"
+    _warn_experimental_cmd_code(lp, "delete_group")
+    _warn_experimental_transport_unconfirmed(lp, "delete_group")
+
+    if not (0 <= group_address <= 0xFFFF):
+        logger.error(f"{lp} group_address must fit in 16 bits, got {group_address}")
+        return
+
+    op = 0x32
+    payload = struct.pack("<H", group_address)
+    cmd_ = 8 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def _query_hub(
+    op: int, name: str, timeout: float, buffer_len: int
+) -> Optional[bytes]:
+    """Send one of the hub's read-only query commands and wait for its reply.
+
+    Every one of them writes nothing into its WriteBuffer, so the request is
+    `buffer_len` zero bytes - the allocation size is the wire size, since the
+    buffer is sent whole (see docs/mesh_opcodes.md's "Hub command family").
+
+    Returns the raw notification payload, or None on timeout. A timeout is a
+    normal outcome here, not an error: whether this notification channel
+    rides the TCP relay cync-lan intercepts is still unresolved.
+    """
+    lp = f"{name}:"
+    _warn_experimental_cmd_code(lp, name)
+    _warn_experimental_transport_unconfirmed(lp, name)
+
+    payload = bytes(buffer_len)
+    cmd_ = 8 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+    response = await _await_xlink_notification(op, timeout=timeout)
+    if response is None:
+        logger.warning(
+            f"{lp} No response within {timeout}s - either this notification "
+            f"channel doesn't ride the TCP relay cync-lan intercepts, or no "
+            f"connected device answered."
+        )
+    return response
+
+
+async def query_hub_info(timeout: float = 10.0) -> Optional[Dict[str, str]]:
+    """EXPERIMENTAL: read a hub's firmware version, MAC and setup code.
+
+    Confirmed via QueryHubInfoCommand.java (op_code (byte)75 = 0x4B, empty
+    64-byte request). Response (HubInfoNotification.XlinkParser): four fixed
+    16-byte NUL-padded ASCII fields - firmware major, firmware minor, MAC,
+    setup code - 64 bytes total. The two firmware halves are joined with a
+    dot, exactly as the real app does.
+
+    Returns None on timeout or a short reply.
+    """
+    response = await _query_hub(0x4B, "query_hub_info", timeout, 64)
+    if response is None:
+        return None
+    if len(response) < 64:
+        logger.error(
+            f"query_hub_info: malformed response (expected >=64 bytes, got {len(response)})"
+        )
+        return None
+
+    def _field(index: int) -> str:
+        raw = response[index * 16 : (index + 1) * 16]
+        return raw.split(b"\x00", 1)[0].decode("utf-8", "replace").strip()
+
+    return {
+        "firmware_version": f"{_field(0)}.{_field(1)}",
+        "mac": _field(2),
+        "setup_code": _field(3),
+    }
+
+
+async def query_device_time(timeout: float = 10.0) -> Optional[datetime.datetime]:
+    """EXPERIMENTAL: read the clock a hub believes it is running on.
+
+    Worth having because native Cync Schedules fire off this clock, not off
+    Home Assistant's - a hub whose time has drifted runs its automations at
+    the wrong moment, and nothing else exposes that.
+
+    Confirmed via QueryDeviceTimeCommand.java (op_code (byte)70 = 0x46, empty
+    64-byte request). Response (DeviceTimeNotification.XlinkParser): year as
+    a 2-byte little-endian int, then month, day, hour, minute and second as
+    single bytes - 7 bytes.
+
+    Note the app has a SECOND parser for this same notification on its
+    Telink/BLE-direct path, reading a different layout at offsets 10-19 with
+    a DST flag and a packed UTC offset. Only the Xlink layout above applies
+    to this TCP path; the two are not interchangeable.
+
+    Returned naive - the reply carries no timezone on this path.
+    """
+    response = await _query_hub(0x46, "query_device_time", timeout, 64)
+    if response is None:
+        return None
+    if len(response) < 7:
+        logger.error(
+            f"query_device_time: malformed response (expected >=7 bytes, got {len(response)})"
+        )
+        return None
+    year = struct.unpack_from("<H", response, 0)[0]
+    month, day, hour, minute, second = response[2:7]
+    try:
+        return datetime.datetime(year, month, day, hour, minute, second)
+    except ValueError as err:
+        logger.error(f"query_device_time: hub reported an invalid date/time: {err}")
+        return None
+
+
+async def query_sol_config(timeout: float = 10.0) -> Optional[Dict[str, bool]]:
+    """EXPERIMENTAL: read a Sol lamp's display configuration.
+
+    Confirmed via QuerySolConfigCommand.java (op_code (byte)-83 = 0xAD, empty
+    64-byte request). Response (SolConfigNotification.XlinkParser): three
+    bytes, each a boolean - show_clock, show_timer,
+    show_mic_privacy_mode_light (names taken verbatim from SolConfig.java's
+    own toString).
+    """
+    response = await _query_hub(0xAD, "query_sol_config", timeout, 64)
+    if response is None:
+        return None
+    if len(response) < 3:
+        logger.error(
+            f"query_sol_config: malformed response (expected >=3 bytes, got {len(response)})"
+        )
+        return None
+    return {
+        "show_clock": response[0] != 0,
+        "show_timer": response[1] != 0,
+        "show_mic_privacy_mode_light": response[2] != 0,
+    }
 
 
 async def query_hub_mesh_credentials(

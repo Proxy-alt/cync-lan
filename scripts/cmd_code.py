@@ -197,6 +197,11 @@ def _module_matrix() -> list[tuple[str, Any]]:
         ("add_automation", lambda: d.add_automation(1, 1, 0x7F, 8, 30, 0)),
         ("create_scene", lambda: d.create_scene("Audit Scene")),
         ("create_schedule", lambda: d.create_schedule(1)),
+        ("delete_automation", lambda: d.delete_automation(1)),
+        ("delete_group", lambda: d.delete_group(32770)),
+        ("query_hub_info", lambda: d.query_hub_info()),
+        ("query_device_time", lambda: d.query_device_time()),
+        ("query_sol_config", lambda: d.query_sol_config()),
     ]
 
 

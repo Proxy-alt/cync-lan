@@ -26,6 +26,44 @@ on `feature/ha-custom-component` for how the three artifacts relate.
   PyPI (0.1.0 was published manually after the pending publisher wasn't
   yet recognized on the first automated attempt).
 
+### 0.3.0
+
+**New: five more hub commands**, all with op_codes and request payloads read
+from the decompiled app rather than guessed:
+
+| Function | op_code | What it does |
+|---|---|---|
+| `query_hub_info()` | `0x4B` | Firmware version, MAC and setup code |
+| `query_device_time()` | `0x46` | The clock the hub believes it is running on |
+| `query_sol_config()` | `0xAD` | A Sol lamp's clock/timer/mic-light display flags |
+| `delete_automation()` | `0x97` | Removes a Schedule's trigger binding |
+| `delete_group()` | `0x32` | Deletes a device group from the mesh |
+
+`delete_automation` closes a real gap: `create_schedule`, `toggle_automation`
+and `delete_schedule` all existed, but nothing removed the binding
+`add_automation` creates.
+
+`query_device_time` is worth calling out - native Cync Schedules fire off the
+hub's own clock, not Home Assistant's, so a hub whose time has drifted runs
+its automations at the wrong moment and nothing else exposed that.
+
+As with the rest of this family, each `cmd_code` is PREDICTED from the length
+formula and the reply channel is unconfirmed, so a query returning `None` on
+timeout is an expected outcome rather than an error.
+
+**Deliberately not implemented**, and documented in `docs/mesh_opcodes.md`
+instead:
+
+- `0x49` `QueryHubFirmwareUpdates` - its reply is a variable-length list of
+  per-device records rather than a fixed layout, and a wrong record stride
+  produces plausible-looking garbage rather than an obvious failure. There is
+  no capture to validate a decoder against.
+- `0x4F` `StartHubFirmwareUpdates`, `StartWifiOtaUpdate` and
+  `SetWifiOtaUpdateMode` - these flash firmware. Everywhere else in this
+  family a wrong predicted `cmd_code` means the device ignores the packet;
+  here the same mistake has a far worse floor, so no code path capable of
+  sending them exists.
+
 ### 0.2.1
 
 **Fixed: this package could not be installed alongside Home Assistant.**
