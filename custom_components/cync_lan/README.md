@@ -33,6 +33,14 @@ history (independent of the underlying `cync-lan` package's own versioning
    this over your LAN.
 3. Your Cync account email and password, and access to that account's email
    inbox (Cync emails a one-time verification code during setup).
+4. **Home Assistant 2024.11.0 or newer**, and Python 3.12+ (which any
+   supported Home Assistant install already provides). 2024.11 is where
+   `ConfigFlow._get_reauth_entry()` and `async_update_reload_and_abort`'s
+   `data_updates` argument landed - both load-bearing for reauthentication
+   here - and the floor was verified by checking those APIs against real
+   2024.10 and 2024.11 installs, not inferred. `hacs.json` declares the same
+   minimum, so HACS will not offer the integration to older instances.
+   Continuous integration runs against the current release (2026.7).
 
 ### Installing the integration
 
