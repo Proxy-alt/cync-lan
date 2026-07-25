@@ -9,10 +9,10 @@ name: Release + PyPI publish - cync-lan-mqtt add-on
 #   0.2.1    -> full release
 #   0.2.1b1  -> prerelease (a beta)
 #
-# NOTE the beta form here is bN with *digits*, not bCOMMIT as on the HA
-# integration branch. That is not a style choice: this package uploads to
-# PyPI, so its version must be valid PEP 440, and PEP 440's pre-release
-# segment is `b` followed by a number. A commit sha is rejected -
+# The bN form means *digits*, and is the same rule on all three artifacts.
+# It is not a style choice here: this package uploads to PyPI, so its
+# version must be valid PEP 440, and PEP 440's pre-release segment is `b`
+# followed by a number. A commit sha is rejected -
 # packaging.version.Version("0.2.1b2aad577") raises InvalidVersion, and the
 # upload would fail after the tag and GitHub release had already been
 # created. The `+sha` local-version form is valid PEP 440 but PyPI refuses

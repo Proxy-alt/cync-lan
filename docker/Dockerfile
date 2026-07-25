@@ -41,7 +41,11 @@ COPY static/ /root/cync-lan/www/
 VOLUME /root/cync-lan/config
 EXPOSE 23779 23778
 
-LABEL org.opencontainers.image.source="https://github.com/baudneo/cync-lan"
+# image.source is what links a published package to its repository in the
+# GitHub Packages UI. This pointed at baudneo/cync-lan - the upstream this
+# was forked from - which would attach the package to somebody else's repo.
+LABEL org.opencontainers.image.source="https://github.com/Proxy-alt/cync-lan"
 LABEL org.opencontainers.image.description="Local async MQTT controller for Cync/C by GE Wi-Fi devices"
+LABEL org.opencontainers.image.licenses="MIT"
 
 CMD ["cync-lan"]
