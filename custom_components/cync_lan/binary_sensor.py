@@ -4,7 +4,7 @@ active" entity."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -44,14 +44,7 @@ async def async_setup_entry(
         is_secondary = node.is_light or node.is_switch
         entities.append(CyncLanMotionSensor(bridge, entry.entry_id, node, is_secondary))
 
-    for node in runtime_data.ncync_server.node_devices.values():
-        if node.metadata is None or not node.metadata.supported:
-            continue
-        # Only WiFi devices own a session to be ready or not - a BTLE-mesh
-        # device is reached through whichever WiFi device relays it, which
-        # sensor.py's relay-source sensor already reports.
-        if node.has_wifi:
-            entities.append(CyncLanReadyToControlSensor(bridge, entry.entry_id, node))
+    entities.append(CyncLanReadyToControlSensor(entry.entry_id, runtime_data))
     entities.append(CyncLanAppMeshActiveSensor(bridge, entry.entry_id))
     entities.append(CyncLanAppWifiActiveSensor(bridge, entry.entry_id))
     async_add_entities(entities)
@@ -152,34 +145,63 @@ class CyncLanAppWifiActiveSensor(BinarySensorEntity):
         )
 
 
-class CyncLanReadyToControlSensor(CyncLanEntity, BinarySensorEntity):
-    """Whether this device's own TCP session will actually accept commands.
 
-    A device can be connected and still refuse to act: `ready_to_control` is
-    only set once the session completes its handshake, and commands sent
-    before that are silently dropped. That is a genuinely distinct state from
-    "offline", and until now nothing surfaced it - a user seeing an
-    unresponsive-but-available device had no way to tell the two apart.
+class CyncLanReadyToControlSensor(BinarySensorEntity):
+    """Whether anything is currently able to carry a command to the mesh.
 
-    Overrides `available` for the same reason the MITM switch does: this
-    describes the device's own session, so it is meaningful precisely when
-    the device looks reachable but is not behaving.
+    Deliberately on the bridge and not on each device, which is where this
+    started and where it was wrong. Commands are not sent to a device's own
+    connection: broadcast_control_command picks a random sample of the whole
+    session pool and each packet names its target, so ANY ready session can
+    drive ANY device. Controllability is a property of the pool.
+
+    Per-device it read false for almost every device - in one real log, 43
+    devices had identified themselves but only 10 still held their own live
+    session, so the rest looked uncontrollable while being perfectly
+    controllable through someone else's connection. Whether a given device
+    holds its own connection is a different question, and sensor.py's IP
+    address / relay source sensors already answer it.
     """
 
+    _attr_has_entity_name = True
+    _attr_should_poll = True
     _attr_translation_key = "ready_to_control"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
-        super().__init__(bridge, entry_id, node, unique_id_suffix="_ready_to_control")
-
-    @property
-    def available(self) -> bool:
-        return True
+    def __init__(self, entry_id: str, runtime_data: Any) -> None:
+        self._runtime_data = runtime_data
+        self._attr_unique_id = f"{entry_id}_ready_to_control"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
 
     @property
     def is_on(self) -> bool:
-        session = self._node.tcp_session
-        if session is None:
+        # Polled: sessions come and go in the protocol layer, which has no
+        # hook to notify on.
+        try:
+            pool = self._runtime_data.ncync_server.get_dev_tcp_pool_sync()
+        except Exception:  # noqa: BLE001 - a diagnostic must not break setup
             return False
-        return bool(getattr(session, "ready_to_control", False))
+        return any(
+            getattr(s, "ready_to_control", False) or getattr(s, "mitm_mode", False)
+            for s in pool
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The counts behind the boolean - "0 of 10 ready" and "no sessions at
+        all" are very different problems."""
+        try:
+            pool = list(self._runtime_data.ncync_server.get_dev_tcp_pool_sync())
+        except Exception:  # noqa: BLE001
+            return {}
+        return {
+            "sessions": len(pool),
+            "ready_sessions": sum(
+                1 for s in pool if getattr(s, "ready_to_control", False)
+            ),
+        }

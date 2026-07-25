@@ -182,7 +182,6 @@ Supported entity types in this integration specifically:
   | Entity | What it tells you |
   |---|---|
   | **Last seen** | When the device last reported anything. Answers "offline *since when*" - and unlike every other entity it deliberately stays readable after the device goes unavailable, which is exactly when you need it. |
-  | **Ready to control** | Whether the device's connection will actually accept commands. A device can be connected and still silently drop them until its session finishes handshaking; without this, that is indistinguishable from a working device. WiFi-capable devices only. |
   | **Cync device ID** | The numeric mesh ID, which appears in debug logs and in every raw `experimental_*` action. Disabled by default - it never changes, so it is there for filing a bug report rather than for a dashboard. |
 
   Every device also gets an **Identify** button, which makes it announce

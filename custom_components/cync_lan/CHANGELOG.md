@@ -9,6 +9,25 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.2.1
+
+**Fixed: "Ready to control" read false for almost every device.** It was a
+per-device entity reporting whether that device held its own live connection -
+but that is not what determines whether a device can be controlled. Commands
+are sent to a random sample of the whole connection pool with the target named
+inside the packet, so *any* ready connection can drive *any* device.
+
+In a real log, 43 devices had identified themselves while only 10 still held
+their own connection: the other 33 showed "not ready to control" while being
+perfectly controllable through someone else's. The entity has moved to the
+**Cync LAN Bridge**, where it answers the question that actually matters - is
+anything currently able to carry a command - with `sessions` and
+`ready_sessions` counts as attributes, because "0 of 10 ready" and "nothing
+connected at all" are very different problems.
+
+Whether an individual device holds its own connection is a real question and
+already answered by its **IP address** / **Connected via** sensors.
+
 ### 2.2.0
 
 Requires `cync-lan` 0.4.0.

@@ -12,6 +12,7 @@ from custom_components.cync_lan.binary_sensor import (
     async_setup_entry,
 )
 from custom_components.cync_lan.bridge import CyncLanBridge
+from custom_components.cync_lan.const import DOMAIN
 
 
 def _fake_node(**overrides):
@@ -127,54 +128,81 @@ async def test_app_wifi_active_is_independent_of_app_mesh_active(hass):
     assert mesh_entity.is_on is False
 
 
-async def test_ready_to_control_distinguishes_connected_from_usable(hass):
-    """A device can be connected and still silently drop commands until its
-    session finishes handshaking. Nothing surfaced that before - an
-    unresponsive-but-available device looked identical to a working one."""
-    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
 
-    bridge = CyncLanBridge(hass, "entry1")
-    node = _fake_node()
-    node.tcp_session = SimpleNamespace(ready_to_control=False)
-    sensor = CyncLanReadyToControlSensor(bridge, "entry1", node)
-
-    assert sensor.is_on is False
-
-    node.tcp_session = SimpleNamespace(ready_to_control=True)
-    assert sensor.is_on is True
-
-
-async def test_ready_to_control_is_off_with_no_session(hass):
-    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
-
-    bridge = CyncLanBridge(hass, "entry1")
-    node = _fake_node()
-    node.tcp_session = None
-    sensor = CyncLanReadyToControlSensor(bridge, "entry1", node)
-
-    assert sensor.is_on is False
-    # Stays available on purpose: it describes the session, and is most
-    # useful precisely when the device looks reachable but is not behaving.
-    assert sensor.available is True
-
-
-async def test_ready_to_control_only_for_wifi_devices(hass):
-    """A BTLE-mesh device has no session of its own - sensor.py's relay-source
-    sensor is what reports its reachability instead."""
-    from custom_components.cync_lan.binary_sensor import (
-        CyncLanReadyToControlSensor,
-        async_setup_entry as bs_setup,
-    )
-
-    node = _fake_node(has_wifi=False, bt_only=True, has_motion_sensor=False)
+def _pool_entry(hass, sessions):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = MagicMock()
+    entry.runtime_data.ncync_server.node_devices = {}
+    entry.runtime_data.ncync_server.get_dev_tcp_pool_sync = MagicMock(return_value=sessions)
+    return entry
+
+
+def _session(ready=True, mitm=False):
+    return SimpleNamespace(ready_to_control=ready, mitm_mode=mitm)
+
+
+async def test_ready_to_control_is_true_when_any_session_can_carry_a_command(hass):
+    """Commands go to a random sample of the whole pool with the target named
+    in the packet, so one ready session is enough for every device."""
+    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
+
+    entry = _pool_entry(hass, [_session(ready=False), _session(ready=True)])
+    sensor = CyncLanReadyToControlSensor("entry1", entry.runtime_data)
+
+    assert sensor.is_on is True
+    assert sensor.extra_state_attributes == {"sessions": 2, "ready_sessions": 1}
+
+
+async def test_ready_to_control_is_false_when_no_session_is_ready(hass):
+    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
+
+    entry = _pool_entry(hass, [_session(ready=False), _session(ready=False)])
+    sensor = CyncLanReadyToControlSensor("entry1", entry.runtime_data)
+
+    assert sensor.is_on is False
+    # "0 of 2 ready" and "no sessions at all" are different problems.
+    assert sensor.extra_state_attributes == {"sessions": 2, "ready_sessions": 0}
+
+
+async def test_ready_to_control_is_false_with_an_empty_pool(hass):
+    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
+
+    entry = _pool_entry(hass, [])
+    sensor = CyncLanReadyToControlSensor("entry1", entry.runtime_data)
+
+    assert sensor.is_on is False
+    assert sensor.extra_state_attributes == {"sessions": 0, "ready_sessions": 0}
+
+
+async def test_mitm_session_also_counts_as_able_to_carry_a_command(hass):
+    """broadcast_control_command accepts ready_to_control OR mitm_mode."""
+    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
+
+    entry = _pool_entry(hass, [_session(ready=False, mitm=True)])
+    sensor = CyncLanReadyToControlSensor("entry1", entry.runtime_data)
+
+    assert sensor.is_on is True
+
+
+async def test_ready_to_control_lives_on_the_bridge_not_each_device(hass):
+    """The regression this replaces: as a per-device entity it read false for
+    every device that did not hold its own connection, while those devices
+    were perfectly controllable through another session."""
+    from custom_components.cync_lan.binary_sensor import (
+        CyncLanReadyToControlSensor,
+        async_setup_entry as bs_setup,
+    )
+
+    node = _fake_node(has_motion_sensor=False)
+    entry = _pool_entry(hass, [_session()])
     entry.runtime_data.ncync_server.node_devices = {5: node}
 
     added = []
     await bs_setup(hass, entry, lambda e: added.extend(e))
 
-    assert not any(isinstance(e, CyncLanReadyToControlSensor) for e in added)
+    sensors = [e for e in added if isinstance(e, CyncLanReadyToControlSensor)]
+    assert len(sensors) == 1  # one, not one per device
+    assert sensors[0].device_info["identifiers"] == {(DOMAIN, "entry1")}
