@@ -9,6 +9,15 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.0.1
+
+**Fixed: the integration's requirements could not be installed.** `cync-lan`
+pinned `pyyaml` to exactly `6.0.2`, while Home Assistant requires
+`PyYAML==6.0.3` - a hard conflict, so installing this integration's
+requirements failed with a pip resolution error. Fixed in `cync-lan` 0.2.1,
+which this release now requires. If 2.0.0 would not install for you, this is
+why.
+
 ### 2.0.0
 
 **Breaking: the `experimental_*` actions are now opt-in.** If you call any of

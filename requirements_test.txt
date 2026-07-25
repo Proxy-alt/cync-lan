@@ -6,7 +6,7 @@ pytest-homeassistant-custom-component>=0.13.346
 
 # manifest.json "requirements", installed so the integration imports the
 # real package under test rather than a stub.
-cync-lan>=0.1.2
+cync-lan>=0.2.1
 pyyaml>=6.0.2
 
 # Static type checking, run in the same job (see mypy.ini).
