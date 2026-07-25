@@ -20,7 +20,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .bridge import CyncLanBridge
-from .const import DEFAULT_DISABLED_ENTITIES, DOMAIN, MANUFACTURER
+from .const import (
+    CONF_ENABLE_EXPERIMENTAL,
+    DEFAULT_DISABLED_ENTITIES,
+    DEFAULT_ENABLE_EXPERIMENTAL,
+    DOMAIN,
+    MANUFACTURER,
+)
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 
 if TYPE_CHECKING:
@@ -70,7 +76,117 @@ async def async_setup_entry(
                 schedule.get("enabled", True),
             )
         )
+    # Experimental-only switches. Gated like the experimental_* services -
+    # both send commands whose cmd_code is predicted rather than confirmed.
+    if entry.options.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL):
+        for node in runtime_data.ncync_server.node_devices.values():
+            if node.metadata is None or not node.metadata.supported:
+                continue
+            if node.supports_rgb:
+                entities.append(
+                    CyncLanMultiColorGradientSwitch(bridge, entry.entry_id, node)
+                )
+        for group_id, group in (runtime_data.groups or {}).items():
+            entities.append(
+                CyncLanGroupPowerSwitch(
+                    entry.entry_id, group_id, group.get("name") or f"Group {group_id}"
+                )
+            )
+
     async_add_entities(entities)
+
+
+class CyncLanMultiColorGradientSwitch(CyncLanEntity, RestoreEntity, SwitchEntity):
+    """Gradient mode for a custom MultiColor scheme, replacing
+    experimental_set_multicolor_gradient_mode.
+
+    Assumed state: the device never reports this back, so like the
+    indicator-LED entities this reflects the last value HA set, restored
+    across restarts rather than read from hardware.
+
+    Only one of the three primitives a full custom scheme needs (see
+    CyncDevice.set_multicolor_gradient_mode's docstring) - this integration
+    does not orchestrate the whole multi-send sequence, so setting this
+    alone may not produce a visible change on its own.
+    """
+
+    _attr_translation_key = "multicolor_gradient_mode"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_assumed_state = True
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_multicolor_gradient_mode"
+        )
+        self._attr_is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state in ("on", "off"):
+            self._attr_is_on = last_state.state == "on"
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)
+
+    async def _set(self, enabled: bool) -> None:
+        await self._node.set_multicolor_gradient_mode(enabled)
+        self._attr_is_on = enabled
+        self.async_write_ha_state()
+
+
+class CyncLanGroupPowerSwitch(RestoreEntity, SwitchEntity):
+    """Turn a whole Cync device group on or off in one mesh command,
+    replacing experimental_set_group_power and its numeric group_id.
+
+    Distinct from light.py's CyncLanLightGroup, which is Home Assistant's
+    own group helper fanning out one service call per member. This sends a
+    single command addressed to the group's own MeshAddress, which is the
+    thing that has never been confirmed to work against real firmware - see
+    docs/mesh_opcodes.md's "Groups control". Kept as a separate,
+    experimental-only entity for exactly that reason: if it silently does
+    nothing, the working per-member path is still there.
+
+    Home-wide, so it lives on the bridge device. Assumed state - a group
+    has no state of its own to read back.
+    """
+
+    _attr_should_poll = False
+    _attr_assumed_state = True
+    _attr_translation_key = "group_power"
+
+    def __init__(self, entry_id: str, group_id: int, name: str) -> None:
+        self._group_id = group_id
+        self._attr_unique_id = f"{entry_id}_group_power_{group_id}"
+        self._attr_translation_placeholders = {"group_name": name}
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
+        self._attr_is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state in ("on", "off"):
+            self._attr_is_on = last_state.state == "on"
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)
+
+    async def _set(self, on: bool) -> None:
+        from cync_lan.devices import set_group_power
+
+        await set_group_power(self._group_id, 1 if on else 0)
+        self._attr_is_on = on
+        self.async_write_ha_state()
 
 
 class CyncLanSwitch(CyncLanEntity, SwitchEntity):

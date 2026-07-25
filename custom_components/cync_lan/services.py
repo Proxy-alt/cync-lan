@@ -30,8 +30,12 @@ from .const import (
     CONF_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_EXPERIMENTAL,
     DOMAIN,
+    FADE_OPTIONS,
     MOTION_SENSOR_SENSITIVITY,
     MOTION_SENSOR_TYPE,
+    REACH_FLAG_OPTIONS,
+    SCHEDULE_MODE_OPTIONS,
+    SCHEDULE_SLOT_OPTIONS,
 )
 
 if TYPE_CHECKING:
@@ -112,28 +116,6 @@ _ALL_DAYS_MASK = 0x7F
 # live in bridge.py (LED_MODE_TO_INT/LED_COLOR_TO_INT) - shared with
 # select.py so a service call and an entity write converge on the same
 # values/cache.
-# Matches sensor.py's _SLOT_LABELS ordering and docs/cync_automations.md's
-# cloud-JSON slot numbering exactly.
-_SCHEDULE_SLOT = {"morning": 0, "daytime": 1, "evening": 2, "sleep": 3}
-# MotionSensorResponseMode.java ordinals - vacancy exists at the wire level
-# but wasn't traced to a reachable UI path in the app.
-_SCHEDULE_MODE = {"disabled": 0, "occupancy": 1, "vacancy": 2, "simple": 3}
-# GroupReachFlag - ControlDeviceGroupCommand.java, see docs/mesh_opcodes.md's
-# "Groups control" section.
-_REACH_FLAG = {"normal": 0x00, "receive_only": 0x87}
-# ScheduleFade.java's 1-byte signed enum - a coded duration bucket, not raw
-# seconds. See docs/mesh_opcodes.md's "Fine/fade brightness" follow-up and
-# CyncDevice.add_to_scene()'s docstring.
-_FADE = {
-    "no_fade": 0xFF,
-    "10_seconds": 1,
-    "30_seconds": 2,
-    "1_minute": 3,
-    "5_minutes": 4,
-    "10_minutes": 5,
-    "20_minutes": 6,
-    "30_minutes": 7,
-}
 
 
 def _resolve_device(
@@ -244,8 +226,8 @@ async def _handle_set_motion_sensor_schedule(hass: HomeAssistant, call: ServiceC
     _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
     rgb = call.data.get(ATTR_RGB)
     await node.set_motion_sensor_schedule(
-        slot_id=_SCHEDULE_SLOT[call.data[ATTR_SLOT]],
-        mode=_SCHEDULE_MODE[call.data[ATTR_MODE]],
+        slot_id=SCHEDULE_SLOT_OPTIONS[call.data[ATTR_SLOT]],
+        mode=SCHEDULE_MODE_OPTIONS[call.data[ATTR_MODE]],
         start_hour=call.data[ATTR_START_HOUR],
         start_minute=call.data[ATTR_START_MINUTE],
         end_hour=call.data[ATTR_END_HOUR],
@@ -291,7 +273,7 @@ async def _handle_set_group_membership(hass: HomeAssistant, call: ServiceCall) -
     await node.set_group_membership(
         call.data[ATTR_GROUP_ID],
         member=call.data[ATTR_MEMBER],
-        reach_flag=_REACH_FLAG[reach_flag],
+        reach_flag=REACH_FLAG_OPTIONS[reach_flag],
     )
 
 
@@ -307,7 +289,7 @@ async def _handle_add_device_to_scene(hass: HomeAssistant, call: ServiceCall) ->
         call.data[ATTR_SCENE_ID],
         cct=call.data.get(ATTR_CCT),
         rgb=tuple(rgb) if rgb else None,
-        fade=_FADE[call.data.get(ATTR_FADE, "no_fade")],
+        fade=FADE_OPTIONS[call.data.get(ATTR_FADE, "no_fade")],
     )
 
 
@@ -622,7 +604,13 @@ def _extract_scene_actions(
     return results
 
 
-async def _handle_push_automation_to_hardware(hass: HomeAssistant, call: ServiceCall) -> None:
+async def _handle_push_automation_to_hardware(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    await push_automation_to_hardware(hass, call.data[ATTR_AUTOMATION_ENTITY_ID])
+
+
+async def push_automation_to_hardware(hass: HomeAssistant, entity_id: str) -> None:
     """Orchestrates create_scene() -> add_to_scene() (once per resolved
     action target) -> create_schedule() -> add_automation() against an
     existing HA automation's own config, so the automation keeps working
@@ -632,7 +620,6 @@ async def _handle_push_automation_to_hardware(hass: HomeAssistant, call: Service
     shared with create_scene/create_schedule/add_automation themselves."""
     from cync_lan.devices import add_automation, create_schedule, create_scene
 
-    entity_id = call.data[ATTR_AUTOMATION_ENTITY_ID]
     entity = _get_automation_entity(hass, entity_id)
     raw_config = entity.raw_config
     if not raw_config:
@@ -717,8 +704,8 @@ _SERVICE_SCHEMAS = {
     SERVICE_SET_MOTION_SENSOR_SCHEDULE: vol.Schema(
         {
             vol.Required(ATTR_DEVICE_ID): cv.string,
-            vol.Required(ATTR_SLOT): vol.In(_SCHEDULE_SLOT),
-            vol.Required(ATTR_MODE): vol.In(_SCHEDULE_MODE),
+            vol.Required(ATTR_SLOT): vol.In(SCHEDULE_SLOT_OPTIONS),
+            vol.Required(ATTR_MODE): vol.In(SCHEDULE_MODE_OPTIONS),
             vol.Required(ATTR_START_HOUR): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
             vol.Required(ATTR_START_MINUTE): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
             vol.Required(ATTR_END_HOUR): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
@@ -757,7 +744,7 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_DEVICE_ID): cv.string,
             vol.Required(ATTR_GROUP_ID): vol.All(vol.Coerce(int), vol.Range(min=32768, max=65535)),
             vol.Required(ATTR_MEMBER): cv.boolean,
-            vol.Optional(ATTR_REACH_FLAG, default="normal"): vol.In(_REACH_FLAG),
+            vol.Optional(ATTR_REACH_FLAG, default="normal"): vol.In(REACH_FLAG_OPTIONS),
         }
     ),
     SERVICE_PUSH_AUTOMATION_TO_HARDWARE: vol.Schema(
@@ -775,7 +762,7 @@ _SERVICE_SCHEMAS = {
                 [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
                 vol.Length(min=3, max=3),
             ),
-            vol.Optional(ATTR_FADE, default="no_fade"): vol.In(_FADE),
+            vol.Optional(ATTR_FADE, default="no_fade"): vol.In(FADE_OPTIONS),
         }
     ),
     SERVICE_REMOVE_DEVICE_FROM_SCENE: vol.Schema(

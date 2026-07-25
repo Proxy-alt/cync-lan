@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -41,10 +41,14 @@ from .const import (
     DEFAULT_HIDE_GROUP_MEMBERS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
+    FADE_OPTIONS,
     MOTION_SENSOR_SENSITIVITY,
     MOTION_SENSOR_TYPE,
+    REACH_FLAG_OPTIONS,
+    SCHEDULE_MODE_OPTIONS,
+    SCHEDULE_SLOT_OPTIONS,
 )
-from .services import async_setup_services
+from .services import async_setup_services, push_automation_to_hardware
 from .util import configure_environment, get_cloud_api, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
@@ -367,9 +371,32 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
+        menu = ["general_settings", "motion_sensor_select"]
+        if self._config_entry.options.get(
+            CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+        ):
+            # The remaining experimental commands take several parameters and
+            # have no persistent state to model, so an entity would be the
+            # wrong shape for them - a guided form is what Home Assistant
+            # offers for a parameterised one-shot. Hidden entirely until the
+            # user opts in, same as the services and buttons.
+            menu += [
+                "experimental_menu",
+            ]
+        return self.async_show_menu(step_id="init", menu_options=menu)
+
+    async def async_step_experimental_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         return self.async_show_menu(
-            step_id="init",
-            menu_options=["general_settings", "motion_sensor_select"],
+            step_id="experimental_menu",
+            menu_options=[
+                "exp_push_automation",
+                "exp_scene_membership",
+                "exp_group_membership",
+                "exp_motion_schedule",
+                "exp_multicolor_segments",
+            ],
         )
 
     async def async_step_general_settings(
@@ -443,6 +470,292 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                     ): bool,
                 }
             ),
+        )
+
+    # ------------------------------------------------------------------
+    # Experimental wizards
+    #
+    # Each of these replaces a service whose arguments a user cannot
+    # reasonably supply from the action picker: they need a numeric
+    # scene_id/group_id the Cync app never shows, or a device picker, or
+    # both. Every one is a parameterised one-shot with no state to read
+    # back, so a form is the right shape rather than an entity.
+    # ------------------------------------------------------------------
+
+    def _supported_nodes(self) -> dict[int, Any]:
+        runtime_data = getattr(self._config_entry, "runtime_data", None)
+        if runtime_data is None:
+            return {}
+        return {
+            node.id: node
+            for node in runtime_data.ncync_server.node_devices.values()
+            if node.metadata is not None and node.metadata.supported
+        }
+
+    def _device_selector(self, nodes: dict[int, Any]) -> vol.In:
+        return vol.In(
+            {
+                str(dev_id): f"{node.name} (id {dev_id})"
+                for dev_id, node in sorted(nodes.items(), key=lambda kv: kv[1].name or "")
+            }
+        )
+
+    def _scene_choices(self) -> dict[str, str]:
+        runtime_data = getattr(self._config_entry, "runtime_data", None)
+        scenes = getattr(runtime_data, "scenes", None) or {}
+        return {str(sid): f"{s['name']} (id {sid})" for sid, s in scenes.items()}
+
+    def _group_choices(self) -> dict[str, str]:
+        runtime_data = getattr(self._config_entry, "runtime_data", None)
+        groups = getattr(runtime_data, "groups", None) or {}
+        return {
+            str(gid): f"{g.get('name') or f'Group {gid}'} (id {gid})"
+            for gid, g in groups.items()
+        }
+
+    async def _run(
+        self, coro: Any, reason: str, **placeholders: str
+    ) -> config_entries.ConfigFlowResult:
+        """Send an experimental command and end the flow with a result.
+
+        HomeAssistantError is surfaced as an abort reason rather than
+        propagating: these commands routinely time out waiting on a
+        notification channel that may not exist on the user's hardware,
+        and a traceback in the UI is not a useful answer to that.
+        """
+        try:
+            await coro
+        except HomeAssistantError as err:
+            return self.async_abort(
+                reason="experimental_failed",
+                description_placeholders={"error": str(err)},
+            )
+        return self.async_abort(reason=reason, description_placeholders=placeholders)
+
+    async def async_step_exp_push_automation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Push an existing HA automation to the hub as a native Schedule."""
+        if user_input is not None:
+            entity_id = user_input["automation_entity_id"]
+            return await self._run(
+                push_automation_to_hardware(self.hass, entity_id),
+                "experimental_pushed",
+                automation=entity_id,
+            )
+
+        return self.async_show_form(
+            step_id="exp_push_automation",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("automation_entity_id"): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="automation")
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_exp_scene_membership(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Add or remove one device's captured colour within a scene."""
+        nodes = self._supported_nodes()
+        scenes = self._scene_choices()
+        if not nodes or not scenes:
+            return self.async_abort(reason="no_scenes_or_devices")
+
+        if user_input is not None:
+            node = nodes[int(user_input["device"])]
+            scene_id = int(user_input["scene"])
+            if user_input["action"] == "remove":
+                return await self._run(
+                    node.remove_from_scene(scene_id),
+                    "experimental_scene_updated",
+                    device_name=node.name,
+                )
+            return await self._run(
+                node.add_to_scene(
+                    scene_id,
+                    cct=user_input.get("cct"),
+                    rgb=None,
+                    fade=FADE_OPTIONS[user_input.get("fade", "no_fade")],
+                ),
+                "experimental_scene_updated",
+                device_name=node.name,
+            )
+
+        return self.async_show_form(
+            step_id="exp_scene_membership",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): self._device_selector(nodes),
+                    vol.Required("scene"): vol.In(scenes),
+                    vol.Required("action", default="add"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=["add", "remove"],
+                            translation_key="scene_membership_action",
+                        )
+                    ),
+                    vol.Optional("cct"): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=100)
+                    ),
+                    vol.Optional("fade", default="no_fade"): vol.In(
+                        list(FADE_OPTIONS)
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_exp_group_membership(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Subscribe or unsubscribe a device to a group's mesh address."""
+        nodes = self._supported_nodes()
+        groups = self._group_choices()
+        if not nodes or not groups:
+            return self.async_abort(reason="no_groups_or_devices")
+
+        if user_input is not None:
+            node = nodes[int(user_input["device"])]
+            return await self._run(
+                node.set_group_membership(
+                    int(user_input["group"]),
+                    member=user_input["member"],
+                    reach_flag=REACH_FLAG_OPTIONS[user_input["reach_flag"]],
+                ),
+                "experimental_group_updated",
+                device_name=node.name,
+            )
+
+        return self.async_show_form(
+            step_id="exp_group_membership",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): self._device_selector(nodes),
+                    vol.Required("group"): vol.In(groups),
+                    vol.Required("member", default=True): bool,
+                    vol.Required("reach_flag", default="normal"): vol.In(
+                        list(REACH_FLAG_OPTIONS)
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_exp_motion_schedule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Write one slot of a device's native motion-sensor schedule."""
+        nodes = {
+            dev_id: node
+            for dev_id, node in self._supported_nodes().items()
+            if node.has_motion_sensor
+        }
+        if not nodes:
+            return self.async_abort(reason="no_motion_sensors")
+
+        if user_input is not None:
+            node = nodes[int(user_input["device"])]
+            return await self._run(
+                node.set_motion_sensor_schedule(
+                    slot_id=SCHEDULE_SLOT_OPTIONS[user_input["slot"]],
+                    mode=SCHEDULE_MODE_OPTIONS[user_input["mode"]],
+                    start_hour=user_input["start_hour"],
+                    start_minute=user_input["start_minute"],
+                    end_hour=user_input["end_hour"],
+                    end_minute=user_input["end_minute"],
+                    brightness=user_input["brightness"],
+                    cct=user_input.get("cct"),
+                    rgb=None,
+                ),
+                "experimental_schedule_written",
+                device_name=node.name,
+            )
+
+        return self.async_show_form(
+            step_id="exp_motion_schedule",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): self._device_selector(nodes),
+                    vol.Required("slot"): vol.In(list(SCHEDULE_SLOT_OPTIONS)),
+                    vol.Required("mode"): vol.In(list(SCHEDULE_MODE_OPTIONS)),
+                    vol.Required("start_hour", default=8): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=23)
+                    ),
+                    vol.Required("start_minute", default=0): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=59)
+                    ),
+                    vol.Required("end_hour", default=22): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=23)
+                    ),
+                    vol.Required("end_minute", default=0): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=59)
+                    ),
+                    vol.Required("brightness", default=50): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=100)
+                    ),
+                    vol.Optional("cct"): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=100)
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_exp_multicolor_segments(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Program up to two MultiColor segments' position and colour."""
+        nodes = {
+            dev_id: node
+            for dev_id, node in self._supported_nodes().items()
+            if node.supports_rgb
+        }
+        if not nodes:
+            return self.async_abort(reason="no_rgb_devices")
+
+        if user_input is not None:
+            node = nodes[int(user_input["device"])]
+            segments: list[tuple[Optional[int], Optional[tuple[int, int, int]]]] = []
+            for pos_key, rgb_key in (
+                ("segment_1_position", "segment_1_rgb"),
+                ("segment_2_position", "segment_2_rgb"),
+            ):
+                position = user_input.get(pos_key)
+                rgb = user_input.get(rgb_key)
+                if position is None and rgb is None:
+                    continue
+                segments.append(
+                    (position, tuple(rgb) if rgb else None)
+                )
+            if not segments:
+                return self.async_show_form(
+                    step_id="exp_multicolor_segments",
+                    data_schema=self._multicolor_schema(nodes),
+                    errors={"base": "no_segments"},
+                )
+            return await self._run(
+                node.set_multicolor_segments(segments),
+                "experimental_segments_written",
+                device_name=node.name,
+            )
+
+        return self.async_show_form(
+            step_id="exp_multicolor_segments",
+            data_schema=self._multicolor_schema(nodes),
+        )
+
+    def _multicolor_schema(self, nodes: dict[int, Any]) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("device"): self._device_selector(nodes),
+                vol.Optional("segment_1_position"): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=120)
+                ),
+                vol.Optional("segment_1_rgb"): selector.ColorRGBSelector(),
+                vol.Optional("segment_2_position"): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=120)
+                ),
+                vol.Optional("segment_2_rgb"): selector.ColorRGBSelector(),
+            }
         )
 
     def _motion_sensor_nodes(self) -> dict[int, Any]:

@@ -59,6 +59,7 @@ async def test_setup_entry_skips_unsupported_and_fan_controllers(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
 
@@ -80,6 +81,7 @@ async def test_setup_entry_creates_wifi_blink_switch_for_every_supported_node(ha
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
 
@@ -102,6 +104,7 @@ async def test_setup_entry_creates_mitm_switch_only_for_wifi_devices(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
 
@@ -205,6 +208,7 @@ async def test_setup_entry_creates_one_entity_per_sub_id(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
 
@@ -335,6 +339,7 @@ async def test_setup_entry_creates_one_schedule_switch_per_schedule(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.schedules = {
@@ -361,6 +366,7 @@ async def test_setup_entry_no_schedules_creates_no_schedule_switches(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.schedules = {}

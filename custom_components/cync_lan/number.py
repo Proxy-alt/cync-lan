@@ -16,7 +16,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .bridge import CyncLanBridge
-from .entity import CyncLanIndicatorLedEntity
+from .const import CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
@@ -34,6 +35,18 @@ async def async_setup_entry(
         if node.metadata is None or not node.metadata.supported:
             continue
         entities.append(CyncLanIndicatorLedBrightness(bridge, entry.entry_id, node))
+
+    # Experimental-only. Gated like the experimental_* services - the
+    # cmd_code for this command is predicted, not confirmed.
+    if entry.options.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL):
+        for node in runtime_data.ncync_server.node_devices.values():
+            if node.metadata is None or not node.metadata.supported:
+                continue
+            if node.supports_rgb:
+                entities.append(
+                    CyncLanMultiColorSegmentCount(bridge, entry.entry_id, node)
+                )
+
     async_add_entities(entities)
 
 
@@ -63,3 +76,39 @@ class CyncLanIndicatorLedBrightness(CyncLanIndicatorLedEntity, RestoreNumber, Nu
 
     async def async_set_native_value(self, value: float) -> None:
         await self._bridge.set_indicator_led_field(self._node, brightness=int(value))
+
+
+class CyncLanMultiColorSegmentCount(CyncLanEntity, RestoreNumber, NumberEntity):
+    """Logical segment count for a custom MultiColor scheme, replacing
+    experimental_set_multicolor_segment_count.
+
+    Assumed state, restored across restarts - the device never reports this
+    back. One of three primitives a full custom scheme needs (see
+    CyncDevice.set_multicolor_segment_count's docstring); setting it alone
+    may not produce a visible change.
+    """
+
+    _attr_translation_key = "multicolor_segment_count"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_assumed_state = True
+    _attr_native_min_value = 0
+    _attr_native_max_value = 255
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_multicolor_segment_count"
+        )
+        self._attr_native_value = 0
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._attr_native_value = int(last.native_value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self._node.set_multicolor_segment_count(int(value))
+        self._attr_native_value = int(value)
+        self.async_write_ha_state()

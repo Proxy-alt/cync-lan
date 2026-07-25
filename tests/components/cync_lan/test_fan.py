@@ -36,6 +36,7 @@ async def test_setup_entry_only_includes_fan_controllers(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
 

@@ -83,14 +83,89 @@
           "delay_seconds": "Delay before triggering (seconds)",
           "deactivation_seconds": "Deactivation delay after motion stops (seconds)"
         }
+      },
+      "experimental_menu": {
+        "title": "Experimental commands",
+        "description": "These send mesh commands whose wire format is predicted rather than confirmed against real hardware. They may do nothing, or something unintended.",
+        "menu_options": {
+          "exp_push_automation": "Push a Home Assistant automation to the hub",
+          "exp_scene_membership": "Add or remove a device from a scene",
+          "exp_group_membership": "Add or remove a device from a group",
+          "exp_motion_schedule": "Write a motion-sensor schedule slot",
+          "exp_multicolor_segments": "Program MultiColor segments"
+        }
+      },
+      "exp_push_automation": {
+        "title": "Push an automation to Cync hardware",
+        "description": "The automation keeps working as a normal Home Assistant automation, and also runs natively on the hub - so it still fires if Home Assistant is offline. It must have exactly one time-of-day trigger, at most one day-of-week condition, and only light.turn_on actions that set a colour.",
+        "data": {
+          "automation_entity_id": "Automation"
+        }
+      },
+      "exp_scene_membership": {
+        "title": "Scene membership",
+        "description": "Capture this device's colour inside an existing Cync scene, or remove it. A scene stores one colour per device; brightness and effects cannot be captured.",
+        "data": {
+          "device": "Device",
+          "scene": "Scene",
+          "action": "Action",
+          "cct": "Colour temperature (0-100, warm to cool)",
+          "fade": "Fade"
+        }
+      },
+      "exp_group_membership": {
+        "title": "Group membership",
+        "description": "Subscribe or unsubscribe this device to a group's mesh address.",
+        "data": {
+          "device": "Device",
+          "group": "Group",
+          "member": "Member of this group",
+          "reach_flag": "Reach flag"
+        }
+      },
+      "exp_motion_schedule": {
+        "title": "Motion-sensor schedule slot",
+        "description": "Write one of the four native schedule slots. Hold the sensor's off button for 5 seconds until the LED turns green first, or the device ignores the write.",
+        "data": {
+          "device": "Device",
+          "slot": "Slot",
+          "mode": "Response mode",
+          "start_hour": "Start hour",
+          "start_minute": "Start minute",
+          "end_hour": "End hour",
+          "end_minute": "End minute",
+          "brightness": "Brightness (0-100)",
+          "cct": "Colour temperature (0-100, warm to cool)"
+        }
+      },
+      "exp_multicolor_segments": {
+        "title": "MultiColor segments",
+        "description": "Program up to two segments' position and colour. This is one of three primitives a full custom scheme needs, and this integration does not orchestrate the whole sequence - setting segments alone may not produce a visible change.",
+        "data": {
+          "device": "Device",
+          "segment_1_position": "Segment 1 position (1-120)",
+          "segment_1_rgb": "Segment 1 colour",
+          "segment_2_position": "Segment 2 position (1-120)",
+          "segment_2_rgb": "Segment 2 colour"
+        }
       }
     },
     "error": {
-      "still_offline": "Still offline - hold the off button for 5 seconds until the LED turns green, then try again."
+      "still_offline": "Still offline - hold the off button for 5 seconds until the LED turns green, then try again.",
+      "no_segments": "Give a position or a colour for at least one segment."
     },
     "abort": {
       "no_motion_sensors": "No motion or ambient-light sensors were found on this Cync LAN account, or the integration hasn't finished starting yet.",
-      "motion_sensor_settings_saved": "Settings sent to {device_name}."
+      "motion_sensor_settings_saved": "Settings sent to {device_name}.",
+      "experimental_failed": "The command failed: {error}",
+      "experimental_pushed": "Pushed {automation} to the hub as a native Cync Scene and Schedule.",
+      "experimental_scene_updated": "Sent the scene update for {device_name}.",
+      "experimental_group_updated": "Sent the group update for {device_name}.",
+      "experimental_schedule_written": "Sent the schedule slot to {device_name}.",
+      "experimental_segments_written": "Sent the segment programming to {device_name}.",
+      "no_scenes_or_devices": "This needs at least one Cync scene and one device. Scenes are read from the cloud export - create one in the Cync app first.",
+      "no_groups_or_devices": "This needs at least one Cync group and one device. Groups are read from the cloud export - create one in the Cync app first.",
+      "no_rgb_devices": "No colour-capable devices were found on this account."
     }
   },
   "entity": {
@@ -127,6 +202,9 @@
     "number": {
       "indicator_led_brightness": {
         "name": "Indicator LED brightness"
+      },
+      "multicolor_segment_count": {
+        "name": "MultiColor segment count"
       }
     },
     "switch": {
@@ -135,6 +213,12 @@
       },
       "mitm_mode": {
         "name": "MITM mode"
+      },
+      "multicolor_gradient_mode": {
+        "name": "MultiColor gradient mode"
+      },
+      "group_power": {
+        "name": "{group_name} power"
       }
     },
     "sensor": {
@@ -244,6 +328,12 @@
         "10_minutes": "10 minutes",
         "20_minutes": "20 minutes",
         "30_minutes": "30 minutes"
+      }
+    },
+    "scene_membership_action": {
+      "options": {
+        "add": "Add or update this device in the scene",
+        "remove": "Remove this device from the scene"
       }
     }
   },

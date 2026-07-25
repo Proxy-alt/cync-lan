@@ -66,6 +66,7 @@ async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}
@@ -85,6 +86,7 @@ async def test_setup_entry_creates_one_sensor_per_slot(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {
@@ -194,6 +196,7 @@ async def test_setup_entry_creates_ip_address_sensor_for_wifi_devices(hass):
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}
@@ -214,6 +217,7 @@ async def test_setup_entry_creates_relay_source_sensor_for_bt_only_devices(hass)
 
     entry = MagicMock()
     entry.entry_id = "entry1"
+    entry.options = {}
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
     entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}

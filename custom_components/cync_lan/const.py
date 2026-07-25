@@ -34,3 +34,25 @@ MOTION_SENSOR_SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
 
 # Diagnostic/noisy entities disabled by default (entity-disabled-by-default, gold)
 DEFAULT_DISABLED_ENTITIES = {"app_mesh_active", "app_wifi_active", "mitm_mode"}
+
+# Slot ordering matches sensor.py's _SLOT_LABELS and docs/cync_automations.md's
+# cloud-JSON slot numbering.
+SCHEDULE_SLOT_OPTIONS = {"morning": 0, "daytime": 1, "evening": 2, "sleep": 3}
+# MotionSensorResponseMode.java ordinals - vacancy exists at the wire level but
+# wasn't traced to a reachable UI path in the app.
+SCHEDULE_MODE_OPTIONS = {"disabled": 0, "occupancy": 1, "vacancy": 2, "simple": 3}
+# GroupReachFlag - ControlDeviceGroupCommand.java, see docs/mesh_opcodes.md's
+# "Groups control" section.
+REACH_FLAG_OPTIONS = {"normal": 0x00, "receive_only": 0x87}
+# ScheduleFade.java's 1-byte signed enum - a coded duration bucket, not raw
+# seconds. NO_FADE is (byte) -1, i.e. 0xFF.
+FADE_OPTIONS = {
+    "no_fade": 0xFF,
+    "10_seconds": 1,
+    "30_seconds": 2,
+    "1_minute": 3,
+    "5_minutes": 4,
+    "10_minutes": 5,
+    "20_minutes": 6,
+    "30_minutes": 7,
+}

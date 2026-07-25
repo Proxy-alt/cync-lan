@@ -211,6 +211,33 @@ confirmed against a real packet capture, and most have never been exercised
 against real hardware. Turning the option on registers the actions and adds
 the buttons below; turning it back off removes them again.
 
+#### Everything is reachable without Developer Tools
+
+With the option on, every experimental command has a UI route. Commands that
+have persistent state become entities; the rest are guided forms under
+**Configure -> Experimental commands**, because they take several parameters
+and have nothing to read back.
+
+| Command | Where it lives |
+|---|---|
+| Indicator LED mode / colour / brightness / wifi blink | Entities on each device |
+| Activate a scene | Scene entities |
+| Enable/disable a schedule | Switch per schedule |
+| Group power | Switch per group |
+| MultiColor gradient mode | Switch per colour-capable device |
+| MultiColor segment count | Number per colour-capable device |
+| Motion-sensor sensitivity/timing | Configure -> Edit motion sensor settings |
+| Query mesh credentials | Button on the bridge |
+| Delete a scene / schedule | Button per scene / schedule |
+| Push an HA automation to the hub | Configure -> Experimental commands |
+| Add/remove a device in a scene | Configure -> Experimental commands |
+| Add/remove a device in a group | Configure -> Experimental commands |
+| Write a motion-sensor schedule slot | Configure -> Experimental commands |
+| Program MultiColor segments | Configure -> Experimental commands |
+
+The `experimental_*` actions all still exist for automations and scripts -
+the UI routes are additions, not replacements.
+
 #### Buttons (easier than the raw actions)
 
 With the option on, the **Cync LAN Bridge** device gains buttons that carry

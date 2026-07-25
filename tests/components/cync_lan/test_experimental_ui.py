@@ -1,0 +1,449 @@
+"""Every experimental command must be reachable from the UI once the user
+opts in - and completely absent until then.
+
+The split is deliberate: commands with persistent state become entities,
+parameterised one-shots become options-flow wizards. This file checks both
+halves, and that the gate holds in both directions.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.data_entry_flow import FlowResultType
+
+from custom_components.cync_lan.const import (
+    CONF_ENABLE_EXPERIMENTAL,
+    DOMAIN,
+    FADE_OPTIONS,
+    REACH_FLAG_OPTIONS,
+    SCHEDULE_MODE_OPTIONS,
+    SCHEDULE_SLOT_OPTIONS,
+)
+
+
+def _node(dev_id: int, *, rgb: bool = True, motion: bool = False) -> MagicMock:
+    node = MagicMock(id=dev_id)
+    node.name = f"Device {dev_id}"
+    node.mac = "AA:BB:CC:DD:EE:FF"
+    node.wifi_mac = "11:22:33:44:55:66"
+    node.bt_only = False
+    node.metadata = MagicMock(supported=True)
+    node.metadata.model_string = "Model"
+    node.supports_rgb = rgb
+    node.has_motion_sensor = motion
+    node.is_light = True
+    node.is_switch = False
+    node.is_fan_controller = False
+    node.has_wifi = True
+    node.has_multi_entities = False
+    node.entities = None
+    node.set_multicolor_gradient_mode = AsyncMock()
+    node.set_multicolor_segment_count = AsyncMock()
+    node.set_multicolor_segments = AsyncMock()
+    node.set_group_membership = AsyncMock()
+    node.set_motion_sensor_schedule = AsyncMock()
+    node.add_to_scene = AsyncMock()
+    node.remove_from_scene = AsyncMock()
+    return node
+
+
+# ---------------------------------------------------------------------------
+# entities: commands with state
+# ---------------------------------------------------------------------------
+
+
+def _platform_entry(hass, *, experimental: bool, nodes=None, groups=None):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.options = {CONF_ENABLE_EXPERIMENTAL: experimental}
+    entry.runtime_data = SimpleNamespace(
+        bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=SimpleNamespace(node_devices=nodes or {}),
+        groups=groups or {},
+        scenes={},
+        schedules={},
+    )
+    return entry
+
+
+@pytest.mark.parametrize("experimental", [False, True])
+async def test_multicolor_entities_follow_the_gate(hass, experimental):
+    from custom_components.cync_lan.number import (
+        CyncLanMultiColorSegmentCount,
+        async_setup_entry as number_setup,
+    )
+    from custom_components.cync_lan.switch import (
+        CyncLanMultiColorGradientSwitch,
+        async_setup_entry as switch_setup,
+    )
+
+    entry = _platform_entry(hass, experimental=experimental, nodes={5: _node(5)})
+
+    switches: list = []
+    numbers: list = []
+    await switch_setup(hass, entry, lambda e: switches.extend(e))
+    await number_setup(hass, entry, lambda e: numbers.extend(e))
+
+    has_switch = any(isinstance(e, CyncLanMultiColorGradientSwitch) for e in switches)
+    has_number = any(isinstance(e, CyncLanMultiColorSegmentCount) for e in numbers)
+    assert has_switch is experimental
+    assert has_number is experimental
+
+
+@pytest.mark.parametrize("experimental", [False, True])
+async def test_group_power_switch_follows_the_gate(hass, experimental):
+    from custom_components.cync_lan.switch import (
+        CyncLanGroupPowerSwitch,
+        async_setup_entry as switch_setup,
+    )
+
+    entry = _platform_entry(
+        hass,
+        experimental=experimental,
+        groups={32770: {"name": "Kitchen", "device_ids": [5]}},
+    )
+
+    added: list = []
+    await switch_setup(hass, entry, lambda e: added.extend(e))
+
+    assert any(isinstance(e, CyncLanGroupPowerSwitch) for e in added) is experimental
+
+
+async def test_multicolor_entities_only_for_colour_capable_devices(hass):
+    from custom_components.cync_lan.switch import async_setup_entry as switch_setup
+
+    entry = _platform_entry(
+        hass, experimental=True, nodes={5: _node(5, rgb=False)}
+    )
+    added: list = []
+    await switch_setup(hass, entry, lambda e: added.extend(e))
+
+    from custom_components.cync_lan.switch import CyncLanMultiColorGradientSwitch
+
+    assert not any(isinstance(e, CyncLanMultiColorGradientSwitch) for e in added)
+
+
+async def test_group_power_switch_sends_the_group_command(hass):
+    from custom_components.cync_lan.switch import CyncLanGroupPowerSwitch
+
+    switch = CyncLanGroupPowerSwitch("entry1", 32770, "Kitchen")
+    switch.hass = hass
+    switch.async_write_ha_state = MagicMock()
+
+    with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
+        await switch.async_turn_on()
+
+    mock.assert_awaited_once_with(32770, 1)
+    assert switch.is_on is True
+
+
+async def test_multicolor_gradient_switch_sends_and_assumes_state(hass):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.switch import CyncLanMultiColorGradientSwitch
+
+    node = _node(5)
+    switch = CyncLanMultiColorGradientSwitch(CyncLanBridge(hass, "e1"), "e1", node)
+    switch.hass = hass
+    switch.async_write_ha_state = MagicMock()
+
+    await switch.async_turn_on()
+
+    node.set_multicolor_gradient_mode.assert_awaited_once_with(True)
+    assert switch.is_on is True
+
+
+async def test_segment_count_number_sends_and_assumes_state(hass):
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.number import CyncLanMultiColorSegmentCount
+
+    node = _node(5)
+    number = CyncLanMultiColorSegmentCount(CyncLanBridge(hass, "e1"), "e1", node)
+    number.hass = hass
+    number.async_write_ha_state = MagicMock()
+
+    await number.async_set_native_value(6)
+
+    node.set_multicolor_segment_count.assert_awaited_once_with(6)
+    assert number.native_value == 6
+
+
+# ---------------------------------------------------------------------------
+# wizards: parameterised one-shots
+# ---------------------------------------------------------------------------
+
+
+def _options_entry(hass, *, experimental: bool, nodes=None, scenes=None, groups=None):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        options={CONF_ENABLE_EXPERIMENTAL: experimental},
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = SimpleNamespace(
+        ncync_server=SimpleNamespace(node_devices=nodes or {}),
+        scenes=scenes or {},
+        groups=groups or {},
+        bridge=MagicMock(),
+    )
+    return entry
+
+
+async def test_experimental_menu_hidden_until_opted_in(hass):
+    entry = _options_entry(hass, experimental=False)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] is FlowResultType.MENU
+    assert "experimental_menu" not in result["menu_options"]
+
+
+async def test_experimental_menu_appears_when_opted_in(hass):
+    entry = _options_entry(hass, experimental=True)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert "experimental_menu" in result["menu_options"]
+
+
+async def test_every_experimental_command_has_a_menu_entry(hass):
+    """The point of this work: nothing is reachable only from Developer
+    Tools."""
+    entry = _options_entry(hass, experimental=True)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+
+    assert set(result["menu_options"]) == {
+        "exp_push_automation",
+        "exp_scene_membership",
+        "exp_group_membership",
+        "exp_motion_schedule",
+        "exp_multicolor_segments",
+    }
+
+
+async def test_scene_membership_wizard_adds_a_device(hass):
+    node = _node(5)
+    entry = _options_entry(
+        hass, experimental=True, nodes={5: node}, scenes={3: {"name": "Movie"}}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_scene_membership"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"device": "5", "scene": "3", "action": "add", "cct": 50, "fade": "no_fade"},
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    node.add_to_scene.assert_awaited_once_with(
+        3, cct=50, rgb=None, fade=FADE_OPTIONS["no_fade"]
+    )
+
+
+async def test_scene_membership_wizard_removes_a_device(hass):
+    node = _node(5)
+    entry = _options_entry(
+        hass, experimental=True, nodes={5: node}, scenes={3: {"name": "Movie"}}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_scene_membership"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5", "scene": "3", "action": "remove"}
+    )
+
+    node.remove_from_scene.assert_awaited_once_with(3)
+
+
+async def test_group_membership_wizard_sends_the_command(hass):
+    node = _node(5)
+    entry = _options_entry(
+        hass,
+        experimental=True,
+        nodes={5: node},
+        groups={32770: {"name": "Kitchen", "device_ids": []}},
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_group_membership"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"device": "5", "group": "32770", "member": True, "reach_flag": "normal"},
+    )
+
+    node.set_group_membership.assert_awaited_once_with(
+        32770, member=True, reach_flag=REACH_FLAG_OPTIONS["normal"]
+    )
+
+
+async def test_motion_schedule_wizard_sends_the_slot(hass):
+    node = _node(5, motion=True)
+    entry = _options_entry(hass, experimental=True, nodes={5: node})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_motion_schedule"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "device": "5",
+            "slot": "morning",
+            "mode": "occupancy",
+            "start_hour": 7,
+            "start_minute": 30,
+            "end_hour": 9,
+            "end_minute": 0,
+            "brightness": 60,
+        },
+    )
+
+    node.set_motion_sensor_schedule.assert_awaited_once_with(
+        slot_id=SCHEDULE_SLOT_OPTIONS["morning"],
+        mode=SCHEDULE_MODE_OPTIONS["occupancy"],
+        start_hour=7,
+        start_minute=30,
+        end_hour=9,
+        end_minute=0,
+        brightness=60,
+        cct=None,
+        rgb=None,
+    )
+
+
+async def test_multicolor_wizard_rejects_an_empty_submission(hass):
+    """Both segments blank means there is nothing to send."""
+    entry = _options_entry(hass, experimental=True, nodes={5: _node(5)})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_multicolor_segments"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "no_segments"}
+
+
+async def test_wizard_aborts_cleanly_when_the_command_fails(hass):
+    """These commands routinely time out on a notification channel that may
+    not exist on the user's hardware - that must read as a message, not a
+    traceback."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    node = _node(5)
+    node.remove_from_scene = AsyncMock(side_effect=HomeAssistantError("no reply"))
+    entry = _options_entry(
+        hass, experimental=True, nodes={5: node}, scenes={3: {"name": "Movie"}}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_scene_membership"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"device": "5", "scene": "3", "action": "remove"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "experimental_failed"
+
+
+async def test_scene_wizard_aborts_when_the_account_has_no_scenes(hass):
+    entry = _options_entry(hass, experimental=True, nodes={5: _node(5)}, scenes={})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_menu"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exp_scene_membership"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_scenes_or_devices"
+
+
+async def test_gradient_switch_restores_its_assumed_state(hass):
+    """It is assumed-state, so the last value HA set must survive a restart -
+    which means it has to actually inherit RestoreEntity. It did not at
+    first, and async_added_to_hass raised AttributeError on startup."""
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.switch import CyncLanMultiColorGradientSwitch
+
+    switch = CyncLanMultiColorGradientSwitch(CyncLanBridge(hass, "e1"), "e1", _node(5))
+    switch.hass = hass
+    switch.async_on_remove = MagicMock()
+
+    with patch.object(
+        CyncLanMultiColorGradientSwitch,
+        "async_get_last_state",
+        new=AsyncMock(return_value=SimpleNamespace(state="on")),
+    ):
+        await switch.async_added_to_hass()
+
+    assert switch.is_on is True
+
+
+async def test_segment_count_restores_its_assumed_state(hass):
+    from homeassistant.components.number import NumberExtraStoredData
+
+    from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.number import CyncLanMultiColorSegmentCount
+
+    number = CyncLanMultiColorSegmentCount(CyncLanBridge(hass, "e1"), "e1", _node(5))
+    number.hass = hass
+    number.async_on_remove = MagicMock()
+
+    with patch.object(
+        CyncLanMultiColorSegmentCount,
+        "async_get_last_number_data",
+        new=AsyncMock(
+            return_value=NumberExtraStoredData(
+                native_max_value=255,
+                native_min_value=0,
+                native_step=1,
+                native_unit_of_measurement=None,
+                native_value=12,
+            )
+        ),
+    ):
+        await number.async_added_to_hass()
+
+    assert number.native_value == 12
