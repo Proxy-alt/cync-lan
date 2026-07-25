@@ -145,20 +145,24 @@ class MQTTClient:
             ha_topic = CYNC_HASS_TOPIC
 
         self.broker_client_id = f"cync_lan_{g.uuid}"
-        lwt = aiomqtt.Will(topic=f"{topic}/connected", payload=DEVICE_LWT_MSG)
         self.broker_host = CYNC_MQTT_HOST
         self.broker_port = CYNC_MQTT_PORT
         self.broker_username = CYNC_MQTT_USER
         self.broker_password = CYNC_MQTT_PASS
-        self.client = aiomqtt.Client(
-            hostname=self.broker_host,
-            port=int(self.broker_port),
-            username=self.broker_username,
-            password=self.broker_password,
-            identifier=self.broker_client_id,
-            will=lwt,
-            # logger=logger,
-        )
+        # Built in connect(), not here. Two reasons this is not just tidiness:
+        #
+        # 1. connect() unconditionally rebuilds it anyway, from g.reload_env()
+        #    rather than the import-time constants above - so the one built
+        #    here was never the one that talked to the broker, and carried
+        #    whatever the environment said at import time. Nothing reads it
+        #    first: publish() early-returns while self._connected is False,
+        #    and only connect() sets that.
+        # 2. aiomqtt.Client stores asyncio.get_event_loop() at construction,
+        #    which raises RuntimeError on 3.12+ when no loop is current.
+        #    Production never hit this (MQTTClient() is built inside
+        #    CyncLAN.start(), on a running uvloop), but it made the class
+        #    impossible to construct from a synchronous test.
+        self.client: Optional[aiomqtt.Client] = None
 
         self.topic = topic
         self.ha_topic = ha_topic

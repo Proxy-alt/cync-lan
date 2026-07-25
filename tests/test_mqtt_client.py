@@ -186,6 +186,45 @@ def test_mqtt_client_is_a_singleton():
     assert MQTTClient() is MQTTClient()
 
 
+# --------------------------------------------------------------------------
+# construction without a running loop
+# --------------------------------------------------------------------------
+
+
+def test_constructing_mqtt_client_needs_no_event_loop():
+    """__init__ used to build an aiomqtt.Client, which stores
+    asyncio.get_event_loop() at construction time - a RuntimeError on 3.12+
+    when no loop is current. Production never hit it (MQTTClient() is built
+    inside CyncLAN.start(), on a running uvloop), so it surfaced only as a
+    test suite that could not construct the class at all: 2 failures and 10
+    fixture errors, every run, on both 3.12 and 3.14.
+
+    set_event_loop(None) explicitly rather than relying on a bare sync test:
+    pytest-asyncio can leave a loop installed after an async test, which
+    would make this pass or fail depending on collection order.
+    """
+    MQTTClient._instance = None
+    asyncio.set_event_loop(None)
+    client = MQTTClient()
+
+    # The broker client belongs to connect(), which rebuilds it from
+    # g.reload_env() - not to __init__, which only ever saw import-time
+    # config that nothing went on to use.
+    assert client.client is None
+
+
+def test_publish_is_a_no_op_before_connect():
+    """Guards the above: with self.client None until connect(), anything
+    that reached self.client.publish() first would now AttributeError
+    instead of returning False."""
+    MQTTClient._instance = None
+    asyncio.set_event_loop(None)
+    client = MQTTClient()
+
+    assert client.client is None
+    assert asyncio.run(client.publish("some/topic", b"payload")) is False
+
+
 @pytest.mark.parametrize(
     ("kelvin", "expected_range"),
     [(2000, (0, 100)), (5000, (0, 100)), (7000, (0, 100))],
