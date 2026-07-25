@@ -1,8 +1,24 @@
-name: Prerelease + PyPI publish - cync-lan-mqtt add-on
+name: Release + PyPI publish - cync-lan-mqtt add-on
 
-# Automatically creates a GitHub prerelease every time pyproject.toml's
-# version changes on this branch - see RELEASING.md. Always a prerelease:
-# this package has never had a formal stable-release process. Tagged
+# Automatically creates a GitHub release every time pyproject.toml's
+# version changes on this branch - see RELEASING.md.
+#
+# Release vs prerelease is decided from the version string alone, by the
+# "Classify the version" step below:
+#
+#   0.2.1    -> full release
+#   0.2.1b1  -> prerelease (a beta)
+#
+# NOTE the beta form here is bN with *digits*, not bCOMMIT as on the HA
+# integration branch. That is not a style choice: this package uploads to
+# PyPI, so its version must be valid PEP 440, and PEP 440's pre-release
+# segment is `b` followed by a number. A commit sha is rejected -
+# packaging.version.Version("0.2.1b2aad577") raises InvalidVersion, and the
+# upload would fail after the tag and GitHub release had already been
+# created. The `+sha` local-version form is valid PEP 440 but PyPI refuses
+# local versions on upload, so that is no escape hatch either.
+#
+# Tagged
 # cync-lan-mqtt-vX.Y.Z - distinct from the core cync-lan library's own
 # cync-lan-vX.Y.Z tags (see the core branch's publish_pypi_core.yml) and
 # the HA integration's own vX.Y.Z tags, since all three are versioned and
@@ -39,6 +55,29 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=cync-lan-mqtt-v$version" >> "$GITHUB_OUTPUT"
 
+      # The only place release-vs-prerelease is decided. Both shapes are
+      # matched explicitly and anything else is a hard error, so a version
+      # PyPI would reject fails here - before the tag and GitHub release are
+      # created - rather than at the upload step with both already in place.
+      - name: Classify the version
+        id: classify
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # --latest=false: three independently-versioned artifacts share
+            # this repo's release list, and Latest belongs to the HA
+            # integration (the one HACS surfaces), not to whichever tag is
+            # newest by date.
+            echo "flags=--latest=false" >> "$GITHUB_OUTPUT"
+            echo "kind=release" >> "$GITHUB_OUTPUT"
+          elif [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+b[0-9]+$ ]]; then
+            echo "flags=--prerelease" >> "$GITHUB_OUTPUT"
+            echo "kind=prerelease" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Version '$version' is neither X.Y.Z (release) nor X.Y.ZbN (prerelease). PyPI requires PEP 440, so a beta must be bN with digits - a commit sha is not a valid version here."
+            exit 1
+          fi
+
       - name: Check whether this tag already exists
         id: check
         run: |
@@ -48,22 +87,33 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A full release must have a hand-written CHANGELOG entry - gating on
+      # that is the point. Betas fall back to a generated stub, so a quick
+      # bN build does not need a changelog edit to get out the door.
       - name: Extract this version's CHANGELOG section
         if: steps.check.outputs.exists == 'false'
         run: |
-          python3 - "${{ steps.version.outputs.version }}" CHANGELOG.md <<'PYEOF'
+          python3 - "${{ steps.version.outputs.version }}" CHANGELOG.md "${{ steps.classify.outputs.kind }}" <<'PYEOF'
           import re, sys
-          version, changelog_path = sys.argv[1], sys.argv[2]
+          version, changelog_path, kind = sys.argv[1], sys.argv[2], sys.argv[3]
           text = open(changelog_path, encoding="utf-8").read()
           pattern = re.compile(rf"^### {re.escape(version)}$\n(.*?)(?=^### |\Z)", re.M | re.S)
           match = pattern.search(text)
-          if not match:
+          if match:
+              notes = match.group(1).strip()
+          elif kind == "prerelease":
+              notes = (
+                  f"Automated beta build of `{version}`.\n\n"
+                  "Betas do not require a CHANGELOG entry, and none was found "
+                  "for this version. Install with `pip install --pre cync-lan-mqtt`."
+              )
+          else:
               sys.exit(f"Could not find a CHANGELOG.md entry for version {version!r}")
           with open("/tmp/release-notes.md", "w", encoding="utf-8") as f:
-              f.write(match.group(1).strip() + "\n")
+              f.write(notes + "\n")
           PYEOF
 
-      - name: Create the prerelease
+      - name: Create the ${{ steps.classify.outputs.kind }}
         if: steps.check.outputs.exists == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,7 +121,7 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "cync-lan-mqtt ${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/release-notes.md \
-            --prerelease \
+            ${{ steps.classify.outputs.flags }} \
             --target "${{ github.sha }}"
 
   check_pypi:
