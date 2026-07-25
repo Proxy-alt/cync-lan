@@ -720,6 +720,26 @@ Confidence: **confirmed** for op_code and request payload (read from decompiled 
 `WriteBuffer` calls). **Not** hardware-tested — none of these is wired into `devices.py`, and the
 `cmd_code` for each would still need the length formula from "TCP relay envelope research" above.
 
+### Implementation status
+
+`0x32`, `0x46`, `0x4B`, `0x8A`, `0x97` and `0xAD` are wired into `devices.py`
+as of cync-lan 0.3.0.
+
+`0x49` `QueryHubFirmwareUpdates` is **deliberately not implemented**. Its
+reply is not a fixed record like the others: `HubFirmwareUpdatesNotification`
+reads a status byte and three 2-byte counters, then a variable-length list of
+per-device entries each carrying a 2-byte id and two 10-byte version strings.
+Getting the field order or the record stride wrong yields plausible-looking
+garbage rather than an obvious failure, and there is no capture to check a
+decoder against - so it stays documented rather than guessed at.
+
+The three firmware-*applying* commands (`0x4F` `StartHubFirmwareUpdates`,
+`StartWifiOtaUpdate`, `SetWifiOtaUpdateMode`) are **intentionally absent from
+the codebase entirely**, not merely unwired. Everywhere else in this family a
+wrong predicted `cmd_code` means the device ignores the packet; these flash
+firmware, where the same mistake has a much worse floor. They stay documented
+until someone confirms the envelope against a real packet capture.
+
 ### The two write commands
 
 `0x97` `DeleteAutomationHubCommand` closes an obvious asymmetry: this repo already implements
