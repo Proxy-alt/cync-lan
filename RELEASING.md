@@ -26,8 +26,8 @@ either consumer, and vice versa.
    locally first.
 4. Commit and push to `core`.
 
-Tagging, the GitHub prerelease, and the actual PyPI publish are all
-automated from there - see "Automated prereleases + PyPI publishing"
+Tagging, the GitHub release, and the actual PyPI publish are all
+automated from there - see "Automated releases + PyPI publishing"
 below.
 
 ## Releasing the add-on (`python` branch)
@@ -71,7 +71,7 @@ releases now is still worthwhile - it gives the integration real version
 history and release notes ahead of that merge, and `gh release list` / the
 GitHub Releases page becomes a real changelog in the meantime.
 
-## Automated prereleases + PyPI publishing
+## Automated releases + PyPI publishing
 
 Each branch has its own workflow that watches for a push changing its
 version file:
@@ -79,6 +79,44 @@ version file:
 - `core` branch: `.github/workflows/publish_pypi_core.yml`
 - `python` branch: `.github/workflows/publish_pypi_addon.yml`
 - `feature/ha-custom-component` branch: `.github/workflows/prerelease_ha_integration.yml`
+
+(The HA file is still named `prerelease_*` so the Actions tab keeps its run
+history, which GitHub keys by file path. It cuts full releases.)
+
+### Release vs prerelease
+
+Decided from the version string alone, by each workflow's "Classify the
+version" step. There is no flag or manual toggle:
+
+| Version   | Result                          |
+|-----------|---------------------------------|
+| `2.3.0`   | full release                    |
+| `2.3.0b1` | prerelease (a beta)             |
+| anything else | **the run fails**           |
+
+Anything that matches neither shape is a hard error, so a typo like `2.3.O`
+or `2.3` fails loudly instead of quietly shipping as the wrong kind.
+
+Two things to know:
+
+- **The beta suffix differs by artifact.** The HA integration accepts
+  `X.Y.ZbCOMMIT` (e.g. `2.3.0b38a0bb4`). The two PyPI packages accept only
+  `X.Y.ZbN` with digits (e.g. `0.4.0b1`), because their versions must be
+  valid PEP 440 and PEP 440's pre-release segment is `b` followed by a
+  number - `packaging` rejects `0.4.0b2aad577` outright, and the upload
+  would fail *after* the tag and GitHub release already existed. The
+  `+sha` local-version form is valid PEP 440 but PyPI refuses local
+  versions on upload, so it is no escape hatch either.
+- **Betas do not need a CHANGELOG entry**; full releases still do (see
+  step 3 below). A commit beta could not have one anyway - its version
+  embeds the sha of the commit carrying it, so the entry could only be
+  written by amending. Betas get a generated stub instead.
+
+This used to be `--prerelease` unconditionally, on the reasoning that
+nothing here had reached a "stable" designation. That cost more than it
+bought: **HACS hides prereleases** unless the user ticks the beta box
+per-repository, so the normal install path saw no versions at all. All 25
+pre-existing releases were converted to full releases when this changed.
 
 On a matching push, each workflow:
 
@@ -88,11 +126,13 @@ On a matching push, each workflow:
 3. Extracts that version's own section out of the matching `CHANGELOG.md`
    (the `### <version>` heading must match the version file *exactly*, or
    this step fails loudly rather than silently publishing an empty/wrong
-   release).
+   release). Betas are exempt, per above.
 4. Tags the current commit and creates a GitHub Release from it via `gh
-   release create --prerelease` - always a prerelease, for all three
-   artifacts, since nothing in this project has reached a "stable"
-   designation yet.
+   release create`, passing `--prerelease` or `--latest` / `--latest=false`
+   according to the table above. Only the HA integration is ever marked
+   **Latest**: three independently-versioned artifacts share one release
+   list, and Latest should be the thing HACS surfaces rather than whichever
+   tag happens to be newest by date.
 5. **`core` and `python` only**: runs the test suite (core branch only, no
    dedicated test suite exists for the add-on yet) and, if the tag was
    newly created, builds and publishes to PyPI via Trusted Publishing (no
@@ -111,8 +151,8 @@ needing an empty commit.
 **Interaction with `container-package-publish.yml`**: that workflow
 (on the `python` branch) triggers on `release: published` to build/push
 the Docker image, and a prerelease still counts as "published" - it fires
-for every prerelease any of the three workflows above create, not just
-the add-on's own. Its `build` job is guarded
+for every release *and* prerelease any of the three workflows above
+create, not just the add-on's own. Its `build` job is guarded
 (`if: ... startsWith(github.event.release.tag_name, 'cync-lan-mqtt-v')`)
 so it only actually runs for the add-on's own `cync-lan-mqtt-v*` releases
 - not the HA integration's `v*` ones, and not the core library's own
