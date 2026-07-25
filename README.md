@@ -19,8 +19,9 @@ The existing `python` branch will remain for users who prefer a non HASS App set
 manual installation is no longer officially supported. The HASS app uses the `python` branch to build its image.
 
 >[!WARNING]
-> **DO NOT** contact GE / Savant for troubleshooting while using this project, open issues here and tag @baudneo 
-> for fast responses.
+> **DO NOT** contact GE / Savant for troubleshooting while using this project. Open an issue
+> [here](https://github.com/Proxy-alt/cync-lan/issues) - this is a fork, so please don't send
+> its bugs upstream to @baudneo.
 
 Async HTTP/MQTT LAN controller for Cync/C by GE devices. **Local** only control
 of **most** Cync devices via MQTT JSON payloads following the Home Assistant MQTT JSON schema. 
@@ -64,6 +65,20 @@ for the full list - exists only here, including:
 - Fixed brightness state going stale on Sol-lamp devices, and a wrong
   effect ID that likely made the "fireworks" light-show effect silently
   fail.
+- The protocol code was split out into a reusable
+  [`cync-lan`](https://pypi.org/project/cync-lan/) library (the
+  [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) branch), so the
+  add-on, the HA integration and anything else can share one implementation
+  instead of vendoring copies that drift.
+- Substantially expanded protocol documentation in
+  [`docs/mesh_opcodes.md`](docs/mesh_opcodes.md), reverse-engineered from
+  the decompiled Android app, with explicit confidence markers - most
+  opcodes are **not** hardware-confirmed, and
+  [`docs/hardware_verification.md`](docs/hardware_verification.md) tracks
+  what still needs testing.
+- Test suites and CI where there previously were none at all: this package
+  had 2,456 lines, including a 1,900-line MQTT client, with nothing
+  verifying any of it.
 
 **A native Home Assistant integration also now exists** - not an add-on or
 MQTT bridge, but a real `custom_component` you install through HACS, on the
@@ -76,6 +91,26 @@ entities, indicator-LED control, and pushing an existing HA automation onto
 the Cync hub as a native schedule, among others) - it's versioned and
 released separately from the Python package described in the rest of this
 README.
+
+## Repository layout
+
+Three separately-versioned, separately-released artifacts share this one
+repository, each on its own branch. **You are on `python`.**
+
+| Artifact | Branch | What it is | Distributed via |
+|---|---|---|---|
+| `cync-lan` | [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) | Core protocol library - sessions, packet codec, cloud auth, BLE | [PyPI](https://pypi.org/project/cync-lan/) |
+| `cync-lan-mqtt` | **`python`** (here) | This: standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + Docker image |
+| `cync_lan` custom_component | [`feature/ha-custom-component`](https://github.com/Proxy-alt/cync-lan/tree/feature/ha-custom-component) | Native Home Assistant integration (no MQTT) | GitHub Release / HACS |
+
+The three are versioned independently - bumping the core library does not
+require bumping this add-on, or vice versa. [RELEASING.md](./RELEASING.md)
+covers the details, including the rule that decides releases from
+prereleases: a plain `X.Y.Z` version cuts a full release, `X.Y.ZbN` cuts a
+prerelease, and anything else fails the build.
+
+`docs/` is mirrored byte-for-byte across all three branches (canonical copy
+on `core`), so any `docs/` link here resolves on any branch.
 
 ## Choosing how to run this
 
@@ -336,3 +371,32 @@ against real hardware.
 # Troubleshooting
 If you are having issues, please see the 
 [Troubleshooting docs](docs/troubleshooting.md) for more information.
+
+# Credits
+
+This project is the current link in a chain of earlier work, and none of it
+would exist without the people below.
+
+- **[iburistu](https://github.com/iburistu)** -
+  [cync-lan](https://github.com/iburistu/cync-lan), the original. The first
+  public demonstration that Cync devices could be controlled locally by
+  impersonating the cloud server. MIT, © 2022 Zachary Linkletter.
+- **[juanboro](https://github.com/juanboro)** -
+  [cync2mqtt](https://github.com/juanboro/cync2mqtt), the original MQTT
+  bridge and cloud-export approach that this add-on's whole shape descends
+  from. Apache-2.0. Little of that code survives verbatim at this point, but
+  the attribution stays. Long live OSS.
+- **[baudneo](https://github.com/baudneo)** -
+  [baudneo/cync-lan](https://github.com/baudneo/cync-lan), the substantial
+  async rewrite this fork continues from, and the origin of most of the
+  protocol knowledge here. Upstream stopped at `0.0.6b16`; everything from
+  `0.0.6b17` onward exists only in this fork.
+- **[@CodeNeedsCoffee](https://github.com/CodeNeedsCoffee)** - initial work
+  on the Home Assistant App.
+
+Full license texts for all of the above are reproduced in
+[LICENSE-3RD-PARTY](./LICENSE-3RD-PARTY).
+
+# License
+
+MIT, same as the original - see [LICENSE](./LICENSE).
