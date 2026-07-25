@@ -100,7 +100,7 @@ repository, each on its own branch. **You are on `python`.**
 | Artifact | Branch | What it is | Distributed via |
 |---|---|---|---|
 | `cync-lan` | [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) | Core protocol library - sessions, packet codec, cloud auth, BLE | [PyPI](https://pypi.org/project/cync-lan/) |
-| `cync-lan-mqtt` | **`python`** (here) | This: standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + Docker image |
+| `cync-lan-mqtt` | **`python`** (here) | This: standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + [ghcr.io](https://github.com/Proxy-alt/cync-lan/pkgs/container/cync-lan-mqtt) image |
 | `cync_lan` custom_component | [`feature/ha-custom-component`](https://github.com/Proxy-alt/cync-lan/tree/feature/ha-custom-component) | Native Home Assistant integration (no MQTT) | GitHub Release / HACS |
 
 The three are versioned independently - bumping the core library does not
@@ -153,7 +153,18 @@ Compose instructions give you the most direct control.
 
 ## Installation
 
-See the [installation](./docs/install.md) docs for more information
+See the [installation](./docs/install.md) docs for more information.
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to GitHub
+Packages on every release:
+
+```bash
+docker pull ghcr.io/proxy-alt/cync-lan-mqtt:latest
+```
+
+`latest` only ever moves to a full release, never to a `bN` beta - pin a
+version (`:0.2.1`) to upgrade deliberately. 32-bit ARM (`linux/arm/v7`) is
+not published; see [docs/install.md](./docs/install.md) for why.
 
 >[!IMPORTANT]
 > After configuring and running the container (but before enabling DNS redirection), you must visit http://localhost:23778 in order to export your Cync 

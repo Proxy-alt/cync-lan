@@ -1,7 +1,10 @@
 services:
   cync-lan:
     container_name: cync-lan
-    image: baudneo/cync-lan:latest
+    # This said baudneo/cync-lan:latest - upstream's Docker Hub image, not
+    # this fork's. `docker compose up` without a local build would silently
+    # pull and run different code than this repository contains.
+    image: ghcr.io/proxy-alt/cync-lan-mqtt:latest
     restart: unless-stopped
     build:
       # clone the repo and from the repo base run: docker compose -f ./docker/Dockerfile build
