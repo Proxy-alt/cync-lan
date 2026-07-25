@@ -1,13 +1,25 @@
 # Test-only dependencies for the custom_components/cync_lan suite.
-# pytest-homeassistant-custom-component pins a matching homeassistant +
-# pytest + pytest-asyncio set, so it is the only thing that needs a bound
-# here; the integration's own runtime requirements live in manifest.json.
-pytest-homeassistant-custom-component>=0.13.346
+#
+# Pinned exactly, on purpose. These were `>=` bounds, which let CI float to
+# newer releases than whatever a developer happened to have installed - CI
+# was on homeassistant 2026.7.3 / pytest-homeassistant-custom-component
+# 0.13.347 while a local checkout sat on 2026.7.2 / 0.13.346. A green local
+# run then says nothing about CI, and chasing that difference cost real time.
+# Bump these deliberately, as their own commit, so a failure after a bump is
+# attributable to the bump.
 
-# manifest.json "requirements", installed so the integration imports the
-# real package under test rather than a stub.
-cync-lan>=0.2.1
+# Pins homeassistant, pytest and pytest-asyncio transitively - do not pin
+# those separately here or the two sets will disagree.
+pytest-homeassistant-custom-component==0.13.347
+
+# manifest.json's "requirements", installed so the suite exercises the real
+# published package rather than a stub. Keep in step with manifest.json when
+# either moves.
+cync-lan==0.2.1
+# Deliberately a range, unlike the rest: Home Assistant pins PyYAML itself
+# (==6.0.3 as of 2026.7.3), so an exact pin here would fight it on every HA
+# bump. This mirrors manifest.json's own bound and lets HA decide.
 pyyaml>=6.0.2
 
 # Static type checking, run in the same job (see mypy.ini).
-mypy>=1.11
+mypy==2.3.0
