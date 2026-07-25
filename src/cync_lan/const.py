@@ -98,6 +98,26 @@ CYNC_MITM_APP_LOGGER: bool = (
     os.environ.get("CYNC_MITM_APP_LOGGER", "no").casefold() in YES_ANSWER
 )
 
+# Which envelope shape the hub-family commands use. See
+# docs/hub_envelope_ab_test.md for the full argument and the exact bytes
+# each produces.
+#
+#   "routed" (default, and what has shipped since 0.3.0)
+#       header(8) + routing(7) + op(1) + payload, cmd_code = 8 + len(payload)
+#   "bare"
+#       header(8) + op(1) + payload,              cmd_code = 1 + len(payload)
+#
+# "bare" is what the decompiled phone app does: all 15 of its hub command
+# classes bypass the method that prepends the 7-byte mesh routing block,
+# which makes sense because a hub command is not addressed to a mesh
+# device. Whether that carries over to cync-lan's device-facing wire is
+# unproven - the app's path is phone->device, cync-lan sits on
+# device->cloud - so this is a knob for A/B testing against real hardware,
+# not a correction. Anything other than "bare" means "routed".
+CYNC_HUB_ENVELOPE: str = (
+    os.environ.get("CYNC_HUB_ENVELOPE", "routed").strip().casefold()
+)
+
 CYNC_CMD_BROADCASTS: int = os.environ.get("CYNC_CMD_BROADCASTS", 2)
 if not CYNC_CMD_BROADCASTS:
     CYNC_CMD_BROADCASTS = 2

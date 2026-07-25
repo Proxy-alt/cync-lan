@@ -16,6 +16,7 @@ from cync_lan.const import (
     CYNC_CLOUD_IP,
     CYNC_CMD_BROADCASTS,
     CYNC_EXPERIMENTAL_LOG_PATH,
+    CYNC_HUB_ENVELOPE,
     CYNC_LOG_NAME,
     CYNC_MAX_TCP_CONN,
     CYNC_MITM_APP_LOGGER,
@@ -304,6 +305,24 @@ def _warn_experimental_group_targeting(lp: str, name: str) -> None:
     )
 
 
+def _hub_envelope(payload: bytes) -> tuple[int, bool]:
+    """Return (cmd_code, include_routing) for a hub-family command.
+
+    The two values must move together: cmd_code counts every byte after
+    the 8-byte header, so whether the 7-byte routing block is present
+    changes it by exactly 7. Returning them as a pair is the whole point -
+    eleven call sites previously hardcoded `8 + len(payload)`, and any
+    future one that sets the flag without the length (or vice versa)
+    would emit a packet whose declared length disagrees with its
+    contents, which is far harder to debug than either shape being wrong.
+
+    Selected by CYNC_HUB_ENVELOPE. See docs/hub_envelope_ab_test.md.
+    """
+    if CYNC_HUB_ENVELOPE == "bare":
+        return 1 + len(payload), False
+    return 8 + len(payload), True
+
+
 def _warn_experimental_transport_unconfirmed(lp: str, name: str) -> None:
     """Log once per process per command name that this command's real
     envelope (in the decompiled app) is a PPP/HDLC-style, 0x7E-delimited-
@@ -421,6 +440,7 @@ async def broadcast_control_command(
     m_cb: ControlMessageCallback,
     lp: str,
     repeat_op_code: bool = True,
+    include_routing: bool = True,
 ) -> None:
     """Build and broadcast a control packet to the TCP pool, targeting an
     arbitrary `target_id`.
@@ -435,6 +455,10 @@ async def broadcast_control_command(
 
     repeat_op_code: forwarded to PacketBuilder.build_control_packet - see
     its docstring. False for the 0x8E "mesh-relay" op family.
+
+    include_routing: also forwarded. False drops the 7-byte routing block
+    for hub-family commands; callers must take cmd_ from _hub_envelope()
+    so the declared length matches. See docs/hub_envelope_ab_test.md.
     """
     tasks = []
     tcp_pool = await g.ncync_server.get_dev_tcp_pool()
@@ -460,6 +484,7 @@ async def broadcast_control_command(
                 cmd_code=cmd_,
                 command_payload=payload,
                 repeat_op_code=repeat_op_code,
+                include_routing=include_routing,
             )
 
             full_packet = PacketBuilder.build_outer_packet(
@@ -645,9 +670,9 @@ async def delete_scene(scene_id: int) -> None:
     # opcode array and no op_prefix byte is emitted. These hub commands are
     # not that family: their payload is bare (delete_scene's is just a u16),
     # so the op_code IS emitted and the length field was one byte short.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 async def delete_schedule(schedule_id: int) -> None:
@@ -680,9 +705,9 @@ async def delete_schedule(schedule_id: int) -> None:
     # opcode array and no op_prefix byte is emitted. These hub commands are
     # not that family: their payload is bare (delete_scene's is just a u16),
     # so the op_code IS emitted and the length field was one byte short.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> None:
@@ -753,9 +778,9 @@ async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> N
     # opcode array and no op_prefix byte is emitted. These hub commands are
     # not that family: their payload is bare (delete_scene's is just a u16),
     # so the op_code IS emitted and the length field was one byte short.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 async def set_time(
@@ -824,9 +849,9 @@ async def set_time(
         + bytes(8)
     )
     # See delete_scene() for why this is 8 and not 7.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(0x40, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(0x40, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 async def delete_automation(schedule_id: int) -> None:
@@ -853,9 +878,9 @@ async def delete_automation(schedule_id: int) -> None:
     op = 0x97
     payload = struct.pack("<H", schedule_id) + bytes(4)
     # See delete_scene() for why this is 8 and not 7.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 async def delete_group(group_address: int) -> None:
@@ -881,9 +906,9 @@ async def delete_group(group_address: int) -> None:
 
     op = 0x32
     payload = struct.pack("<H", group_address)
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 async def _query_hub(
@@ -904,9 +929,9 @@ async def _query_hub(
     _warn_experimental_transport_unconfirmed(lp, name)
 
     payload = bytes(buffer_len)
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1052,9 +1077,9 @@ async def query_hub_mesh_credentials(
     # See delete_scene() for why this is 8 and not 7: routing(7) +
     # op_prefix(1) + payload, and this hub-command family does emit the
     # op_prefix byte.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1120,9 +1145,9 @@ async def create_scene(name: str, timeout: float = 10.0) -> Optional[int]:
     # See delete_scene() for why this is 8 and not 7: routing(7) +
     # op_prefix(1) + payload, and this hub-command family does emit the
     # op_prefix byte.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1192,9 +1217,9 @@ async def create_schedule(
     # See delete_scene() for why this is 8 and not 7: routing(7) +
     # op_prefix(1) + payload, and this hub-command family does emit the
     # op_prefix byte.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1305,9 +1330,9 @@ async def add_automation(
     # opcode array and no op_prefix byte is emitted. These hub commands are
     # not that family: their payload is bare (delete_scene's is just a u16),
     # so the op_code IS emitted and the length field was one byte short.
-    cmd_ = 8 + len(payload)
+    cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
 
 
 class CyncDevice:

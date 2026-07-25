@@ -41,9 +41,22 @@ from unittest.mock import AsyncMock, MagicMock
 ROUTING_LEN = 7
 
 
-def predict_cmd_code(payload_len: int, repeat_op_code: bool = True) -> int:
-    """The length field for a payload of `payload_len` bytes."""
-    return ROUTING_LEN + (1 if repeat_op_code else 0) + payload_len
+def predict_cmd_code(
+    payload_len: int, repeat_op_code: bool = True, include_routing: bool = True
+) -> int:
+    """The length field for a payload of `payload_len` bytes.
+
+    include_routing=False is the hub family under CYNC_HUB_ENVELOPE="bare",
+    which omits the 7-byte routing block - see docs/hub_envelope_ab_test.md.
+    The audit below reports which envelope it measured, because running it
+    with the flag set and reading a "routed" formula would look like a bug
+    in every hub command at once.
+    """
+    return (
+        (ROUTING_LEN if include_routing else 0)
+        + (1 if repeat_op_code else 0)
+        + payload_len
+    )
 
 
 def _parse_payload(text: str) -> bytes:
@@ -69,10 +82,16 @@ class Capture:
     cmd_code: int
     payload: bytes
     repeat_op_code: bool
+    include_routing: bool = True
 
     @property
     def expected(self) -> int:
-        return predict_cmd_code(len(self.payload), self.repeat_op_code)
+        # Compare against the shape the command actually asked for, not an
+        # assumed one - otherwise a hub command under the "bare" envelope
+        # reads as a 7-byte mismatch when it is behaving correctly.
+        return predict_cmd_code(
+            len(self.payload), self.repeat_op_code, self.include_routing
+        )
 
     @property
     def ok(self) -> bool:
@@ -95,6 +114,7 @@ def _install_stub_transport(captures: list[Capture], current_name: list[str]) ->
                 cmd_code=kwargs["cmd_code"],
                 payload=kwargs["command_payload"],
                 repeat_op_code=kwargs.get("repeat_op_code", True),
+                include_routing=kwargs.get("include_routing", True),
             )
         )
         # Still build for real: an inconsistent length field would raise here
@@ -268,7 +288,10 @@ def run_audit(verbose: bool) -> int:
             )
         return 1
 
-    print(f"all {len(seen)} commands agree with the formula")
+    from cync_lan.const import CYNC_HUB_ENVELOPE
+
+    envelope = "bare" if CYNC_HUB_ENVELOPE == "bare" else "routed"
+    print(f"all {len(seen)} commands agree with the formula ({envelope} envelope)")
     return 0
 
 

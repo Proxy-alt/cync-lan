@@ -30,8 +30,14 @@ from cync_lan.structs import GlobalObject
 ROUTING_LEN = 7
 
 
-def expected_cmd_code(payload_len: int, repeat_op_code: bool) -> int:
-    return ROUTING_LEN + (1 if repeat_op_code else 0) + payload_len
+def expected_cmd_code(
+    payload_len: int, repeat_op_code: bool, include_routing: bool = True
+) -> int:
+    return (
+        (ROUTING_LEN if include_routing else 0)
+        + (1 if repeat_op_code else 0)
+        + payload_len
+    )
 
 
 @pytest.fixture
@@ -138,3 +144,89 @@ def test_formula_reproduces_the_shipping_confirmed_values():
     assert expected_cmd_code(8, True) == 0x10  # set_brightness / set_rgb
     assert expected_cmd_code(6, True) == 0x0E  # set_lightshow
     assert expected_cmd_code(7, False) == 0x0E  # set_indicator_led (hardware)
+
+
+# --- the alternate ("bare") hub envelope -------------------------------------
+#
+# CYNC_HUB_ENVELOPE="bare" drops the 7-byte routing block, because every hub
+# command class in the decompiled app bypasses the method that prepends it.
+# Unproven for our wire, so it is opt-in - see docs/hub_envelope_ab_test.md.
+# What these tests pin down is that the *shape stays self-consistent* in both
+# modes: a length field that disagrees with the body it describes is a worse
+# failure than either envelope being the wrong choice, and it is the failure
+# a split-brain edit would produce.
+
+
+@pytest.fixture
+def bare_envelope(monkeypatch):
+    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "bare")
+
+
+@pytest.mark.parametrize(("name", "factory", "op_code"), HUB_COMMANDS)
+async def test_bare_envelope_drops_routing_and_shortens_length(
+    captured, bare_envelope, name, factory, op_code
+):
+    await _run(factory())
+
+    assert captured, f"{name} never reached build_control_packet"
+    sent = captured[0]
+    assert sent["op_code"] == op_code
+    assert sent["include_routing"] is False, f"{name} still sent the routing block"
+    assert sent["cmd_code"] == expected_cmd_code(
+        len(sent["command_payload"]), True, include_routing=False
+    )
+
+
+@pytest.mark.parametrize(("name", "factory", "op_code"), HUB_COMMANDS)
+async def test_bare_envelope_is_exactly_seven_shorter(
+    captured, monkeypatch, name, factory, op_code
+):
+    """The two envelopes must differ by the routing block and nothing else."""
+    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "routed")
+    await _run(factory())
+    routed = captured[0]
+
+    captured.clear()
+    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "bare")
+    await _run(factory())
+    bare = captured[0]
+
+    assert routed["command_payload"] == bare["command_payload"]
+    assert routed["op_code"] == bare["op_code"]
+    assert routed["cmd_code"] - bare["cmd_code"] == ROUTING_LEN
+
+
+@pytest.mark.parametrize("envelope", ["routed", "bare"])
+@pytest.mark.parametrize(("name", "factory", "op_code"), HUB_COMMANDS)
+async def test_length_field_matches_real_body_in_both_envelopes(
+    captured, monkeypatch, envelope, name, factory, op_code
+):
+    """The invariant that actually matters, checked against real bytes.
+
+    Rather than re-deriving the formula, build the packet the command asked
+    for and measure it: cmd_code must equal the number of bytes after the
+    8-byte header, minus the 0x7E delimiters and trailing checksum.
+    """
+    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", envelope)
+    await _run(factory())
+
+    assert captured, f"{name} never reached build_control_packet"
+    sent = captured[0]
+    packet = PacketBuilder.build_control_packet(**sent)
+    # 0x7E + inner + checksum + 0x7E
+    inner = packet[1:-2]
+    assert sent["cmd_code"] == len(inner) - 8, (
+        f"{name} in {envelope!r} mode declares cmd_code={sent['cmd_code']} "
+        f"but its body after the header is {len(inner) - 8} bytes"
+    )
+
+
+async def test_unknown_envelope_value_falls_back_to_routed(captured, monkeypatch):
+    """Anything that is not exactly "bare" must behave as it always has -
+    a typo in the option must not silently produce a third shape."""
+    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "Bare-ish typo")
+    await _run(devices.delete_scene(1))
+
+    sent = captured[0]
+    assert sent["include_routing"] is True
+    assert sent["cmd_code"] == expected_cmd_code(len(sent["command_payload"]), True)

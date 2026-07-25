@@ -222,6 +222,7 @@ class PacketBuilder:
         cmd_code: int,
         command_payload: bytes,
         repeat_op_code: bool = True,
+        include_routing: bool = True,
     ) -> bytes:
         """Builds the inner 0x7E bound packet structure.
 
@@ -236,6 +237,24 @@ class PacketBuilder:
         that family the payload's own leading byte (not a repeat of op_code)
         follows routing directly. Pass repeat_op_code=False for 0x8E-family
         callers.
+
+        include_routing: the 7-byte routing block (msg_id + 4 nulls +
+        target_id + sub_id) addresses a mesh device. Hub-family commands
+        are not addressed to one, and in the decompiled phone app all 15
+        hub command classes bypass the method that prepends this block
+        entirely - their payload starts immediately after the length
+        field. Pass include_routing=False to build that shape.
+
+        Unproven for cync-lan's own wire: the app's path is phone->device,
+        cync-lan intercepts device->cloud. This exists so the two shapes
+        can be A/B tested against real hardware rather than argued about -
+        see docs/hub_envelope_ab_test.md, which lists the exact bytes each
+        produces. The default is the shape that has always shipped.
+
+        Note the caller must keep cmd_code consistent with this flag:
+        cmd_code counts every byte after the 8-byte header, so dropping
+        routing drops 7 from it. devices.py's _hub_envelope() returns both
+        together so they cannot drift apart.
         """
         PacketBuilder._require_u8("msg_id", msg_id)
         PacketBuilder._require_u8("target_id", target_id)
@@ -251,7 +270,11 @@ class PacketBuilder:
         header = struct.pack(">B xxx B B B B", msg_id, 0xF8, op_code, cmd_code, 0x00)
         # Routing: msg_id (1 byte), 4 null padding bytes, target_id, sub_id
         # Format >BxxxxBB = 1 + 4 + 1 + 1 = 7 bytes total
-        routing = struct.pack(">B xxxx B B", msg_id, target_id, sub_id)
+        routing = (
+            struct.pack(">B xxxx B B", msg_id, target_id, sub_id)
+            if include_routing
+            else b""
+        )
         op_prefix = struct.pack(">B", op_code) if repeat_op_code else b""
         inner_data = header + routing + op_prefix + command_payload
         checksum = sum(inner_data[5:]) % 256
