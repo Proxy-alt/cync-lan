@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cync-lan"
-version = "0.2.0"
+version = "0.2.1"
 description = "Core async protocol library for local LAN control of Cync/C by GE smart devices - device/session state machine, packet codec, cloud auth, and BLE provisioning"
 readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
@@ -19,7 +19,7 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "pyyaml==6.0.2",
+    "pyyaml>=6.0.2",
     "pydantic>=2.0.0",
     "tzlocal>=5.3.1",
     "cryptography>=46.0.7",

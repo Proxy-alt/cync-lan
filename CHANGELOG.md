@@ -26,6 +26,18 @@ on `feature/ha-custom-component` for how the three artifacts relate.
   PyPI (0.1.0 was published manually after the pending publisher wasn't
   yet recognized on the first automated attempt).
 
+### 0.2.1
+
+**Fixed: this package could not be installed alongside Home Assistant.**
+`pyyaml` was pinned to exactly `==6.0.2`, while Home Assistant requires
+`PyYAML==6.0.3`. The two are mutually exclusive, so `pip install cync-lan
+homeassistant` failed outright with a resolution error - which also meant the
+Home Assistant integration that depends on this package could not have its
+requirements installed. Relaxed to `>=6.0.2`.
+
+Nothing in this package needs an exact PyYAML version; it only calls
+`safe_load`/`dump`.
+
 ### 0.2.0
 
 **Minimum Python is now 3.12.** The package previously declared `>=3.9`, but
