@@ -529,3 +529,54 @@ cleaned up with `cync_lan.experimental_delete_scene`/
   a dedicated `experimental_features.log`, alongside your other cync-lan
   files in Home Assistant's own config directory - attach that file (not
   the full HA log) along with your device model when opening an issue.
+
+Also attach a **diagnostics download** (**Settings → Devices & Services →
+Cync LAN → ⋮ → Download diagnostics**). It reports versions, per-device
+capability flags, per-session connection state and the relevant environment
+- credentials and MAC addresses redacted - which is most of what a bug
+report otherwise takes several rounds of questions to establish.
+
+## Where this fits
+
+This integration is one of three separately-versioned artifacts in the
+[Proxy-alt/cync-lan](https://github.com/Proxy-alt/cync-lan) repository, each
+on its own branch:
+
+| Artifact | Branch | What it is |
+|---|---|---|
+| `cync-lan` | [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) | The protocol library this integration depends on |
+| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon - an alternative to this integration |
+| `cync_lan` custom_component | `feature/ha-custom-component` | **This** |
+
+The repository's [root README](https://github.com/Proxy-alt/cync-lan/blob/feature/ha-custom-component/README.md)
+compares the three and explains when you would want each.
+
+## Credits
+
+This project is the current link in a chain of earlier work, and none of it
+would exist without the people below.
+
+- **[iburistu](https://github.com/iburistu)** -
+  [cync-lan](https://github.com/iburistu/cync-lan), the original. The first
+  public demonstration that Cync devices could be controlled locally by
+  impersonating the cloud server. MIT, © 2022 Zachary Linkletter.
+- **[juanboro](https://github.com/juanboro)** -
+  [cync2mqtt](https://github.com/juanboro/cync2mqtt), the original MQTT
+  bridge and cloud-export approach. Apache-2.0. Little of that code survives
+  verbatim at this point, but the attribution stays. Long live OSS.
+- **[baudneo](https://github.com/baudneo)** -
+  [baudneo/cync-lan](https://github.com/baudneo/cync-lan), the substantial
+  async rewrite this fork continues from, and the origin of most of the
+  protocol knowledge this integration relies on. This Home Assistant
+  integration itself does not exist upstream, but the protocol work it
+  stands on very much does.
+- **[@CodeNeedsCoffee](https://github.com/CodeNeedsCoffee)** - initial work
+  on the Home Assistant App.
+
+Full license texts for all of the above are reproduced in
+[LICENSE-3RD-PARTY](https://github.com/Proxy-alt/cync-lan/blob/feature/ha-custom-component/LICENSE-3RD-PARTY).
+
+## License
+
+MIT, same as the original - see
+[LICENSE](https://github.com/Proxy-alt/cync-lan/blob/feature/ha-custom-component/LICENSE).
