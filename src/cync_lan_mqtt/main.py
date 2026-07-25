@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional
 
 import uvloop
-
 from cync_lan.cloud_api import CyncCloudAPI
 from cync_lan.const import (
     CYNC_CONFIG_FILE_PATH,

@@ -6,7 +6,13 @@ TLS, effects, MITM logging)."""
 
 import os
 
-from cync_lan.const import CYNC_BASE_DIR, CYNC_SRV_HOST, CYNC_VERSION, SRC_REPO_URL, YES_ANSWER
+from cync_lan.const import (
+    CYNC_BASE_DIR,
+    CYNC_SRV_HOST,
+    CYNC_VERSION,
+    SRC_REPO_URL,
+    YES_ANSWER,
+)
 
 __all__ = [
     "CYNC_EXPORT_HOST",
@@ -63,7 +69,9 @@ DEVICE_LWT_MSG: bytes = b"offline"
 # Whether to expose a per-device "MITM Mode" switch entity in HASS. Off by default since
 # it's a developer/reverse-engineering feature most users don't want cluttering their
 # entity list; MITM mode itself is still usable via raw MQTT if needed.
-CYNC_MITM_ENTITIES: bool = os.environ.get("CYNC_MITM_ENTITIES", 'no').casefold() in YES_ANSWER
+CYNC_MITM_ENTITIES: bool = (
+    os.environ.get("CYNC_MITM_ENTITIES", "no").casefold() in YES_ANSWER
+)
 
 CYNC_BRIDGE_DEVICE_REGISTRY_CONF: dict = {}
 CYNC_BRIDGE_OBJ_ID: str = "cync_lan_bridge"

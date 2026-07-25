@@ -10,8 +10,6 @@ readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -19,9 +17,9 @@ classifiers = [
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
-    "cync-lan>=0.1.0",
+    "cync-lan>=0.1.2",
     "pyyaml==6.0.2",
     "uvloop>=0.21.0",
     "aiomqtt==2.3.0",
@@ -34,6 +32,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "python-dotenv>=1.1.0",
+    "pytest",
+    "pytest-asyncio",
 ]
 
 [project.scripts]
@@ -50,7 +50,10 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
-ignore = []
+# `ruff format` owns line length for code; E501 only fires on long log
+# strings and docstrings the formatter will not split. Same rationale as the
+# core package's pyproject.
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"

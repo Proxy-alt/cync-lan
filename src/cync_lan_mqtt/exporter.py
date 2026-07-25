@@ -8,18 +8,17 @@ from typing import Optional
 
 import aiohttp
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-
 from cync_lan.const import (
     CYNC_CONFIG_FILE_PATH,
     CYNC_EXPORT_SOURCE,
     CYNC_LOG_NAME,
 )
 from cync_lan.structs import GlobalObject
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from cync_lan_mqtt.const import (
     CYNC_EXPORT_HOST,
@@ -46,11 +45,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount(
-    "/static",
-    StaticFiles(directory=Path(CYNC_STATIC_DIR).expanduser().resolve()),
-    name="static",
-)
+# Guarded: StaticFiles raises at construction if the directory is missing,
+# and CYNC_STATIC_DIR defaults to a path that only exists inside the add-on's
+# Docker image. Mounting it unconditionally meant `import cync_lan_mqtt.exporter`
+# raised RuntimeError anywhere else - including under pytest, which is part of
+# why this package had no tests at all.
+_static_dir = Path(CYNC_STATIC_DIR).expanduser().resolve()
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+else:
+    logger.warning(
+        "Static asset directory %s does not exist - the web export UI will "
+        "load without its CSS/JS. Set CYNC_STATIC_DIR if this is unexpected.",
+        _static_dir,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -75,7 +83,7 @@ async def start_export():
                     return {"success": False, "message": ret_msg}
         except Exception as e:
             logger.exception(f"Export start failed: {e}")
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
     else:
         ret_msg = "CYNC_EXPORT_SOUCE configured, reading from a file instead of the cloud API."
 
@@ -96,7 +104,7 @@ async def request_otp():
             return {"success": False, "message": ret_msg}
     except Exception as e:
         logger.exception(f"OTP request failed: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.post("/api/restart")
@@ -166,7 +174,7 @@ async def submit_otp(otp_request: OTPRequest):
 
     except Exception as e:
         logger.exception(f"Export completion failed: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     else:
         return {"success": export_succ, "message": ret_msg}
 
