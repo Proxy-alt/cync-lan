@@ -30,7 +30,11 @@ jobs:
       - uses: actions/checkout@v4.2.2
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          # 3.14, not 3.13: requirements_test.txt pins
+          # pytest-homeassistant-custom-component >=0.13.346, and that
+          # release requires Python >=3.14. On 3.13 pip resolves no
+          # candidate at all and the install step fails before any test runs.
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements_test.txt
       - run: pip install -r requirements_test.txt
