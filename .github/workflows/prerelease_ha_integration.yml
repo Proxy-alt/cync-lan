@@ -1,13 +1,27 @@
-name: Prerelease - HA integration
+name: Release - HA integration
 
-# Automatically creates a GitHub prerelease every time
+# Automatically creates a GitHub release every time
 # custom_components/cync_lan/manifest.json's version changes on this
-# branch - see RELEASING.md. Always a prerelease, never a full release:
-# every command this integration exposes is still marked EXPERIMENTAL (see
-# its own README's Known limitations), so there is no "stable" version yet.
-# Tagged vX.Y.Z - distinct from the python package's own cync-lan-vX.Y.Z
-# tags (see prerelease_python_package.yml), since the two are versioned
-# and released independently.
+# branch - see RELEASING.md. Tagged vX.Y.Z - distinct from the python
+# package's own cync-lan-vX.Y.Z tags (see the core branch's
+# publish_pypi_core.yml), since the two are versioned and released
+# independently.
+#
+# Release vs prerelease is decided from the version string alone, by the
+# "Classify the version" step below:
+#
+#   2.3.0           -> full release, marked Latest
+#   2.3.0b38a0bb4   -> prerelease (a commit beta)
+#
+# This used to pass --prerelease unconditionally, on the reasoning that
+# every command is still EXPERIMENTAL so nothing is "stable". That cost
+# more than it bought: HACS hides prereleases unless the user ticks the
+# beta box per-repository, so the normal install path saw *no* versions at
+# all. Experimental-ness is documented in the README's Known limitations,
+# which is where it belongs - it is not what the prerelease flag is for.
+#
+# The filename still says "prerelease" so the Actions UI keeps this
+# workflow's run history, which is keyed by path.
 
 on:
   push:
@@ -68,6 +82,29 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
+      # The only place release-vs-prerelease is decided. Both shapes are
+      # matched explicitly and anything else is a hard error, so a typo
+      # ("2.3.O", "2.3") fails the run loudly instead of quietly shipping as
+      # the wrong kind - the failure mode that motivated this step.
+      - name: Classify the version
+        id: classify
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # --latest: this repo ships three independently-versioned
+            # artifacts from one release list, and the HA integration is the
+            # one HACS surfaces, so it should hold Latest rather than
+            # whichever tag happens to be newest by date.
+            echo "flags=--latest" >> "$GITHUB_OUTPUT"
+            echo "kind=release" >> "$GITHUB_OUTPUT"
+          elif [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+b[0-9a-f]+$ ]]; then
+            echo "flags=--prerelease" >> "$GITHUB_OUTPUT"
+            echo "kind=prerelease" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Version '$version' is neither X.Y.Z (release) nor X.Y.ZbCOMMIT (prerelease)."
+            exit 1
+          fi
+
       - name: Check whether this tag already exists
         id: check
         run: |
@@ -77,22 +114,35 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A full release must have a hand-written CHANGELOG entry - gating on
+      # that is the point. A commit beta cannot have one: its version embeds
+      # the sha of the commit that carries it, so the entry could only be
+      # written by amending after the fact. Betas therefore fall back to a
+      # generated stub rather than failing the run.
       - name: Extract this version's CHANGELOG section
         if: steps.check.outputs.exists == 'false'
         run: |
-          python3 - "${{ steps.version.outputs.version }}" custom_components/cync_lan/CHANGELOG.md <<'PYEOF'
+          python3 - "${{ steps.version.outputs.version }}" custom_components/cync_lan/CHANGELOG.md "${{ steps.classify.outputs.kind }}" <<'PYEOF'
           import re, sys
-          version, changelog_path = sys.argv[1], sys.argv[2]
+          version, changelog_path, kind = sys.argv[1], sys.argv[2], sys.argv[3]
           text = open(changelog_path, encoding="utf-8").read()
           pattern = re.compile(rf"^### {re.escape(version)}$\n(.*?)(?=^### |\Z)", re.M | re.S)
           match = pattern.search(text)
-          if not match:
+          if match:
+              notes = match.group(1).strip()
+          elif kind == "prerelease":
+              notes = (
+                  f"Automated beta build of `{version}`.\n\n"
+                  "Betas do not require a CHANGELOG entry, and none was found "
+                  "for this version. Not a supported release."
+              )
+          else:
               sys.exit(f"Could not find a CHANGELOG.md entry for version {version!r}")
           with open("/tmp/release-notes.md", "w", encoding="utf-8") as f:
-              f.write(match.group(1).strip() + "\n")
+              f.write(notes + "\n")
           PYEOF
 
-      - name: Create the prerelease
+      - name: Create the ${{ steps.classify.outputs.kind }}
         if: steps.check.outputs.exists == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,5 +150,5 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "cync_lan (Home Assistant custom_component) ${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/release-notes.md \
-            --prerelease \
+            ${{ steps.classify.outputs.flags }} \
             --target "${{ github.sha }}"
