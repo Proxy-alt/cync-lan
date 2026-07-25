@@ -137,7 +137,7 @@ path. Plain Docker Compose gives the most direct control.
 
 The three are versioned independently. [RELEASING.md](./RELEASING.md) covers
 the details, including the rule that decides releases from prereleases: a
-plain `X.Y.Z` version cuts a full release, `X.Y.ZbCOMMIT` cuts a prerelease,
+plain `X.Y.Z` version cuts a full release, `X.Y.ZbN` cuts a prerelease,
 and anything else fails the build.
 
 `docs/` is mirrored byte-for-byte across all three branches (canonical copy
