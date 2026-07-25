@@ -99,18 +99,20 @@ or `2.3` fails loudly instead of quietly shipping as the wrong kind.
 
 Two things to know:
 
-- **The beta suffix differs by artifact.** The HA integration accepts
-  `X.Y.ZbCOMMIT` (e.g. `2.3.0b38a0bb4`). The two PyPI packages accept only
-  `X.Y.ZbN` with digits (e.g. `0.4.0b1`), because their versions must be
-  valid PEP 440 and PEP 440's pre-release segment is `b` followed by a
-  number - `packaging` rejects `0.4.0b2aad577` outright, and the upload
-  would fail *after* the tag and GitHub release already existed. The
-  `+sha` local-version form is valid PEP 440 but PyPI refuses local
-  versions on upload, so it is no escape hatch either.
+- **`bN` means digits, and it is the same rule for all three artifacts.**
+  `0.4.0b1`, `0.4.0b2`, and so on. This is not a style preference: the two
+  PyPI packages must carry valid PEP 440 versions, and PEP 440's
+  pre-release segment is `b` followed by a *number*. A commit sha is
+  rejected - `packaging.version.Version("0.4.0b2aad577")` raises
+  `InvalidVersion`, and the upload would fail *after* the tag and GitHub
+  release already existed. (`0.4.0+2aad577` parses, but PyPI refuses local
+  versions on upload, so that is no escape hatch either.) The HA
+  integration is not on PyPI and could technically embed a sha, but it
+  follows the same rule anyway - one rule for three artifacts beats an
+  exception nobody remembers.
 - **Betas do not need a CHANGELOG entry**; full releases still do (see
-  step 3 below). A commit beta could not have one anyway - its version
-  embeds the sha of the commit carrying it, so the entry could only be
-  written by amending. Betas get a generated stub instead.
+  step 3 below). Betas get a generated stub instead, so a quick `bN` build
+  does not need a changelog edit to get out the door.
 
 This used to be `--prerelease` unconditionally, on the reasoning that
 nothing here had reached a "stable" designation. That cost more than it
