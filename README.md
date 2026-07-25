@@ -114,7 +114,7 @@ repository, each on its own branch. **You are on
 | Artifact | Branch | What it is | Distributed via |
 |---|---|---|---|
 | `cync-lan` | [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) | Core protocol library - sessions, packet codec, cloud auth, BLE | [PyPI](https://pypi.org/project/cync-lan/) |
-| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + Docker image |
+| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + [ghcr.io](https://github.com/Proxy-alt/cync-lan/pkgs/container/cync-lan-mqtt) image |
 | `cync_lan` custom_component | **`feature/ha-custom-component`** (here) | This: native Home Assistant integration | GitHub Release / HACS |
 
 ### Which one do you want?
