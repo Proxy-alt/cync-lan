@@ -9,6 +9,38 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.1.0
+
+Requires `cync-lan` 0.3.0.
+
+**New: five more protocol commands, all reachable from the UI** (with
+experimental commands enabled). On the **Cync LAN Bridge** device:
+
+| Entity | What it does |
+|---|---|
+| **Hub firmware version** | Asks the hub what firmware it is running, plus its MAC and setup code as attributes. Distinct from the version on each device page, which comes from the cloud export - a mismatch means the export is stale. |
+| **Hub clock** | The date and time the hub thinks it is. Native Cync Schedules fire off *this* clock, not Home Assistant's, so a hub whose time has drifted runs its automations at the wrong moment. Nothing else showed that. |
+| **Delete automation binding for *&lt;schedule&gt;*** | Removes what makes a Schedule fire, without deleting the Schedule itself. There was previously no way to do this at all. |
+| **Delete group *&lt;name&gt;*** | Deletes a Cync device group from the mesh. |
+
+The two query sensors are **disabled by default** - each poll puts a real
+command on the mesh, and neither value changes quickly. The two delete
+buttons are disabled by default for the same reason the existing ones are:
+Home Assistant has no "are you sure?" for a button press.
+
+A query that times out keeps its previous value rather than blanking. These
+commands' reply channel is unconfirmed, so an occasional miss is expected and
+should not look like the hub disappeared.
+
+**Deliberately not included.** Three commands in the protocol flash device
+firmware (`StartHubFirmwareUpdates` and two Wi-Fi OTA siblings). Every other
+experimental command here fails safe - a wrong predicted envelope byte means
+the device ignores the packet - but these do not, so no code path capable of
+sending them exists. A fourth, "query available firmware updates", is also
+left out: its reply is a variable-length structure that would produce
+plausible-looking nonsense if decoded wrongly, and there is no capture to
+check a decoder against. Both are documented in `docs/mesh_opcodes.md`.
+
 ### 2.0.0
 
 **Breaking: the `experimental_*` actions are now opt-in.** If you call any of

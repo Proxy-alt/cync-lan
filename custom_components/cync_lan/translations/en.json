@@ -245,6 +245,12 @@
       },
       "connected_devices": {
         "name": "Connected devices"
+      },
+      "hub_firmware": {
+        "name": "Hub firmware version"
+      },
+      "hub_clock": {
+        "name": "Hub clock"
       }
     },
     "button": {
@@ -256,6 +262,12 @@
       },
       "delete_schedule": {
         "name": "Delete schedule {schedule_name}"
+      },
+      "delete_automation": {
+        "name": "Delete automation binding for {schedule_name}"
+      },
+      "delete_group": {
+        "name": "Delete group {group_name}"
       }
     }
   },

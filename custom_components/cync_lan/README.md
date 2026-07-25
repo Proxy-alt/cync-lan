@@ -185,6 +185,12 @@ Supported entity types in this integration specifically:
   | **Ready to control** | Whether the device's connection will actually accept commands. A device can be connected and still silently drop them until its session finishes handshaking; without this, that is indistinguishable from a working device. WiFi-capable devices only. |
   | **Cync device ID** | The numeric mesh ID, which appears in debug logs and in every raw `experimental_*` action. Disabled by default - it never changes, so it is there for filing a bug report rather than for a dashboard. |
 
+  With experimental commands enabled, the bridge also gains **Hub firmware
+  version** and **Hub clock** (both disabled by default - each poll sends a
+  real command to the hub). The clock is the useful one: native Cync
+  Schedules fire off the hub's own clock rather than Home Assistant's, so
+  drift there silently shifts when your Cync-side automations run.
+
   The **Cync LAN Bridge** device also gains **Connected devices**, the number
   of devices currently holding a connection to the local listener. Zero is
   the signature of the DNS redirection not being in place - the most common

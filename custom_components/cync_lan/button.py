@@ -61,6 +61,17 @@ async def async_setup_entry(
                 entry.entry_id, schedule_id, schedule["name"]
             )
         )
+        entities.append(
+            CyncLanDeleteAutomationButton(
+                entry.entry_id, schedule_id, schedule["name"]
+            )
+        )
+    for group_id, group in (runtime_data.groups or {}).items():
+        entities.append(
+            CyncLanDeleteGroupButton(
+                entry.entry_id, group_id, group.get("name") or f"Group {group_id}"
+            )
+        )
 
     async_add_entities(entities)
 
@@ -182,3 +193,51 @@ class CyncLanDeleteScheduleButton(_CyncLanDestructiveButton):
             "refresh.",
             self._schedule_id,
         )
+
+
+class CyncLanDeleteAutomationButton(_CyncLanDestructiveButton):
+    """Remove a Schedule's trigger binding without deleting the Schedule.
+
+    Distinct from "Delete schedule": that removes the Schedule itself, this
+    only unbinds what makes it fire, leaving the Schedule to be re-bound.
+    Until cync-lan 0.3.0 there was no way to do this at all - create, toggle
+    and delete-schedule all existed, but nothing removed the binding
+    add_automation creates.
+    """
+
+    _attr_translation_key = "delete_automation"
+
+    def __init__(self, entry_id: str, schedule_id: int, name: str) -> None:
+        super().__init__(entry_id, f"delete_automation_{schedule_id}")
+        self._schedule_id = schedule_id
+        self._attr_translation_placeholders = {"schedule_name": name}
+
+    async def async_press(self) -> None:
+        from cync_lan.devices import delete_automation
+
+        await delete_automation(self._schedule_id)
+        _LOGGER.info(
+            "Sent automation-binding delete for Cync schedule_id=%s",
+            self._schedule_id,
+        )
+
+
+class CyncLanDeleteGroupButton(_CyncLanDestructiveButton):
+    """Delete a Cync device group from the mesh.
+
+    The group list comes from the cloud export, so the entity stays until the
+    next refresh even on success - same as the scene and schedule deletes.
+    """
+
+    _attr_translation_key = "delete_group"
+
+    def __init__(self, entry_id: str, group_id: int, name: str) -> None:
+        super().__init__(entry_id, f"delete_group_{group_id}")
+        self._group_id = group_id
+        self._attr_translation_placeholders = {"group_name": name}
+
+    async def async_press(self) -> None:
+        from cync_lan.devices import delete_group
+
+        await delete_group(self._group_id)
+        _LOGGER.info("Sent delete for Cync group_id=%s", self._group_id)

@@ -20,9 +20,15 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .bridge import CyncLanBridge
-from .const import DOMAIN, MANUFACTURER
+from .const import (
+    CONF_ENABLE_EXPERIMENTAL,
+    DEFAULT_ENABLE_EXPERIMENTAL,
+    DOMAIN,
+    MANUFACTURER,
+)
 from .entity import CyncLanEntity
 from .util import build_device_group_map, group_sensor_schedules_for_device
 
@@ -89,6 +95,14 @@ async def async_setup_entry(
         entities.append(CyncLanDeviceIdSensor(bridge, entry.entry_id, node))
 
     entities.append(CyncLanConnectedDevicesSensor(entry.entry_id, runtime_data))
+
+    # Hub queries. Read-only, but they put a command on the mesh to get an
+    # answer, and their reply channel is unconfirmed - so they stay behind
+    # the same experimental gate as everything else that does.
+    if entry.options.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL):
+        entities.append(CyncLanHubFirmwareSensor(entry.entry_id))
+        entities.append(CyncLanHubClockSensor(entry.entry_id))
+
     async_add_entities(entities)
 
 
@@ -272,3 +286,86 @@ class CyncLanConnectedDevicesSensor(SensorEntity):
             return len(self._runtime_data.ncync_server.tcp_connections)
         except Exception:  # noqa: BLE001 - a diagnostic must not break setup
             return None
+
+
+class _CyncLanHubQuerySensor(SensorEntity):
+    """A bridge sensor whose value comes from asking the hub.
+
+    Polled, not pushed: these are request/response commands with no
+    unsolicited updates. The interval is deliberately long - each poll puts a
+    real command on the mesh, and none of this data changes quickly.
+
+    A query that times out leaves the previous value in place rather than
+    blanking the entity: the reply channel is unconfirmed, so an occasional
+    miss is expected and should not look like the hub vanished.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, entry_id: str, unique_id_suffix: str) -> None:
+        self._attr_unique_id = f"{entry_id}_{unique_id_suffix}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
+
+
+class CyncLanHubFirmwareSensor(_CyncLanHubQuerySensor):
+    """The hub's own firmware version, read over the mesh (op_code 0x4B).
+
+    Distinct from a device's `sw_version` in the device registry, which comes
+    from the cloud export - this is what the hardware reports right now, so a
+    mismatch between the two means the export is stale.
+    """
+
+    _attr_translation_key = "hub_firmware"
+
+    def __init__(self, entry_id: str) -> None:
+        super().__init__(entry_id, "hub_firmware")
+        self._attr_extra_state_attributes: dict[str, Any] = {}
+
+    async def async_update(self) -> None:
+        from cync_lan.devices import query_hub_info
+
+        info = await query_hub_info()
+        if info is None:
+            return
+        self._attr_native_value = info.get("firmware_version")
+        # The setup code is the pairing code printed on the hardware; the MAC
+        # is already on the device page, so only surface it as an attribute.
+        self._attr_extra_state_attributes = {
+            "mac": info.get("mac"),
+            "setup_code": info.get("setup_code"),
+        }
+
+
+class CyncLanHubClockSensor(_CyncLanHubQuerySensor):
+    """The date and time the hub believes it is (op_code 0x46).
+
+    Native Cync Schedules fire off this clock rather than Home Assistant's,
+    so a hub whose time has drifted runs its automations at the wrong moment.
+    Nothing else in the integration exposes that.
+
+    Reported naive-as-local: the reply on this path carries no timezone (the
+    app's other, BLE-direct parser does, but that layout does not apply here),
+    so it is interpreted in Home Assistant's own timezone rather than
+    pretending to know better.
+    """
+
+    _attr_translation_key = "hub_clock"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, entry_id: str) -> None:
+        super().__init__(entry_id, "hub_clock")
+
+    async def async_update(self) -> None:
+        from cync_lan.devices import query_device_time
+
+        reported = await query_device_time()
+        if reported is None:
+            return
+        self._attr_native_value = reported.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)

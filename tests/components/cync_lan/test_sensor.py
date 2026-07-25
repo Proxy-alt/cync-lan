@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.sensor import (
@@ -374,3 +375,86 @@ async def test_connected_devices_sensor_degrades_instead_of_raising(hass):
     sensor = CyncLanConnectedDevicesSensor("entry1", SimpleNamespace())
 
     assert sensor.native_value is None
+
+
+# ---------------------------------------------------------------------------
+# hub query sensors
+# ---------------------------------------------------------------------------
+
+
+def _query_entry(hass, experimental: bool):
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.options = {"enable_experimental": experimental}
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = MagicMock()
+    entry.runtime_data.ncync_server.node_devices = {}
+    entry.runtime_data.groups = {}
+    return entry
+
+
+@pytest.mark.parametrize("experimental", [False, True])
+async def test_hub_query_sensors_follow_the_experimental_gate(hass, experimental):
+    """Read-only, but they still put a command on the mesh and their reply
+    channel is unconfirmed - so they sit behind the same gate."""
+    from custom_components.cync_lan.sensor import (
+        CyncLanHubClockSensor,
+        CyncLanHubFirmwareSensor,
+    )
+
+    added = []
+    await async_setup_entry(hass, _query_entry(hass, experimental), lambda e: added.extend(e))
+
+    present = any(
+        isinstance(e, (CyncLanHubFirmwareSensor, CyncLanHubClockSensor)) for e in added
+    )
+    assert present is experimental
+
+
+async def test_hub_firmware_sensor_reports_version_and_attributes(hass):
+    from custom_components.cync_lan.sensor import CyncLanHubFirmwareSensor
+
+    sensor = CyncLanHubFirmwareSensor("entry1")
+    with patch(
+        "cync_lan.devices.query_hub_info",
+        new=AsyncMock(return_value={"firmware_version": "1.2.3", "mac": "AABB", "setup_code": "X1"}),
+    ):
+        await sensor.async_update()
+
+    assert sensor.native_value == "1.2.3"
+    assert sensor.extra_state_attributes["setup_code"] == "X1"
+
+
+async def test_hub_clock_sensor_returns_an_aware_datetime(hass):
+    """SensorDeviceClass.TIMESTAMP rejects naive datetimes, and the reply on
+    this path carries no timezone."""
+    import datetime as _dt
+
+    from custom_components.cync_lan.sensor import CyncLanHubClockSensor
+
+    sensor = CyncLanHubClockSensor("entry1")
+    with patch(
+        "cync_lan.devices.query_device_time",
+        new=AsyncMock(return_value=_dt.datetime(2026, 7, 25, 14, 30, 5)),
+    ):
+        await sensor.async_update()
+
+    assert sensor.native_value is not None
+    assert sensor.native_value.tzinfo is not None
+
+
+async def test_hub_query_sensors_keep_their_value_on_timeout(hass):
+    """The reply channel is unconfirmed, so an occasional miss is expected -
+    it must not look like the hub vanished."""
+    from custom_components.cync_lan.sensor import CyncLanHubFirmwareSensor
+
+    sensor = CyncLanHubFirmwareSensor("entry1")
+    with patch(
+        "cync_lan.devices.query_hub_info",
+        new=AsyncMock(return_value={"firmware_version": "1.2.3", "mac": "A", "setup_code": "B"}),
+    ):
+        await sensor.async_update()
+    with patch("cync_lan.devices.query_hub_info", new=AsyncMock(return_value=None)):
+        await sensor.async_update()
+
+    assert sensor.native_value == "1.2.3"

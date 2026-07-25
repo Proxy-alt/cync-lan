@@ -22,13 +22,14 @@ from custom_components.cync_lan.button import (
 from custom_components.cync_lan.const import CONF_ENABLE_EXPERIMENTAL, DOMAIN
 
 
-def _entry(experimental: bool, scenes=None, schedules=None):
+def _entry(experimental: bool, scenes=None, schedules=None, groups=None):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.options = {CONF_ENABLE_EXPERIMENTAL: experimental}
     entry.runtime_data = SimpleNamespace(
         scenes=scenes or {},
         schedules=schedules or {},
+        groups=groups or {},
     )
     return entry
 
@@ -184,3 +185,60 @@ async def test_query_button_raises_a_clear_error_on_timeout(hass):
     ):
         with pytest.raises(HomeAssistantError, match="did not|timeout|answer"):
             await button.async_press()
+
+
+async def test_delete_automation_button_is_separate_from_delete_schedule(hass):
+    """They do different things: one removes the Schedule, the other only
+    unbinds what makes it fire, leaving the Schedule to be re-bound."""
+    from custom_components.cync_lan.button import CyncLanDeleteAutomationButton
+
+    entry = _entry(True, schedules={7: {"name": "Wake", "scene_id": 1, "enabled": True}})
+
+    added = await _setup(hass, entry)
+
+    schedule_btns = [e for e in added if isinstance(e, CyncLanDeleteScheduleButton)]
+    automation_btns = [e for e in added if isinstance(e, CyncLanDeleteAutomationButton)]
+    assert len(schedule_btns) == 1
+    assert len(automation_btns) == 1
+    assert schedule_btns[0].unique_id != automation_btns[0].unique_id
+
+
+async def test_delete_automation_button_sends_its_schedule_id(hass):
+    from custom_components.cync_lan.button import CyncLanDeleteAutomationButton
+
+    button = CyncLanDeleteAutomationButton("entry1", 9, "Wake")
+
+    with patch("cync_lan.devices.delete_automation", new=AsyncMock()) as mock:
+        await button.async_press()
+
+    mock.assert_awaited_once_with(9)
+
+
+async def test_delete_group_button_sends_the_group_mesh_address(hass):
+    from custom_components.cync_lan.button import CyncLanDeleteGroupButton
+
+    button = CyncLanDeleteGroupButton("entry1", 32770, "Kitchen")
+
+    with patch("cync_lan.devices.delete_group", new=AsyncMock()) as mock:
+        await button.async_press()
+
+    mock.assert_awaited_once_with(32770)
+
+
+async def test_new_delete_buttons_are_also_disabled_by_default(hass):
+    from custom_components.cync_lan.button import (
+        CyncLanDeleteAutomationButton,
+        CyncLanDeleteGroupButton,
+    )
+
+    entry = _entry(
+        True,
+        schedules={7: {"name": "Wake", "scene_id": 1, "enabled": True}},
+        groups={32770: {"name": "Kitchen"}},
+    )
+
+    added = await _setup(hass, entry)
+
+    for b in added:
+        if isinstance(b, (CyncLanDeleteAutomationButton, CyncLanDeleteGroupButton)):
+            assert b.entity_registry_enabled_default is False
