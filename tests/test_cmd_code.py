@@ -159,7 +159,24 @@ def test_formula_reproduces_the_shipping_confirmed_values():
 
 @pytest.fixture
 def bare_envelope(monkeypatch):
-    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "bare")
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "bare")
+
+
+async def test_envelope_flag_is_read_per_command_not_at_import(captured, monkeypatch):
+    """Flipping the flag must take effect without re-importing anything.
+
+    This is what lets the Home Assistant toggle apply on a config-entry
+    reload instead of a full restart, which is the difference between the
+    A/B being run and being abandoned halfway.
+    """
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "routed")
+    await _run(devices.delete_scene(1))
+    assert captured[0]["include_routing"] is True
+
+    captured.clear()
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "bare")
+    await _run(devices.delete_scene(1))
+    assert captured[0]["include_routing"] is False
 
 
 @pytest.mark.parametrize(("name", "factory", "op_code"), HUB_COMMANDS)
@@ -182,12 +199,12 @@ async def test_bare_envelope_is_exactly_seven_shorter(
     captured, monkeypatch, name, factory, op_code
 ):
     """The two envelopes must differ by the routing block and nothing else."""
-    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "routed")
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "routed")
     await _run(factory())
     routed = captured[0]
 
     captured.clear()
-    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "bare")
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "bare")
     await _run(factory())
     bare = captured[0]
 
@@ -207,7 +224,7 @@ async def test_length_field_matches_real_body_in_both_envelopes(
     for and measure it: cmd_code must equal the number of bytes after the
     8-byte header, minus the 0x7E delimiters and trailing checksum.
     """
-    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", envelope)
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", envelope)
     await _run(factory())
 
     assert captured, f"{name} never reached build_control_packet"
@@ -224,7 +241,7 @@ async def test_length_field_matches_real_body_in_both_envelopes(
 async def test_unknown_envelope_value_falls_back_to_routed(captured, monkeypatch):
     """Anything that is not exactly "bare" must behave as it always has -
     a typo in the option must not silently produce a third shape."""
-    monkeypatch.setattr(devices, "CYNC_HUB_ENVELOPE", "Bare-ish typo")
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "Bare-ish typo")
     await _run(devices.delete_scene(1))
 
     sent = captured[0]

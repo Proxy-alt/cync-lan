@@ -318,9 +318,25 @@ def _hub_envelope(payload: bytes) -> tuple[int, bool]:
 
     Selected by CYNC_HUB_ENVELOPE. See docs/hub_envelope_ab_test.md.
     """
-    if CYNC_HUB_ENVELOPE == "bare":
+    if _hub_envelope_mode() == "bare":
         return 1 + len(payload), False
     return 8 + len(payload), True
+
+
+def _hub_envelope_mode() -> str:
+    """The envelope choice, re-read on every command.
+
+    Deliberately unlike every other CYNC_* setting, which cync_lan.const
+    freezes at import time. This one exists to be flipped back and forth
+    while A/B testing against real hardware, and an import-time read makes
+    each flip cost a full Home Assistant restart - which in practice means
+    most people would run the first arm and never the second, leaving the
+    question open forever.
+
+    Falls back to the import-time constant when the variable is unset, so
+    CLI and Docker users who export it once still get what they asked for.
+    """
+    return os.environ.get("CYNC_HUB_ENVELOPE", CYNC_HUB_ENVELOPE).strip().casefold()
 
 
 def _warn_experimental_transport_unconfirmed(lp: str, name: str) -> None:
