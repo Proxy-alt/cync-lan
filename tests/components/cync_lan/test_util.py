@@ -250,3 +250,37 @@ async def test_capture_unknown_packets_defaults_off(hass, monkeypatch):
     monkeypatch.delenv("CYNC_UNSUPPORTED_RAW_DEBUG", raising=False)
     await configure_environment(hass, "u@e.com", "pw")
     assert os.environ["CYNC_UNSUPPORTED_RAW_DEBUG"] == "0"
+
+
+async def test_hub_envelope_flag_reaches_the_environment(hass, monkeypatch):
+    """The A/B toggle has to land in CYNC_HUB_ENVELOPE for cync_lan.devices
+    to see it. Unlike the other flags here that value is re-read on every
+    hub command, so setting it is all that is needed - no restart."""
+    from custom_components.cync_lan.util import configure_environment
+
+    monkeypatch.delenv("CYNC_HUB_ENVELOPE", raising=False)
+    await configure_environment(hass, "u@e.com", "pw", hub_envelope_bare=True)
+    assert os.environ["CYNC_HUB_ENVELOPE"] == "bare"
+
+    await configure_environment(hass, "u@e.com", "pw", hub_envelope_bare=False)
+    assert os.environ["CYNC_HUB_ENVELOPE"] == "routed"
+
+
+async def test_hub_envelope_defaults_to_the_shipped_shape(hass, monkeypatch):
+    """Default must stay the envelope that has shipped since 0.3.0 - the
+    alternate one is an experiment, not a correction."""
+    from custom_components.cync_lan.util import configure_environment
+
+    monkeypatch.delenv("CYNC_HUB_ENVELOPE", raising=False)
+    await configure_environment(hass, "u@e.com", "pw")
+    assert os.environ["CYNC_HUB_ENVELOPE"] == "routed"
+
+
+def test_hub_envelope_support_detection_matches_installed_library():
+    """The guard must reflect reality, not a hardcoded answer - it is what
+    stops a silent no-op being recorded as a failed experiment."""
+    from custom_components.cync_lan.util import hub_envelope_supported
+
+    from cync_lan import devices as core_devices
+
+    assert hub_envelope_supported() is hasattr(core_devices, "_hub_envelope_mode")

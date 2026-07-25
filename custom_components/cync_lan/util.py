@@ -71,6 +71,7 @@ async def configure_environment(
     username: str,
     password: str,
     capture_unknown_packets: bool = False,
+    hub_envelope_bare: bool = False,
 ) -> None:
     """Point the upstream package's env-var-driven config at this entry.
 
@@ -121,9 +122,37 @@ async def configure_environment(
     # already-imported module holding the old value. The options flow says so.
     os.environ["CYNC_UNSUPPORTED_RAW_DEBUG"] = "1" if capture_unknown_packets else "0"
 
+    # Unlike everything else here, this one takes effect immediately.
+    # cync_lan.devices re-reads CYNC_HUB_ENVELOPE on every hub command
+    # rather than caching it at import (see its _hub_envelope_mode),
+    # precisely so this can be flipped between the two candidate envelopes
+    # without a Home Assistant restart - the A/B is only worth offering if
+    # running both arms is cheap. See docs/hub_envelope_ab_test.md.
+    os.environ["CYNC_HUB_ENVELOPE"] = "bare" if hub_envelope_bare else "routed"
+
     os.environ["CYNC_MAX_TCP_CONN"] = str(
         max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)
     )
+
+
+def hub_envelope_supported() -> bool:
+    """Does the installed cync_lan honour CYNC_HUB_ENVELOPE?
+
+    The toggle writes an environment variable that older releases simply
+    ignore. Silently ignoring it is the worst possible outcome here: the
+    user would enable the alternate envelope, see hub commands behave
+    exactly as before, and record that as "candidate B does not work" -
+    a false negative in the one experiment the toggle exists to run.
+
+    Import is lazy and inside the function because cync_lan.const reads
+    its environment at import time (see configure_environment), so nothing
+    here may import it at module scope.
+    """
+    try:
+        from cync_lan import devices as _devices
+    except Exception:  # noqa: BLE001 - absence is the thing being tested
+        return False
+    return hasattr(_devices, "_hub_envelope_mode")
 
 
 def get_cloud_api(hass: HomeAssistant) -> "CyncCloudAPI":

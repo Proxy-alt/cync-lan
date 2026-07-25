@@ -876,3 +876,81 @@ async def test_motion_sensor_wizard_device_removed_mid_flow_at_settings_step(has
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "no_motion_sensors"
     node.set_motion_sensor_settings.assert_not_awaited()
+
+
+async def test_hub_envelope_toggle_hidden_until_experimental_is_on(
+    hass, mock_cloud_api, mock_parse_config
+):
+    """The envelope A/B only changes hub commands, which are entirely
+    experimental - so it must not clutter the form for users who have not
+    opted into experimental commands at all."""
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"account_username": "u@e.com", "account_password": "pw"},
+        options={"local_port": 23779, "enable_experimental": False},
+    )
+    entry.add_to_hass(hass)
+
+    result = await _start_general_settings(hass, entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert "hub_envelope_bare" not in result["data_schema"].schema
+
+
+async def test_hub_envelope_toggle_shown_once_experimental_is_on(
+    hass, mock_cloud_api, mock_parse_config
+):
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"account_username": "u@e.com", "account_password": "pw"},
+        options={"local_port": 23779, "enable_experimental": True},
+    )
+    entry.add_to_hass(hass)
+
+    result = await _start_general_settings(hass, entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert "hub_envelope_bare" in result["data_schema"].schema
+
+
+async def test_hub_envelope_choice_applies_without_a_restart(
+    hass, mock_cloud_api, mock_parse_config, monkeypatch
+):
+    """Saving the option must set the environment variable there and then.
+    cync_lan.devices re-reads it per command, so this is what makes the two
+    arms of the A/B cheap to run - the whole reason the toggle exists."""
+    import os
+
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"account_username": "u@e.com", "account_password": "pw"},
+        options={"local_port": 23779, "enable_experimental": True},
+    )
+    entry.add_to_hass(hass)
+    monkeypatch.setenv("CYNC_HUB_ENVELOPE", "routed")
+
+    result = await _start_general_settings(hass, entry.entry_id)
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "local_port": 23779,
+            "export_refresh_interval": 24,
+            "enable_light_groups": False,
+            "hide_group_members": False,
+            "capture_unknown_packets": False,
+            "enable_experimental": True,
+            "hub_envelope_bare": True,
+        },
+    )
+    await hass.async_block_till_done()
+    assert os.environ["CYNC_HUB_ENVELOPE"] == "bare"

@@ -21,6 +21,13 @@ CONF_ENABLE_EXPERIMENTAL = "enable_experimental"
 # client connecting to the listener, which is otherwise invisible without
 # packet capture on the host.
 CONF_CAPTURE_UNKNOWN_PACKETS = "capture_unknown_packets"
+# Switches the hub-family commands to the "bare" envelope - no 7-byte mesh
+# routing block, length field 7 shorter. The decompiled phone app builds hub
+# commands that way; whether our device-facing wire agrees is unproven, so
+# this is one arm of an A/B test rather than a fix. Only offered once
+# experimental commands are on, because the hub family is entirely
+# experimental. See docs/hub_envelope_ab_test.md.
+CONF_HUB_ENVELOPE_BARE = "hub_envelope_bare"
 
 DEFAULT_LOCAL_PORT = 23779
 DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS = 24
@@ -28,6 +35,7 @@ DEFAULT_ENABLE_LIGHT_GROUPS = False
 DEFAULT_HIDE_GROUP_MEMBERS = False
 DEFAULT_ENABLE_EXPERIMENTAL = False
 DEFAULT_CAPTURE_UNKNOWN_PACKETS = False
+DEFAULT_HUB_ENVELOPE_BARE = False
 
 MANUFACTURER = "Savant"
 

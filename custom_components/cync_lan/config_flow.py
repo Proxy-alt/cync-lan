@@ -14,6 +14,8 @@ and would be a breaking change to cync_lan itself.
 
 from __future__ import annotations
 
+import os
+
 import logging
 from collections.abc import Mapping
 from pathlib import Path
@@ -31,12 +33,14 @@ from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
     CONF_CAPTURE_UNKNOWN_PACKETS,
+    CONF_HUB_ENVELOPE_BARE,
     CONF_ENABLE_EXPERIMENTAL,
     CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_HIDE_GROUP_MEMBERS,
     CONF_LOCAL_PORT,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
+    DEFAULT_HUB_ENVELOPE_BARE,
     DEFAULT_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
@@ -51,7 +55,12 @@ from .const import (
     SCHEDULE_SLOT_OPTIONS,
 )
 from .services import async_setup_services, push_automation_to_hardware
-from .util import configure_environment, get_cloud_api, refresh_cloud_export
+from .util import (
+    configure_environment,
+    get_cloud_api,
+    hub_envelope_supported,
+    refresh_cloud_export,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -417,6 +426,34 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                 CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
             )
             result = self.async_create_entry(data=user_input)
+            # Apply the hub-envelope choice straight away. cync_lan.devices
+            # re-reads this variable on every hub command instead of caching
+            # it at import, so unlike the other advanced options here this
+            # one needs neither a reload nor a restart - which is the point,
+            # since running both arms of the A/B has to be cheap or nobody
+            # finishes it. See docs/hub_envelope_ab_test.md.
+            os.environ["CYNC_HUB_ENVELOPE"] = (
+                "bare"
+                if user_input.get(
+                    CONF_HUB_ENVELOPE_BARE,
+                    self._config_entry.options.get(
+                        CONF_HUB_ENVELOPE_BARE, DEFAULT_HUB_ENVELOPE_BARE
+                    ),
+                )
+                else "routed"
+            )
+            if (
+                os.environ["CYNC_HUB_ENVELOPE"] == "bare"
+                and not hub_envelope_supported()
+            ):
+                # Do not let a silent no-op be mistaken for a negative
+                # result - see hub_envelope_supported()'s docstring.
+                _LOGGER.warning(
+                    "The alternate hub envelope was enabled, but the installed "
+                    "cync-lan library does not support it and will keep sending "
+                    "the original envelope. Upgrade cync-lan before recording "
+                    "any result from this experiment"
+                )
             # Register or remove the experimental_* services to match the
             # toggle immediately. async_create_entry has already written
             # the new options by this point, so experimental_enabled()
@@ -437,6 +474,20 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
             return result
 
         current = self._config_entry.options
+        # Only meaningful once experimental commands are on - it changes the
+        # wire shape of the hub family, all of which is experimental. Shown
+        # after the user opts in rather than alongside the opt-in, same as
+        # the experimental wizard menu.
+        experimental_only: dict[Any, Any] = {}
+        if current.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL):
+            experimental_only[
+                vol.Required(
+                    CONF_HUB_ENVELOPE_BARE,
+                    default=current.get(
+                        CONF_HUB_ENVELOPE_BARE, DEFAULT_HUB_ENVELOPE_BARE
+                    ),
+                )
+            ] = bool
         return self.async_show_form(
             step_id="general_settings",
             data_schema=vol.Schema(
@@ -477,6 +528,7 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                             CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
                         ),
                     ): bool,
+                    **experimental_only,
                 }
             ),
         )

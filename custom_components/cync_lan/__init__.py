@@ -32,10 +32,12 @@ from .bridge import CyncLanBridge
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_CAPTURE_UNKNOWN_PACKETS,
+    CONF_HUB_ENVELOPE_BARE,
     CONF_ACCOUNT_USERNAME,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
+    DEFAULT_HUB_ENVELOPE_BARE,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
@@ -161,6 +163,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_ACCOUNT_PASSWORD],
         capture_unknown_packets=entry.options.get(
             CONF_CAPTURE_UNKNOWN_PACKETS, DEFAULT_CAPTURE_UNKNOWN_PACKETS
+        ),
+        hub_envelope_bare=entry.options.get(
+            CONF_HUB_ENVELOPE_BARE, DEFAULT_HUB_ENVELOPE_BARE
         ),
     )
     os.environ["CYNC_PORT"] = str(
