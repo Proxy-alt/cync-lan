@@ -3769,8 +3769,19 @@ class CyncTCPSession:
                         self.mitm_button_added = True
                         await g.mqtt_client.add_mitm_button(node_repr)
                         # check mqtt mitm button retain state
-                        payload = g.mqtt_client.get_startup_topic_state_sync(
-                            f"{g.mqtt_client.topic}/status/{node_repr.home_id}-{node_repr.id}/mitm"
+                        #
+                        # Offloaded: the MQTT implementation of this opens
+                        # its own blocking broker connection and spins a
+                        # sync wait loop for up to 3 seconds. This is the
+                        # inbound packet parser, so calling it inline froze
+                        # the event loop mid-parse - no other device's
+                        # traffic could be read for the duration, and the
+                        # stall repeated for every device that identified
+                        # itself over a fresh connection.
+                        payload = await asyncio.get_running_loop().run_in_executor(
+                            None,
+                            g.mqtt_client.get_startup_topic_state_sync,
+                            f"{g.mqtt_client.topic}/status/{node_repr.home_id}-{node_repr.id}/mitm",
                         )
                         if payload is not None:
                             # Find the TCP device instance and trigger start/stop
