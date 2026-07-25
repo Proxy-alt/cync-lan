@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.cync_lan.bridge import CyncLanBridge
@@ -27,9 +28,7 @@ def _fake_node(**overrides):
 
 
 async def test_setup_entry_only_includes_fan_controllers(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     fan = _fake_node()
     not_fan = _fake_node(is_fan_controller=False)
     g.ncync_server = MagicMock()
@@ -38,6 +37,7 @@ async def test_setup_entry_only_includes_fan_controllers(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
 
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))

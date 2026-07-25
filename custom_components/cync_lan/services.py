@@ -26,7 +26,7 @@ from homeassistant.helpers import (
 )
 
 from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT
-from .const import DOMAIN
+from .const import DOMAIN, MOTION_SENSOR_SENSITIVITY, MOTION_SENSOR_TYPE
 
 if TYPE_CHECKING:
     from homeassistant.components import automation as automation_component
@@ -99,12 +99,12 @@ _WEEKDAY_BIT = {
 }
 _ALL_DAYS_MASK = 0x7F
 
-# Confirmed enums - see docs/mesh_opcodes.md
-# (MotionSensorSensitivity.java). Indicator LED's mode/color enums live in
-# bridge.py (LED_MODE_TO_INT/LED_COLOR_TO_INT) - shared with select.py so a
-# service call and an entity write converge on the same values/cache.
-_SENSOR_TYPE = {"motion": 1, "ambient_light": 2}
-_SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
+# Motion-sensor enums live in const.py (MOTION_SENSOR_TYPE/
+# MOTION_SENSOR_SENSITIVITY) - shared with config_flow.py's options-flow
+# wizard, which sends the same command. Indicator LED's mode/color enums
+# live in bridge.py (LED_MODE_TO_INT/LED_COLOR_TO_INT) - shared with
+# select.py so a service call and an entity write converge on the same
+# values/cache.
 # Matches sensor.py's _SLOT_LABELS ordering and docs/cync_automations.md's
 # cloud-JSON slot numbering exactly.
 _SCHEDULE_SLOT = {"morning": 0, "daytime": 1, "evening": 2, "sleep": 3}
@@ -209,9 +209,9 @@ async def _handle_set_motion_sensor_settings(hass: HomeAssistant, call: ServiceC
     _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
     sensitivity = call.data.get(ATTR_SENSITIVITY)
     await node.set_motion_sensor_settings(
-        setting_type=_SENSOR_TYPE[call.data[ATTR_SENSOR_TYPE]],
+        setting_type=MOTION_SENSOR_TYPE[call.data[ATTR_SENSOR_TYPE]],
         enabled=call.data.get(ATTR_ENABLED),
-        sensitivity=_SENSITIVITY[sensitivity] if sensitivity else None,
+        sensitivity=MOTION_SENSOR_SENSITIVITY[sensitivity] if sensitivity else None,
         delay_seconds=call.data.get(ATTR_DELAY_SECONDS, 0),
         deactivation_seconds=call.data.get(ATTR_DEACTIVATION_SECONDS, 0),
     )
@@ -640,9 +640,9 @@ _SERVICE_SCHEMAS = {
     SERVICE_SET_MOTION_SENSOR_SETTINGS: vol.Schema(
         {
             vol.Required(ATTR_DEVICE_ID): cv.string,
-            vol.Required(ATTR_SENSOR_TYPE): vol.In(_SENSOR_TYPE),
+            vol.Required(ATTR_SENSOR_TYPE): vol.In(MOTION_SENSOR_TYPE),
             vol.Optional(ATTR_ENABLED): cv.boolean,
-            vol.Optional(ATTR_SENSITIVITY): vol.In(_SENSITIVITY),
+            vol.Optional(ATTR_SENSITIVITY): vol.In(MOTION_SENSOR_SENSITIVITY),
             vol.Optional(ATTR_DELAY_SECONDS, default=0): vol.All(
                 vol.Coerce(int), vol.Range(min=0)
             ),

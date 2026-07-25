@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .bridge import CyncLanBridge
 from .entity import CyncLanEntity
 
-if TYPE_CHECKING:
-    from cync_lan.devices import CyncDevice
-
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 _PRESET_MODES = ["low", "medium", "high", "max"]
@@ -27,14 +21,11 @@ _PRESET_PERCENTAGES = {"low": 25, "medium": 50, "high": 75, "max": 100}
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
     entities = [
         CyncLanFan(bridge, entry.entry_id, node)
-        for node in g.ncync_server.node_devices.values()
+        for node in runtime_data.ncync_server.node_devices.values()
         if node.metadata is not None
         and node.metadata.supported
         and node.is_fan_controller

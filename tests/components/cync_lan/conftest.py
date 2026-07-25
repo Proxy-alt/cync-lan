@@ -18,7 +18,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-pytest_plugins = "pytest_homeassistant_custom_component"
+# `pytest_plugins = "pytest_homeassistant_custom_component"` lives in the
+# repo-root conftest.py - pytest hard-errors on that name in a non-top-level
+# conftest, which made this whole suite uncollectable.
 
 
 @pytest.fixture(autouse=True)

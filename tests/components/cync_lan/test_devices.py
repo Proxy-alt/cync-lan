@@ -839,7 +839,6 @@ async def test_create_scene_truncates_and_pads_name():
     ):
         await create_scene("x" * 40)  # longer than 30 bytes
 
-    args_payload = PacketBuilder  # sanity import check only
     sent_name = fake_bridge.written[0]
     # Confirm the 30-byte name field is exactly 30 'x' bytes, not 40.
     assert (b"x" * 30) in sent_name

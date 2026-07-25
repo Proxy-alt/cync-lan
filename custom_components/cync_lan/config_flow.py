@@ -15,6 +15,8 @@ and would be a breaking change to cync_lan itself.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -37,18 +39,12 @@ from .const import (
     DEFAULT_HIDE_GROUP_MEMBERS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
+    MOTION_SENSOR_SENSITIVITY,
+    MOTION_SENSOR_TYPE,
 )
 from .util import configure_environment, get_cloud_api, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
-
-# Matches services.py's _SENSOR_TYPE/_SENSITIVITY exactly - duplicated
-# locally rather than imported since services.py's copies are private
-# (leading underscore) and this is the same small, stable enum mapping
-# used elsewhere in this codebase (e.g. sensor.py's _SLOT_LABELS mirrors
-# services.py's _SCHEDULE_SLOT the same way).
-_MOTION_SENSOR_TYPE = {"motion": 1, "ambient_light": 2}
-_MOTION_SENSOR_SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -57,6 +53,9 @@ STEP_USER_SCHEMA = vol.Schema(
     }
 )
 STEP_OTP_SCHEMA = vol.Schema({vol.Required("otp_code"): str})
+# Reauth re-collects only the password - the account it belongs to is fixed
+# by the entry being reauthenticated and must not be changeable here.
+STEP_REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_ACCOUNT_PASSWORD): str})
 
 
 class InvalidAuth(HomeAssistantError):
@@ -143,7 +142,6 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await configure_environment(self.hass, self._username, self._password)
             try:
                 api = get_cloud_api(self.hass)
-                await api._check_session()
                 have_token = await api.check_token()
                 if have_token:
                     return await self._finish_export()
@@ -184,30 +182,56 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="otp", data_schema=STEP_OTP_SCHEMA, errors=errors
         )
 
+    def _export_failed(self) -> config_entries.ConfigFlowResult:
+        """Re-show whichever credential step this flow actually started
+        from. A reauth flow has no "user" step in its own history - showing
+        one there would ask for a username the reauth flow already knows and
+        deliberately doesn't let the user change."""
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self.async_show_form(
+                step_id="reauth_confirm",
+                data_schema=STEP_REAUTH_SCHEMA,
+                errors={"base": "no_devices"},
+            )
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_SCHEMA,
+            errors={"base": "no_devices"},
+        )
+
     async def _finish_export(self) -> config_entries.ConfigFlowResult:
         """test-before-configure: actually pull the device list before
         letting the user finish setup, so a bad account/empty home fails
-        here instead of silently producing zero entities after setup."""
-        from pathlib import Path
+        here instead of silently producing zero entities after setup.
 
+        Terminates differently depending on how the flow started: a fresh
+        setup goes on to the confirm step and creates an entry, while a
+        reauth updates the EXISTING entry's stored password and aborts.
+        Home Assistant hard-raises on async_create_entry from a reauth flow
+        ("Creates a new entry in a 'reauth' flow, when it is expected to
+        update an existing entry and abort"), so this split isn't optional -
+        without it reauth crashes at its final step and the user can never
+        recover from an expired token.
+        """
+        # Deferred, not module-level: cync_lan.const reads its env-var-backed
+        # constants at import time, so configure_environment() must have run
+        # first (see util.configure_environment's docstring).
         from cync_lan.const import CYNC_CONFIG_FILE_PATH
         from cync_lan.utils import parse_config
 
         api = get_cloud_api(self.hass)
         exported = await api.export_config_file()
         if not exported:
-            return self.async_show_form(
-                step_id="user",
-                data_schema=STEP_USER_SCHEMA,
-                errors={"base": "no_devices"},
-            )
+            return self._export_failed()
         node_map = await parse_config(Path(CYNC_CONFIG_FILE_PATH))
         self._device_count = len(node_map)
         if self._device_count == 0:
-            return self.async_show_form(
-                step_id="user",
-                data_schema=STEP_USER_SCHEMA,
-                errors={"base": "no_devices"},
+            return self._export_failed()
+
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(),
+                data_updates={CONF_ACCOUNT_PASSWORD: self._password},
             )
         return await self.async_step_confirm()
 
@@ -233,10 +257,12 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reauth(
-        self, entry_data: dict[str, Any]
+        self, entry_data: Mapping[str, Any]
     ) -> config_entries.ConfigFlowResult:
         """Silver: reauthentication-flow - triggered when the cached cloud
-        token can't be refreshed (expired refresh token, password changed)."""
+        token can't be refreshed (expired refresh token, password changed).
+        Ends by updating the existing entry in place (see _finish_export),
+        never by creating a second one."""
         self._username = entry_data[CONF_ACCOUNT_USERNAME]
         return await self.async_step_reauth_confirm()
 
@@ -263,7 +289,7 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema({vol.Required(CONF_ACCOUNT_PASSWORD): str}),
+            data_schema=STEP_REAUTH_SCHEMA,
             errors=errors,
         )
 
@@ -479,10 +505,10 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             sensitivity = user_input.get("sensitivity")
             await node.set_motion_sensor_settings(
-                setting_type=_MOTION_SENSOR_TYPE[user_input["sensor_type"]],
+                setting_type=MOTION_SENSOR_TYPE[user_input["sensor_type"]],
                 enabled=user_input.get("enabled"),
                 sensitivity=(
-                    _MOTION_SENSOR_SENSITIVITY[sensitivity] if sensitivity else None
+                    MOTION_SENSOR_SENSITIVITY[sensitivity] if sensitivity else None
                 ),
                 delay_seconds=user_input.get("delay_seconds", 0),
                 deactivation_seconds=user_input.get("deactivation_seconds", 0),
@@ -498,14 +524,14 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Required("sensor_type"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=list(_MOTION_SENSOR_TYPE),
+                            options=list(MOTION_SENSOR_TYPE),
                             translation_key="motion_sensor_type",
                         )
                     ),
                     vol.Optional("enabled"): bool,
                     vol.Optional("sensitivity"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=list(_MOTION_SENSOR_SENSITIVITY),
+                            options=list(MOTION_SENSOR_SENSITIVITY),
                             translation_key="motion_sensor_sensitivity",
                         )
                     ),

@@ -11,7 +11,6 @@ restarts via RestoreEntity.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.components.select import SelectEntity
@@ -19,7 +18,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 
 from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT, CyncLanBridge
 from .entity import CyncLanIndicatorLedEntity
@@ -27,20 +25,16 @@ from .entity import CyncLanIndicatorLedEntity
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
     entities: list[SelectEntity] = []
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         entities.append(CyncLanIndicatorLedModeSelect(bridge, entry.entry_id, node))
@@ -48,7 +42,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class CyncLanIndicatorLedModeSelect(CyncLanIndicatorLedEntity, RestoreEntity, SelectEntity):
+class CyncLanIndicatorLedModeSelect(CyncLanIndicatorLedEntity, SelectEntity):
     _attr_translation_key = "indicator_led_mode"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_assumed_state = True
@@ -71,7 +65,7 @@ class CyncLanIndicatorLedModeSelect(CyncLanIndicatorLedEntity, RestoreEntity, Se
         await self._bridge.set_indicator_led_field(self._node, mode=option)
 
 
-class CyncLanIndicatorLedColorSelect(CyncLanIndicatorLedEntity, RestoreEntity, SelectEntity):
+class CyncLanIndicatorLedColorSelect(CyncLanIndicatorLedEntity, SelectEntity):
     _attr_translation_key = "indicator_led_color"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_assumed_state = True

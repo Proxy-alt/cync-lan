@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any, KeysView
 
 from homeassistant.components.group.light import LightGroup
@@ -35,7 +34,6 @@ from .entity import CyncLanEntity
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
-_LOGGER = logging.getLogger(__name__)
 
 # parallel-updates (silver): each light entity issues its own independent
 # command to the device over the shared TCP connection - the underlying
@@ -87,14 +85,11 @@ async def _wait_for_light_entities(
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
     entities = []
     light_dev_ids = []
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         if not node.is_light:
@@ -237,7 +232,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         if node.supports_rgb:
             modes.add(ColorMode.RGB)
             self._attr_effect_list = list(_light_run_mode_effects())
-            self._attr_supported_features = _light_effect_feature()
+            self._attr_supported_features = LightEntityFeature.EFFECT
         if not modes:
             modes.add(ColorMode.BRIGHTNESS)
         self._supported_color_modes: set[ColorMode] = modes
@@ -374,10 +369,9 @@ class CyncLanLightGroup(LightGroup):
 
 
 def _light_run_mode_effects() -> KeysView[str]:
+    """Deferred import: cync_lan.const reads its env-var-backed constants at
+    import time, so it must not be imported before configure_environment()
+    has run (see util.configure_environment's docstring)."""
     from cync_lan.const import LIGHT_RUN_MODE_EFFECTS
 
     return LIGHT_RUN_MODE_EFFECTS.keys()
-
-
-def _light_effect_feature() -> LightEntityFeature:
-    return LightEntityFeature.EFFECT

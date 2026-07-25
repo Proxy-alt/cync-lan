@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
-
 if TYPE_CHECKING:
     from cync_lan.cloud_api import CyncCloudAPI
 
@@ -28,6 +26,20 @@ _LOGGER = logging.getLogger(__name__)
 # connections reached") and legitimate reconnects get treated as attackers.
 _DEFAULT_MAX_TCP_CONN = 8
 _MAX_TCP_CONN_HEADROOM = 4
+
+
+def _prepare_config_dir(config_dir: str) -> int:
+    """Create the integration's config directory if needed and count the
+    WiFi devices in whatever export already lives there.
+
+    Both halves are blocking filesystem work, so they're deliberately one
+    executor job rather than two: mkdir is cheap but still a syscall, and
+    Home Assistant flags any blocking call made directly from the event
+    loop (this module already carries scars from exactly that - see
+    configure_environment's docstring).
+    """
+    os.makedirs(config_dir, exist_ok=True)
+    return _count_wifi_devices(Path(config_dir) / "cync_mesh.yaml")
 
 
 def _count_wifi_devices(cfg_file: Path) -> int:
@@ -63,14 +75,16 @@ async def configure_environment(hass: HomeAssistant, username: str, password: st
     anything under the `cync_lan` package.
 
     Async because two of its steps require it: stable_secret() awaits
-    Home Assistant's own persisted instance-UUID storage, and sizing
-    CYNC_MAX_TCP_CONN below reads cync_mesh.yaml off disk through the
-    executor - confirmed via a real HA install flagging the earlier
-    synchronous file read as a "Detected blocking call to open/read_text
-    ... inside the event loop" warning.
+    Home Assistant's own persisted instance-UUID storage, and creating the
+    config dir + sizing CYNC_MAX_TCP_CONN below touch the filesystem
+    through the executor - confirmed via a real HA install flagging the
+    earlier synchronous file read as a "Detected blocking call to
+    open/read_text ... inside the event loop" warning.
     """
     config_dir = hass.config.path("cync_lan")
-    os.makedirs(config_dir, exist_ok=True)
+    wifi_device_count = await hass.async_add_executor_job(
+        _prepare_config_dir, config_dir
+    )
     os.environ["CYNC_ACCOUNT_USERNAME"] = username
     os.environ["CYNC_ACCOUNT_PASSWORD"] = password
     os.environ.setdefault("CYNC_CONFIG_DIR", config_dir)
@@ -97,9 +111,6 @@ async def configure_environment(hass: HomeAssistant, username: str, password: st
     # re-read the environment on a config-entry reload within the same
     # running process, a limitation of the underlying env-var-at-import-
     # time design this integration has no control over.
-    wifi_device_count = await hass.async_add_executor_job(
-        _count_wifi_devices, Path(config_dir) / "cync_mesh.yaml"
-    )
     os.environ["CYNC_MAX_TCP_CONN"] = str(
         max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)
     )

@@ -63,6 +63,11 @@ def signal_indicator_led_update(entry_id: str, dev_id: int) -> str:
 LED_MODE_TO_INT = {"always_on": 0, "always_off": 1, "normal": 2}
 LED_COLOR_TO_INT = {"white": 0, "red": 1, "green": 2, "blue": 3}
 
+# Synthetic dev_id for home-wide state that belongs to no real device (the
+# two "Cync app active" diagnostic flags). Negative so it can never collide
+# with a real Cync device ID.
+_APP_ACTIVITY_DEV_ID = -1
+
 
 @dataclass
 class IndicatorLedState:
@@ -140,8 +145,8 @@ class CyncLanBridge:
         self._on_unknown_device = on_unknown_device
         self._unknown_device_sightings: dict[int, int] = {}
         self._last_unknown_device_trigger: float = 0.0
-        self._app_mesh_active_expiry_unsub: Optional[Callable[[], None]] = None
-        self._app_wifi_active_expiry_unsub: Optional[Callable[[], None]] = None
+        # BridgeEntityState field name -> its pending auto-clear timer.
+        self._app_active_expiry_unsubs: dict[str, Callable[[], None]] = {}
 
     def _get(self, dev_id: int, sub_id: int = 0) -> BridgeEntityState:
         key = (dev_id, sub_id)
@@ -149,11 +154,28 @@ class CyncLanBridge:
             self._states[key] = BridgeEntityState()
         return self._states[key]
 
+    def _entity_unique_id(self, dev_id: int, sub_id: int) -> str:
+        """The unique_id CyncLanEntity built for this (dev_id, sub_id) - a
+        falsy sub_id means the device's own primary entity and carries no
+        suffix (see entity.py's CyncLanEntity.__init__)."""
+        return f"{self.entry_id}_{dev_id}" + (f"_{sub_id}" if sub_id else "")
+
     def get_state(self, dev_id: int, sub_id: int = 0) -> Optional["EntityState"]:
         return self._get(dev_id, sub_id).entity_state
 
     def get_motion(self, dev_id: int) -> Optional[bool]:
         return self._get(dev_id).motion
+
+    def get_app_mesh_active(self) -> bool:
+        """Whether the Cync app was recently seen in BTLE-mesh proximity.
+        Home-wide, so tracked under the synthetic dev_id below rather than
+        any real device - see mark_app_mesh_active."""
+        return self._get(_APP_ACTIVITY_DEV_ID).app_mesh_active
+
+    def get_app_wifi_active(self) -> bool:
+        """Whether the Cync app's TCP login handshake recently reached this
+        server - see mark_app_wifi_active."""
+        return self._get(_APP_ACTIVITY_DEV_ID).app_wifi_active
 
     def get_indicator_led(self, dev_id: int) -> IndicatorLedState:
         return self._get(dev_id).indicator_led
@@ -211,10 +233,12 @@ class CyncLanBridge:
         bucket = self._get(entity_state.dev_id, entity_state.sub_id)
         bucket.entity_state = entity_state
         self._set_online(entity_state.dev_id, True)
-        unique_id = f"{self.entry_id}_{entity_state.dev_id}"
-        if entity_state.sub_id:
-            unique_id = f"{unique_id}_{entity_state.sub_id}"
-        async_dispatcher_send(self.hass, signal_entity_update(unique_id))
+        async_dispatcher_send(
+            self.hass,
+            signal_entity_update(
+                self._entity_unique_id(entity_state.dev_id, entity_state.sub_id)
+            ),
+        )
         return True
 
     async def publish_motion_state(
@@ -223,8 +247,9 @@ class CyncLanBridge:
         bucket = self._get(node.id)
         bucket.motion = motion
         self._set_online(node.id, True)
-        unique_id = f"{self.entry_id}_{node.id}"
-        async_dispatcher_send(self.hass, signal_entity_update(unique_id))
+        async_dispatcher_send(
+            self.hass, signal_entity_update(self._entity_unique_id(node.id, 0))
+        )
         return True
 
     async def pub_online(self, device_id: int, status: bool) -> bool:
@@ -287,26 +312,38 @@ class CyncLanBridge:
         except Exception:  # noqa: BLE001 - must not crash the packet-parse loop
             _LOGGER.exception("Error handling confirmed unknown device")
 
-    async def mark_app_mesh_active(self, timeout: float = 60.0) -> None:
-        # "Cync App Active" diagnostic entity - disabled by default (see
-        # DEFAULT_DISABLED_ENTITIES in const.py), no per-device state to key
-        # on, so it's tracked under a synthetic dev_id. Auto-clears after
-        # `timeout` seconds of no further BTLE-mesh-proximity bursts,
-        # mirroring cync_lan.mqtt_client.MQTTClient.mark_app_mesh_active.
-        bucket = self._get(-1)
-        bucket.app_mesh_active = True
-        signal = signal_entity_update(f"{self.entry_id}_app_mesh_active")
+    def _mark_app_active(self, field: str, timeout: float) -> None:
+        """Set one of the two app-activity flags and (re)arm its
+        auto-clear timer. Both flags are home-wide with no per-device state
+        to key on, so they live on a synthetic dev_id bucket; the timer
+        restarts on every burst, so the flag only clears after `timeout`
+        seconds of genuine silence.
+        """
+        bucket = self._get(_APP_ACTIVITY_DEV_ID)
+        setattr(bucket, field, True)
+        signal = signal_entity_update(f"{self.entry_id}_{field}")
         async_dispatcher_send(self.hass, signal)
-        if self._app_mesh_active_expiry_unsub is not None:
-            self._app_mesh_active_expiry_unsub()
+
+        unsub = self._app_active_expiry_unsubs.pop(field, None)
+        if unsub is not None:
+            unsub()
 
         @callback
         def _expire(_now: datetime) -> None:
-            bucket.app_mesh_active = False
+            setattr(bucket, field, False)
             async_dispatcher_send(self.hass, signal)
-            self._app_mesh_active_expiry_unsub = None
+            self._app_active_expiry_unsubs.pop(field, None)
 
-        self._app_mesh_active_expiry_unsub = async_call_later(self.hass, timeout, _expire)
+        self._app_active_expiry_unsubs[field] = async_call_later(
+            self.hass, timeout, _expire
+        )
+
+    async def mark_app_mesh_active(self, timeout: float = 60.0) -> None:
+        # "Cync App Active" diagnostic entity - disabled by default (see
+        # DEFAULT_DISABLED_ENTITIES in const.py). Fires on BTLE-mesh-
+        # proximity bursts, mirroring
+        # cync_lan.mqtt_client.MQTTClient.mark_app_mesh_active.
+        self._mark_app_active("app_mesh_active", timeout)
 
     async def mark_app_wifi_active(self, timeout: float = 60.0) -> None:
         # Distinct from mark_app_mesh_active: this fires whenever the app's
@@ -315,20 +352,7 @@ class CyncLanBridge:
         # BTLE proximity to any specific device. The app being on WiFi at
         # all is a broader, more frequent "app is active" signal than
         # actually being near a mesh device.
-        bucket = self._get(-1)
-        bucket.app_wifi_active = True
-        signal = signal_entity_update(f"{self.entry_id}_app_wifi_active")
-        async_dispatcher_send(self.hass, signal)
-        if self._app_wifi_active_expiry_unsub is not None:
-            self._app_wifi_active_expiry_unsub()
-
-        @callback
-        def _expire(_now: datetime) -> None:
-            bucket.app_wifi_active = False
-            async_dispatcher_send(self.hass, signal)
-            self._app_wifi_active_expiry_unsub = None
-
-        self._app_wifi_active_expiry_unsub = async_call_later(self.hass, timeout, _expire)
+        self._mark_app_active("app_wifi_active", timeout)
 
     # --- command-ack callbacks (bound via functools.partial in devices.py) ---
 
@@ -363,22 +387,29 @@ class CyncLanBridge:
     ) -> bool:
         _sub_id = sub_id or 0
         self._ensure_entity_state(node, _sub_id).power = state
-        unique_id = f"{self.entry_id}_{node.id}" + (f"_{_sub_id}" if _sub_id else "")
-        async_dispatcher_send(self.hass, signal_entity_update(unique_id))
+        async_dispatcher_send(
+            self.hass, signal_entity_update(self._entity_unique_id(node.id, _sub_id))
+        )
         return True
 
     async def update_brightness(
         self, node: "CyncDevice", bri: int, sub_id: Optional[int] = None
     ) -> bool:
-        self._ensure_entity_state(node).brightness = bri
-        async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        _sub_id = sub_id or 0
+        self._ensure_entity_state(node, _sub_id).brightness = bri
+        async_dispatcher_send(
+            self.hass, signal_entity_update(self._entity_unique_id(node.id, _sub_id))
+        )
         return True
 
     async def update_temperature(
         self, node: "CyncDevice", temp: int, sub_id: Optional[int] = None
     ) -> bool:
-        self._ensure_entity_state(node).temperature = temp
-        async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        _sub_id = sub_id or 0
+        self._ensure_entity_state(node, _sub_id).temperature = temp
+        async_dispatcher_send(
+            self.hass, signal_entity_update(self._entity_unique_id(node.id, _sub_id))
+        )
         return True
 
     async def update_rgb(
@@ -387,14 +418,19 @@ class CyncLanBridge:
         rgb: tuple[int, int, int],
         sub_id: Optional[int] = None,
     ) -> bool:
-        state = self._ensure_entity_state(node)
+        _sub_id = sub_id or 0
+        state = self._ensure_entity_state(node, _sub_id)
         state.red, state.green, state.blue = rgb
-        async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        async_dispatcher_send(
+            self.hass, signal_entity_update(self._entity_unique_id(node.id, _sub_id))
+        )
         return True
 
     async def update_fan_percent(self, node: "CyncDevice", perc: int) -> bool:
         self._ensure_entity_state(node).brightness = perc
-        async_dispatcher_send(self.hass, signal_entity_update(f"{self.entry_id}_{node.id}"))
+        async_dispatcher_send(
+            self.hass, signal_entity_update(self._entity_unique_id(node.id, 0))
+        )
         return True
 
     async def update_fan_speed(self, node: "CyncDevice", speed: "FanSpeed") -> bool:

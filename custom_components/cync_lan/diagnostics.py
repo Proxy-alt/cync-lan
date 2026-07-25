@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -13,8 +14,6 @@ TO_REDACT = {"account_password", "mac", "wifi_mac"}
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    from homeassistant.components.diagnostics import async_redact_data
-
     runtime_data = entry.runtime_data
     ncync_server = runtime_data.ncync_server
     devices = []
@@ -41,9 +40,7 @@ async def async_get_config_entry_diagnostics(
             "running": ncync_server.running,
             "host": ncync_server.host,
             "port": ncync_server.port,
-            "connected_tcp_devices": len(ncync_server.tcp_connections)
-            if hasattr(ncync_server, "tcp_connections")
-            else None,
+            "connected_tcp_devices": len(ncync_server.tcp_connections),
         },
         "raw_topics": {
             k: v.decode(errors="replace") if isinstance(v, bytes) else v

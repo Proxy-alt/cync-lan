@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
@@ -24,7 +24,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
@@ -171,7 +171,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ) = await hass.async_add_executor_job(_import_cync_lan_symbols)
 
     cfg_file = Path(CYNC_CONFIG_FILE_PATH)
-    if not cfg_file.exists():
+    if not await hass.async_add_executor_job(cfg_file.exists):
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
             translation_key="config_missing",
@@ -274,7 +274,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_EXPORT_REFRESH_INTERVAL, DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS
     )
     if refresh_hours > 0:
-        from datetime import timedelta
 
         async def _periodic_refresh(_now: datetime) -> None:
             await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)
@@ -324,6 +323,15 @@ async def _check_and_report_no_devices(
         ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
+def _config_mtime(cfg_file: Path) -> Optional[float]:
+    """Blocking - always call via the executor. None if the file doesn't
+    exist yet, so a first-ever export reads as "changed"."""
+    try:
+        return cfg_file.stat().st_mtime
+    except OSError:
+        return None
+
+
 async def _refresh_export_and_reload_if_changed(
     hass: HomeAssistant, entry: ConfigEntry, cfg_file: Path
 ) -> None:
@@ -341,9 +349,9 @@ async def _refresh_export_and_reload_if_changed(
     from cync_lan.utils import parse_config
 
     try:
-        before = cfg_file.stat().st_mtime if cfg_file.exists() else None
+        before = await hass.async_add_executor_job(_config_mtime, cfg_file)
         await refresh_cloud_export(hass)
-        after = cfg_file.stat().st_mtime if cfg_file.exists() else None
+        after = await hass.async_add_executor_job(_config_mtime, cfg_file)
         if before == after:
             return
 
@@ -375,8 +383,6 @@ async def _refresh_export_and_reload_if_changed(
 def _remove_stale_devices(
     hass: HomeAssistant, entry: ConfigEntry, removed_dev_ids: set[int]
 ) -> None:
-    from homeassistant.helpers import device_registry as dr
-
     device_reg = dr.async_get(hass)
     for dev_id in removed_dev_ids:
         identifier = (DOMAIN, f"{entry.entry_id}_{dev_id}")

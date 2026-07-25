@@ -11,7 +11,6 @@ docs/mesh_opcodes.md). See docs/cync_automations.md for the full data model.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -27,7 +26,6 @@ from .util import build_device_group_map, group_sensor_schedules_for_device
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 _SLOT_LABELS = {
@@ -41,15 +39,12 @@ _SLOT_LABELS = {
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
-    groups = getattr(entry.runtime_data, "groups", None) or {}
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
+    groups = runtime_data.groups or {}
     device_group_map = build_device_group_map(groups)
     entities: list[SensorEntity] = []
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         if not node.has_motion_sensor:
@@ -74,7 +69,7 @@ async def async_setup_entry(
                     )
                 )
 
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         # Connection diagnostics - exactly one of these two per device,

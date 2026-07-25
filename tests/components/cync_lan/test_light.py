@@ -40,9 +40,7 @@ def _fake_node(**overrides):
 
 
 async def test_setup_entry_only_includes_lights(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     light = _fake_node()
     not_light = _fake_node(is_light=False)
     unsupported = _fake_node(metadata=None)
@@ -52,6 +50,7 @@ async def test_setup_entry_only_includes_lights(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
 
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
@@ -352,9 +351,7 @@ def _make_group_entry(entry_id: str, **options):
 
 
 async def test_groups_disabled_by_default_creates_no_group_entities(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {}
 
@@ -362,6 +359,7 @@ async def test_groups_disabled_by_default_creates_no_group_entities(hass):
     entry.add_to_hass(hass)
     entry.runtime_data = MagicMock(
         bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=g.ncync_server,
         groups={1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}},
     )
 
@@ -372,11 +370,10 @@ async def test_groups_disabled_by_default_creates_no_group_entities(hass):
 
 
 async def test_groups_created_when_enabled_with_registered_members(hass):
-    from cync_lan.structs import GlobalObject
     from homeassistant.const import Platform
     from homeassistant.helpers import entity_registry as er
 
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {}
 
@@ -396,6 +393,7 @@ async def test_groups_created_when_enabled_with_registered_members(hass):
 
     entry.runtime_data = MagicMock(
         bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=g.ncync_server,
         groups={
             32770: {
                 "name": "Kitchen",
@@ -416,9 +414,7 @@ async def test_groups_created_when_enabled_with_registered_members(hass):
 
 
 async def test_groups_enabled_but_none_exist_creates_nothing(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {}
 
@@ -460,11 +456,10 @@ async def test_groups_created_with_real_entity_platform_add_entities(hass):
     """
     from datetime import timedelta
 
-    from cync_lan.structs import GlobalObject
     from homeassistant.const import Platform
     from homeassistant.helpers.entity_platform import EntityPlatform
 
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {
         1: _fake_node(id=1, name="Kitchen Sink Light"),
@@ -475,6 +470,7 @@ async def test_groups_created_with_real_entity_platform_add_entities(hass):
     entry.add_to_hass(hass)
     entry.runtime_data = MagicMock(
         bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=g.ncync_server,
         groups={
             32770: {"name": "Kitchen", "device_ids": [1, 2], "is_subgroup": False}
         },
@@ -518,9 +514,7 @@ async def test_group_skipped_when_no_members_resolve(hass):
     """A group whose device_ids don't map to any registered light entity
     (e.g. all its members are switches/plugs, or were never added) must be
     silently skipped, not create an empty/broken group entity."""
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {}
 
@@ -528,6 +522,7 @@ async def test_group_skipped_when_no_members_resolve(hass):
     entry.add_to_hass(hass)
     entry.runtime_data = MagicMock(
         bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=g.ncync_server,
         groups={99: {"name": "Ghost Group", "device_ids": [404], "is_subgroup": False}},
     )
 

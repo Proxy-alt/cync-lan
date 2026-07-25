@@ -141,7 +141,6 @@ async def test_get_cloud_api_injects_has_shared_session(hass):
     the API client creates for itself."""
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-    from cync_lan.cloud_api import CyncCloudAPI
 
     expected_session = async_get_clientsession(hass)
     api = get_cloud_api(hass)

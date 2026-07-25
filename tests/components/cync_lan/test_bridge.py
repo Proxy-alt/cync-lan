@@ -190,7 +190,7 @@ async def test_update_callbacks_create_state_when_none_exists(bridge):
     """Same regression as test_update_entity_power_...: every command-ack
     callback must be able to seed a fresh EntityState, not just mutate one
     that already exists."""
-    from cync_lan.structs import EntityState, FanSpeed
+    from cync_lan.structs import FanSpeed
 
     def _node(dev_id: int) -> MagicMock:
         # MagicMock(name=...) sets the mock's own repr, not a `.name`

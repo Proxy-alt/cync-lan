@@ -8,7 +8,6 @@ mirrored by the exclusion here.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
@@ -27,20 +26,16 @@ from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
     entities: list[SwitchEntity] = []
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         if node.is_switch and not node.is_fan_controller:
@@ -64,7 +59,7 @@ async def async_setup_entry(
     # Schedule enable/disable - home-wide, not tied to any device, attached
     # to the bridge device like scene.py's scene entities. See
     # CyncLanScheduleSwitch's docstring.
-    schedules = getattr(entry.runtime_data, "schedules", None) or {}
+    schedules = runtime_data.schedules or {}
     for schedule_id, schedule in schedules.items():
         entities.append(
             CyncLanScheduleSwitch(
@@ -164,7 +159,7 @@ class CyncLanMitmModeSwitch(CyncLanEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, RestoreEntity, SwitchEntity):
+class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, SwitchEntity):
     """Blink the indicator LED when the device loses WiFi - byte index 3 of
     the same set_indicator_led() payload as select.py's mode/color and
     number.py's brightness. See those files' module docstrings for the

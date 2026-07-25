@@ -40,7 +40,8 @@
     },
     "abort": {
       "already_configured": "This Cync account is already configured. Only one Cync LAN account is supported per Home Assistant instance.",
-      "unprovisioned_device_found": "This device hasn't been added to a Cync account yet, so there's nothing for Cync LAN to set up - see the previous screen for how to add it."
+      "unprovisioned_device_found": "This device hasn't been added to a Cync account yet, so there's nothing for Cync LAN to set up - see the previous screen for how to add it.",
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {

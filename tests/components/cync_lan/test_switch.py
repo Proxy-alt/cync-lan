@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.exceptions import HomeAssistantError
@@ -43,9 +44,7 @@ async def test_setup_entry_skips_unsupported_and_fan_controllers(hass):
     """CyncLanSwitch is gated on is_switch/not-fan-controller, but every
     supported node (regardless of is_switch) also gets an indicator-LED
     wifi-blink config switch - see test_setup_entry_creates_wifi_blink_switch_for_every_supported_node."""
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     unsupported = _fake_node(metadata=None)
     fan = _fake_node(is_fan_controller=True)
     not_switch = _fake_node(is_switch=False)
@@ -61,6 +60,7 @@ async def test_setup_entry_skips_unsupported_and_fan_controllers(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
 
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
@@ -71,9 +71,7 @@ async def test_setup_entry_skips_unsupported_and_fan_controllers(hass):
 
 
 async def test_setup_entry_creates_wifi_blink_switch_for_every_supported_node(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     unsupported = _fake_node(metadata=None)
     fan = _fake_node(is_fan_controller=True)
     not_switch = _fake_node(is_switch=False)
@@ -83,6 +81,7 @@ async def test_setup_entry_creates_wifi_blink_switch_for_every_supported_node(ha
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
 
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
@@ -94,9 +93,7 @@ async def test_setup_entry_creates_wifi_blink_switch_for_every_supported_node(ha
 
 
 async def test_setup_entry_creates_mitm_switch_only_for_wifi_devices(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     unsupported = _fake_node(metadata=None)
     bt_only = _fake_node(has_wifi=False, bt_only=True)
     wifi_capable = _fake_node()
@@ -106,6 +103,7 @@ async def test_setup_entry_creates_mitm_switch_only_for_wifi_devices(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
 
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
@@ -195,9 +193,9 @@ async def test_mitm_switch_turn_off_raises_when_no_active_session():
 
 
 async def test_setup_entry_creates_one_entity_per_sub_id(hass):
-    from cync_lan.structs import GlobalObject, EntityState
+    from cync_lan.structs import EntityState
 
-    g = GlobalObject()
+    g = SimpleNamespace()
     multi = _fake_node(
         has_multi_entities=True,
         entities={1: EntityState(name="Left", dev_id=4, sub_id=1), 2: EntityState(name="Right", dev_id=4, sub_id=2)},
@@ -208,6 +206,7 @@ async def test_setup_entry_creates_one_entity_per_sub_id(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
 
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
@@ -330,15 +329,14 @@ async def test_indicator_led_wifi_blink_full_restore_lifecycle(hass):
 
 
 async def test_setup_entry_creates_one_schedule_switch_per_schedule(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {}
 
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.schedules = {
         7: {"name": "Weekday Morning", "scene_id": 3, "enabled": True},
         9: {"name": "Weekend", "scene_id": 4, "enabled": False},
@@ -357,15 +355,14 @@ async def test_setup_entry_creates_one_schedule_switch_per_schedule(hass):
 
 
 async def test_setup_entry_no_schedules_creates_no_schedule_switches(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {}
 
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.schedules = {}
 
     added = []

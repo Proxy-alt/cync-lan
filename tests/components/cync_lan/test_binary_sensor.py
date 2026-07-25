@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.cync_lan.binary_sensor import (
@@ -32,9 +33,7 @@ def _fake_node(**overrides):
 
 
 async def test_setup_entry_skips_devices_without_motion_sensor(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     no_motion = _fake_node(has_motion_sensor=False)
     standalone = _fake_node()
     g.ncync_server = MagicMock()
@@ -43,6 +42,7 @@ async def test_setup_entry_skips_devices_without_motion_sensor(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}
 
     added = []

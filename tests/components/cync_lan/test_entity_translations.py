@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import CONF_ACCOUNT_PASSWORD, CONF_ACCOUNT_USERNAME
 
 DOMAIN = "cync_lan"
@@ -79,7 +78,7 @@ async def test_secondary_motion_sensor_translated_name_resolves(hass, tmp_path):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    state = hass.states.get(f"binary_sensor.hallway_switch_motion")
+    state = hass.states.get("binary_sensor.hallway_switch_motion")
     assert state is not None, (
         "expected an entity_id derived from the device name + translated "
         f"suffix; actual binary_sensor entities: "
@@ -128,7 +127,7 @@ async def test_grouped_schedule_sensor_placeholder_name_resolves(hass, tmp_path)
         await hass.async_block_till_done()
 
     # unique_id is entry_id_dev_id_schedule_groupid_slotname - group_id=1 (Parent)
-    entity_id = f"sensor.hallway_switch_parent_daytime_schedule"
+    entity_id = "sensor.hallway_switch_parent_daytime_schedule"
     state = hass.states.get(entity_id)
     assert state is not None, (
         f"actual sensor entities: {[s.entity_id for s in hass.states.async_all('sensor')]}"

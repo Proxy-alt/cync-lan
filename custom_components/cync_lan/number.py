@@ -7,7 +7,6 @@ restored-state string doesn't carry NumberEntity's native_value shape.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
@@ -22,20 +21,16 @@ from .entity import CyncLanIndicatorLedEntity
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
     entities: list[NumberEntity] = []
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         entities.append(CyncLanIndicatorLedBrightness(bridge, entry.entry_id, node))

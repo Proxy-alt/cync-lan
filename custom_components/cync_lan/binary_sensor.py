@@ -4,7 +4,6 @@ active" entity."""
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.components.binary_sensor import (
@@ -18,27 +17,23 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .bridge import CyncLanBridge
+from .bridge import CyncLanBridge, signal_entity_update
 from .const import DEFAULT_DISABLED_ENTITIES, DOMAIN, MANUFACTURER
 from .entity import CyncLanEntity
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
-    assert g.ncync_server is not None
-    bridge = entry.runtime_data.bridge
+    runtime_data = entry.runtime_data
+    bridge = runtime_data.bridge
     entities: list[BinarySensorEntity] = []
-    for node in g.ncync_server.node_devices.values():
+    for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
         if not node.has_motion_sensor:
@@ -98,14 +93,9 @@ class CyncLanAppMeshActiveSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        from .bridge import BridgeEntityState
-
-        bucket: BridgeEntityState = self._bridge._get(-1)
-        return bucket.app_mesh_active
+        return self._bridge.get_app_mesh_active()
 
     async def async_added_to_hass(self) -> None:
-        from .bridge import signal_entity_update
-
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
@@ -141,14 +131,9 @@ class CyncLanAppWifiActiveSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        from .bridge import BridgeEntityState
-
-        bucket: BridgeEntityState = self._bridge._get(-1)
-        return bucket.app_wifi_active
+        return self._bridge.get_app_wifi_active()
 
     async def async_added_to_hass(self) -> None:
-        from .bridge import signal_entity_update
-
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,

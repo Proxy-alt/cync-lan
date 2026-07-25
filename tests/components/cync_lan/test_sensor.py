@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.cync_lan.bridge import CyncLanBridge
@@ -56,9 +57,7 @@ async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass
     connection-diagnostic sensor (IP address, since has_wifi=True here)
     is unconditional for every supported device regardless of motion
     sensor/schedule status - 2 of the 3 devices are supported."""
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     unsupported = _fake_node(metadata=None)
     no_motion = _fake_node(id=1, has_motion_sensor=False)
     no_schedule = _fake_node(id=2)
@@ -68,6 +67,7 @@ async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}
 
     added = []
@@ -78,9 +78,7 @@ async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass
 
 
 async def test_setup_entry_creates_one_sensor_per_slot(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     node = _fake_node()
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {5: node}
@@ -88,6 +86,7 @@ async def test_setup_entry_creates_one_sensor_per_slot(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {
         32770: {
             "name": "Utility Room",
@@ -188,9 +187,7 @@ def test_entity_category_is_diagnostic():
 
 
 async def test_setup_entry_creates_ip_address_sensor_for_wifi_devices(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     node = _fake_node(has_wifi=True, bt_only=False)
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {5: node}
@@ -198,6 +195,7 @@ async def test_setup_entry_creates_ip_address_sensor_for_wifi_devices(hass):
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}
 
     added = []
@@ -209,9 +207,7 @@ async def test_setup_entry_creates_ip_address_sensor_for_wifi_devices(hass):
 
 
 async def test_setup_entry_creates_relay_source_sensor_for_bt_only_devices(hass):
-    from cync_lan.structs import GlobalObject
-
-    g = GlobalObject()
+    g = SimpleNamespace()
     node = _fake_node(has_wifi=False, bt_only=True)
     g.ncync_server = MagicMock()
     g.ncync_server.node_devices = {5: node}
@@ -219,6 +215,7 @@ async def test_setup_entry_creates_relay_source_sensor_for_bt_only_devices(hass)
     entry = MagicMock()
     entry.entry_id = "entry1"
     entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
     entry.runtime_data.groups = {}
 
     added = []

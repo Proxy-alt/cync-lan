@@ -1,31 +1,30 @@
 """Constants for the Cync LAN integration."""
 
-from datetime import timedelta
-
 DOMAIN = "cync_lan"
 
 # ConfigEntry.data keys (set once, immutable after setup - credentials/identity)
 CONF_ACCOUNT_USERNAME = "account_username"
 CONF_ACCOUNT_PASSWORD = "account_password"
-CONF_CORP_ID = "corp_id"
-CONF_HOME_ID = "home_id"
 
 # ConfigEntry.options keys (user-changeable via the options/reconfigure flow)
 CONF_LOCAL_PORT = "local_port"
 CONF_EXPORT_REFRESH_INTERVAL = "export_refresh_interval"
-CONF_TCP_WHITELIST = "tcp_whitelist"
 CONF_ENABLE_LIGHT_GROUPS = "enable_light_groups"
 CONF_HIDE_GROUP_MEMBERS = "hide_group_members"
 
 DEFAULT_LOCAL_PORT = 23779
 DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS = 24
-EXPORT_REFRESH_INTERVAL = timedelta(hours=DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS)
 DEFAULT_ENABLE_LIGHT_GROUPS = False
 DEFAULT_HIDE_GROUP_MEMBERS = False
 
-CYNC_API_BASE = "https://api.gelighting.com/v2/"
-CYNC_CLOUD_IP = "34.73.130.191"
 MANUFACTURER = "Savant"
+
+# Confirmed motion-sensor enums - see docs/mesh_opcodes.md
+# (MotionSensorSensitivity.java). Shared by services.py's
+# experimental_set_motion_sensor_settings and config_flow.py's options-flow
+# wizard, which send the same command and must not drift apart.
+MOTION_SENSOR_TYPE = {"motion": 1, "ambient_light": 2}
+MOTION_SENSOR_SENSITIVITY = {"high": 0, "medium": 1, "low": 2}
 
 # Diagnostic/noisy entities disabled by default (entity-disabled-by-default, gold)
 DEFAULT_DISABLED_ENTITIES = {"app_mesh_active", "app_wifi_active", "mitm_mode"}

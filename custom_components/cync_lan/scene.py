@@ -24,7 +24,6 @@ devices.py, not raised here.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.scene import Scene
@@ -35,14 +34,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, MANUFACTURER
 
-_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    scenes = getattr(entry.runtime_data, "scenes", None) or {}
+    scenes = entry.runtime_data.scenes or {}
     entities = [
         CyncLanScene(entry.entry_id, scene_id, scene["name"])
         for scene_id, scene in scenes.items()

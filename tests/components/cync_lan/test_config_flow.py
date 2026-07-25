@@ -232,8 +232,15 @@ async def test_bluetooth_discovery_shown_even_if_already_configured(hass):
 
 
 async def test_reauth_flow_success(hass, mock_cloud_api, mock_parse_config):
-    """reauthentication-flow (silver): triggered flow re-collects the
-    password, re-authenticates, and completes via the normal OTP step."""
+    """reauthentication-flow (silver): the triggered flow re-collects the
+    password, re-authenticates via the normal OTP step, then UPDATES the
+    existing entry and aborts.
+
+    It must not end in async_create_entry: Home Assistant raises
+    HomeAssistantError on that from a reauth flow, which used to make the
+    final step crash and left reauth impossible to complete. The old
+    version of this test stopped at the confirm step and never caught it.
+    """
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entry = MockConfigEntry(
@@ -254,7 +261,14 @@ async def test_reauth_flow_success(hass, mock_cloud_api, mock_parse_config):
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"otp_code": "123456"}
     )
-    assert result["step_id"] == "confirm"
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    # The one existing entry now carries the new password - no second entry.
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+    assert entry.data["account_password"] == "new-password"
+    assert entry.data["account_username"] == "user@example.com"
 
 
 async def test_reauth_flow_invalid_auth(hass, mock_cloud_api):
@@ -295,7 +309,7 @@ async def test_reauth_flow_cannot_connect(hass, mock_cloud_api):
 
 
 async def test_user_step_cannot_connect(hass, mock_cloud_api):
-    mock_cloud_api._check_session = AsyncMock(side_effect=RuntimeError("boom"))
+    mock_cloud_api.check_token = AsyncMock(side_effect=RuntimeError("boom"))
 
     result = await _start_user_step(hass)
     result = await hass.config_entries.flow.async_configure(

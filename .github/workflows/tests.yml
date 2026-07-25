@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - feature/ha-custom-component
+      - python
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: pytest + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+
+      - name: Run tests
+        run: pytest tests -q
+
+      # Non-blocking: the remaining strict-mode gaps are all untyped
+      # functions inside the installed cync-lan dependency, not this
+      # integration's own code - see mypy.ini. Reported so a NEW error
+      # introduced here is visible, without failing the build on the
+      # known dependency-side ones.
+      - name: Type check
+        continue-on-error: true
+        run: mypy -p custom_components.cync_lan

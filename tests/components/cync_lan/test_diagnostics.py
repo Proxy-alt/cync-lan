@@ -52,15 +52,16 @@ async def test_diagnostics_redacts_credentials_and_macs(hass):
     assert result["server"]["connected_tcp_devices"] == 1
 
 
-async def test_diagnostics_handles_missing_tcp_connections_attr(hass):
+async def test_diagnostics_reports_connected_tcp_device_count(hass):
     bridge = CyncLanBridge(hass, "entry1")
     node = _fake_node()
 
-    server = MagicMock(spec=["node_devices", "running", "host", "port"])
+    server = MagicMock(spec=["node_devices", "running", "host", "port", "tcp_connections"])
     server.node_devices = {5: node}
     server.running = False
     server.host = "0.0.0.0"
     server.port = 23779
+    server.tcp_connections = {"10.0.0.5": object(), "10.0.0.6": object()}
 
     entry = MagicMock()
     entry.data = {"account_username": "user@example.com", "account_password": "secret"}
@@ -69,4 +70,4 @@ async def test_diagnostics_handles_missing_tcp_connections_attr(hass):
     entry.runtime_data.ncync_server = server
 
     result = await async_get_config_entry_diagnostics(hass, entry)
-    assert result["server"]["connected_tcp_devices"] is None
+    assert result["server"]["connected_tcp_devices"] == 2

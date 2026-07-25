@@ -1,0 +1,13 @@
+# Test-only dependencies for the custom_components/cync_lan suite.
+# pytest-homeassistant-custom-component pins a matching homeassistant +
+# pytest + pytest-asyncio set, so it is the only thing that needs a bound
+# here; the integration's own runtime requirements live in manifest.json.
+pytest-homeassistant-custom-component>=0.13.346
+
+# manifest.json "requirements", installed so the integration imports the
+# real package under test rather than a stub.
+cync-lan>=0.1.2
+pyyaml>=6.0.2
+
+# Static type checking, run in the same job (see mypy.ini).
+mypy>=1.11
