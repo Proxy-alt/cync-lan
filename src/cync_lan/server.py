@@ -5,7 +5,7 @@ import datetime
 import logging
 import ssl
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import Dict, Optional, Union
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -15,13 +15,6 @@ from cryptography.x509.oid import NameOID
 from cync_lan.const import CYNC_LOG_NAME, CYNC_SRV_HOST, CYNC_SRV_PORT
 from cync_lan.devices import CyncDevice, CyncTCPSession
 from cync_lan.structs import GlobalObject
-
-if TYPE_CHECKING:
-    # See structs.py's identical guard for why this is TYPE_CHECKING-only:
-    # nothing here actually constructs a uvloop.Loop, only type-hints
-    # against it, and a real uvloop install currently has no PyPI wheels for
-    # newer CPython versions at all.
-    import uvloop
 
 # ---------------------------------------------------------------------------
 # nCyncServer is the TLS listener Cync Wi-Fi devices connect to once DNS
@@ -57,7 +50,6 @@ class nCyncServer:
     port: int
     cert_file: Optional[str] = None
     key_file: Optional[str] = None
-    loop: Union[asyncio.AbstractEventLoop, uvloop.Loop]
     _server: Optional[asyncio.Server] = None
     lp: str = "nCync:"
     start_task: Optional[asyncio.Task] = None
@@ -125,9 +117,14 @@ class nCyncServer:
         g.reload_env()
         self.cert_file = g.env.cync_srv_ssl_cert
         self.key_file = g.env.cync_srv_ssl_key
-        self.loop: Union[asyncio.AbstractEventLoop, uvloop.Loop] = (
-            asyncio.get_event_loop()
-        )
+        # No self.loop here. It was written and never read anywhere - not in
+        # this package, not in the add-on, not in the HA integration - and
+        # asyncio.get_event_loop() raises RuntimeError when no loop is
+        # current, which is exactly the state pytest-asyncio leaves behind
+        # after an async test. That turned a dead attribute into 16 failing
+        # tests on Python 3.12 and 3.14 in CI. Anything needing the loop can
+        # ask for it at the point of use, inside async context, where
+        # get_running_loop() is correct.
 
     async def remove_tcp_device(
         self, device: Union[CyncTCPSession, str]

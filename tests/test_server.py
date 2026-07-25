@@ -345,3 +345,31 @@ async def test_start_leaves_running_false_when_the_bind_fails(server):
         server_mod.asyncio.start_server = original
 
     assert server.running is False
+
+
+def test_construction_does_not_require_a_current_event_loop():
+    """nCyncServer must be constructible with no loop set.
+
+    __init__ used to stash asyncio.get_event_loop() into a self.loop that
+    nothing ever read. get_event_loop() raises when no loop is current -
+    exactly the state pytest-asyncio leaves behind after an async test - so
+    that dead attribute failed 16 tests in CI on 3.12 and 3.14 while passing
+    locally, where an ambient plugin happened to leave a loop set.
+    """
+    import asyncio
+
+    previous = None
+    try:
+        previous = asyncio.get_event_loop_policy().get_event_loop()
+    except RuntimeError:
+        pass
+    asyncio.set_event_loop(None)
+    try:
+        server = nCyncServer({})
+        assert server.tcp_connections == {}
+        assert not hasattr(server, "loop"), (
+            "self.loop is dead weight - anything needing the loop should call "
+            "get_running_loop() at the point of use"
+        )
+    finally:
+        asyncio.set_event_loop(previous)

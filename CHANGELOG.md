@@ -76,6 +76,11 @@ EXPERIMENTAL: the response channel is unconfirmed and may time out.
 
 **Removed** `parse_packet_OLD`, 769 lines of superseded dead code.
 
+**Removed** `nCyncServer.loop`. It was assigned in `__init__` and never read
+anywhere, and `asyncio.get_event_loop()` raises when no loop is current - so
+constructing the server outside a running loop crashed. Anything needing the
+loop should call `get_running_loop()` at the point of use.
+
 Housekeeping: ruff now runs in CI (it was configured but had never been run -
 444 violations, including the three undefined names above). Tests run on every
 push and pull request, not only on a version bump. `server.py` went from no
