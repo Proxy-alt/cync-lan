@@ -561,7 +561,9 @@ class CyncCloudAPI:
                 # cloud entry has no wifiMac key whatsoever). Downstream code already
                 # handles this gracefully via CyncDevice.bt_only, which skips using
                 # wifi_mac entirely for BTLE-only protocol devices.
-                wifi_mac = str(raw_device["wifiMac"]) if "wifiMac" in raw_device else None
+                wifi_mac = (
+                    str(raw_device["wifiMac"]) if "wifiMac" in raw_device else None
+                )
                 bt_mac = str(raw_device["mac"])
                 dev_name = str(raw_device["displayName"])
                 dev_type = int(raw_device["deviceType"])
@@ -714,7 +716,8 @@ class CyncCloudAPI:
                 if schedule_id is None or "sceneID" not in action:
                     continue
                 new_home["schedules"][schedule_id] = {
-                    "name": raw_schedule.get("displayName") or f"Schedule {schedule_id}",
+                    "name": raw_schedule.get("displayName")
+                    or f"Schedule {schedule_id}",
                     "scene_id": action["sceneID"],
                     # `state` is the closest boolean field on the DTO to
                     # an enabled/disabled flag - inferred, not confirmed,

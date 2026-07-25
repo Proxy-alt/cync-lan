@@ -92,10 +92,18 @@ class nCyncServer:
         # pool - confirmed via a real user's logs showing "writer is None,
         # can't write data!" thousands of times, once per command broadcast
         # per dead session still sitting in tcp_connections.
-        return [d for d in self.tcp_connections.values() if not d.is_closed() and not d.is_app]
+        return [
+            d
+            for d in self.tcp_connections.values()
+            if not d.is_closed() and not d.is_app
+        ]
 
     def get_dev_tcp_pool_sync(self):
-        return [d for d in self.tcp_connections.values() if not d.is_closed() and not d.is_app]
+        return [
+            d
+            for d in self.tcp_connections.values()
+            if not d.is_closed() and not d.is_app
+        ]
 
     def __init__(self, node_map: Dict[int, "CyncDevice"]):
         self.node_devices: Dict[int, "CyncDevice"] = node_map
@@ -190,7 +198,6 @@ class nCyncServer:
             f"{g.env.mqtt_topic}/status/bridge/tcp_devices/connected",
             str(len(devs)).encode(),
         )
-
 
     @staticmethod
     def _ensure_self_signed_cert(cert_path: str, key_path: str) -> None:

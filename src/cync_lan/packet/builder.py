@@ -3,6 +3,8 @@ import struct
 __all__ = [
     "PacketBuilder",
 ]
+
+
 class PacketBuilder:
     DATA_BOUNDARY = 0x7E
 
@@ -90,7 +92,9 @@ class PacketBuilder:
     @staticmethod
     def _require_u8(name: str, value: int) -> None:
         if not isinstance(value, int) or not (0 <= value <= 0xFF):
-            raise ValueError(f"{name} must be an integer between 0 and 255, got {value!r}")
+            raise ValueError(
+                f"{name} must be an integer between 0 and 255, got {value!r}"
+            )
 
     @classmethod
     def is_device_request(cls, packet_type: int) -> bool:
@@ -150,7 +154,9 @@ class PacketBuilder:
         return bytes([0x88, 0x00, 0x00, 0x00, 0x03]) + msg_id
 
     @staticmethod
-    def build_mesh_info_request(queue_id: bytes, msg_id: bytes = b"\x00\x00\x00") -> bytes:
+    def build_mesh_info_request(
+        queue_id: bytes, msg_id: bytes = b"\x00\x00\x00"
+    ) -> bytes:
         """Build the 0x73 request that asks a bridge for mesh status info."""
         PacketBuilder._require_len("queue_id", queue_id, 4)
         PacketBuilder._require_len("msg_id", msg_id, 3)
@@ -175,10 +181,14 @@ class PacketBuilder:
                 PacketBuilder.DATA_BOUNDARY,
             ]
         )
-        return PacketBuilder.build_outer_packet(0x73, queue_id, inner_packet, msg_id=msg_id)
+        return PacketBuilder.build_outer_packet(
+            0x73, queue_id, inner_packet, msg_id=msg_id
+        )
 
     @staticmethod
-    def build_mesh_status_ack(queue_id: bytes, msg_id: bytes = b"\x00\x00\x00") -> bytes:
+    def build_mesh_status_ack(
+        queue_id: bytes, msg_id: bytes = b"\x00\x00\x00"
+    ) -> bytes:
         """Build ACK packet sent after processing a mesh info page (0xF8 0xAF)."""
         PacketBuilder._require_len("queue_id", queue_id, 4)
         PacketBuilder._require_len("msg_id", msg_id, 3)
@@ -199,17 +209,19 @@ class PacketBuilder:
                 PacketBuilder.DATA_BOUNDARY,
             ]
         )
-        return PacketBuilder.build_outer_packet(0x73, queue_id, inner_packet, msg_id=msg_id)
+        return PacketBuilder.build_outer_packet(
+            0x73, queue_id, inner_packet, msg_id=msg_id
+        )
 
     @staticmethod
     def build_control_packet(
-            msg_id: int,
-            target_id: int,
-            sub_id: int,
-            op_code: int,
-            cmd_code: int,
-            command_payload: bytes,
-            repeat_op_code: bool = True,
+        msg_id: int,
+        target_id: int,
+        sub_id: int,
+        op_code: int,
+        cmd_code: int,
+        command_payload: bytes,
+        repeat_op_code: bool = True,
     ) -> bytes:
         """Builds the inner 0x7E bound packet structure.
 
@@ -243,8 +255,11 @@ class PacketBuilder:
         op_prefix = struct.pack(">B", op_code) if repeat_op_code else b""
         inner_data = header + routing + op_prefix + command_payload
         checksum = sum(inner_data[5:]) % 256
-        return (struct.pack(">B",PacketBuilder.DATA_BOUNDARY) + inner_data +
-                struct.pack(">BB", checksum, PacketBuilder.DATA_BOUNDARY))
+        return (
+            struct.pack(">B", PacketBuilder.DATA_BOUNDARY)
+            + inner_data
+            + struct.pack(">BB", checksum, PacketBuilder.DATA_BOUNDARY)
+        )
 
     @staticmethod
     def build_outer_packet(
@@ -263,6 +278,8 @@ class PacketBuilder:
         packet_length = len(queue_id) + 3 + len(inner_packet)
         length_multiplier, length_remainder = divmod(packet_length, 256)
         # 5 byte header
-        header = struct.pack(">BBBBB", packet_type, 0x00, 0x00, length_multiplier, length_remainder)
+        header = struct.pack(
+            ">BBBBB", packet_type, 0x00, 0x00, length_multiplier, length_remainder
+        )
 
         return header + queue_id + msg_id + inner_packet

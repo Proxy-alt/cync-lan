@@ -19,8 +19,11 @@ def _build_frame(msg_id: int, direction: int, op_code: int, payload: bytes) -> b
     decoder under test."""
     body = struct.pack("<BH", op_code, len(payload)) + payload
     checksum = sum(body) % 256
-    inner = struct.pack("<I", msg_id) + struct.pack("B", direction) + body + struct.pack(
-        "B", checksum
+    inner = (
+        struct.pack("<I", msg_id)
+        + struct.pack("B", direction)
+        + body
+        + struct.pack("B", checksum)
     )
     stuffed = bytearray()
     for b in inner:
@@ -61,8 +64,14 @@ def test_decode_handles_byte_stuffed_payload():
 
 def test_decode_rejects_bad_checksum():
     body = struct.pack("<BH", 0x10, 3) + bytes([0, 5, 0])
-    inner = struct.pack("<I", 12345) + struct.pack("B", Direction.RSP) + body + struct.pack(
-        "B", 0xFF  # deliberately wrong checksum
+    inner = (
+        struct.pack("<I", 12345)
+        + struct.pack("B", Direction.RSP)
+        + body
+        + struct.pack(
+            "B",
+            0xFF,  # deliberately wrong checksum
+        )
     )
     frame_bytes = bytes([0x7E]) + inner + bytes([0x7E])
 
@@ -71,8 +80,11 @@ def test_decode_rejects_bad_checksum():
 
 def test_decode_rejects_invalid_direction_byte():
     body = struct.pack("<BH", 0x10, 0)
-    inner = struct.pack("<I", 1) + struct.pack("B", 0x00) + body + struct.pack(
-        "B", sum(body) % 256
+    inner = (
+        struct.pack("<I", 1)
+        + struct.pack("B", 0x00)
+        + body
+        + struct.pack("B", sum(body) % 256)
     )
     frame_bytes = bytes([0x7E]) + inner + bytes([0x7E])
 
@@ -84,14 +96,18 @@ def test_decode_returns_none_for_non_frame_input():
     assert decode_xlink_frame(b"not a frame at all") is None
     assert decode_xlink_frame(bytes([0x7E, 0x01, 0x02])) is None  # no closing delimiter
     assert decode_xlink_frame(bytes([0x7E, 0x7E])) is None  # empty inner, too short
-    assert decode_xlink_frame(bytes([0x01, 0x02, 0x03])) is None  # doesn't even start with 0x7E
+    assert (
+        decode_xlink_frame(bytes([0x01, 0x02, 0x03])) is None
+    )  # doesn't even start with 0x7E
 
 
 def test_decode_never_raises_on_truncated_length_field():
     """A payload claiming a length longer than what's actually present must
     fail gracefully, not raise/crash - this is called speculatively against
     arbitrary unrecognized bytes."""
-    body = struct.pack("<BH", 0x10, 200) + bytes([1, 2, 3])  # claims 200-byte payload, has 3
+    body = struct.pack("<BH", 0x10, 200) + bytes(
+        [1, 2, 3]
+    )  # claims 200-byte payload, has 3
     inner = struct.pack("<I", 1) + struct.pack("B", Direction.RSP) + body
     frame_bytes = bytes([0x7E]) + inner + bytes([0x7E])
 

@@ -91,8 +91,12 @@ CYNC_EXPORT_SOURCE = os.environ.get("CYNC_EXPORT_SOURCE")
 CYNC_ACCOUNT_LANGUAGE: str = os.environ.get("CYNC_ACCOUNT_LANGUAGE", "en-us").casefold()
 CYNC_ACCOUNT_USERNAME: str = os.environ.get("CYNC_ACCOUNT_USERNAME", None)
 CYNC_ACCOUNT_PASSWORD: str = os.environ.get("CYNC_ACCOUNT_PASSWORD", None)
-CYNC_MITM_DEV_LOGGER: bool = os.environ.get("CYNC_MITM_DEV_LOGGER", 'no').casefold() in YES_ANSWER
-CYNC_MITM_APP_LOGGER: bool = os.environ.get("CYNC_MITM_APP_LOGGER", 'no').casefold() in YES_ANSWER
+CYNC_MITM_DEV_LOGGER: bool = (
+    os.environ.get("CYNC_MITM_DEV_LOGGER", "no").casefold() in YES_ANSWER
+)
+CYNC_MITM_APP_LOGGER: bool = (
+    os.environ.get("CYNC_MITM_APP_LOGGER", "no").casefold() in YES_ANSWER
+)
 
 CYNC_CMD_BROADCASTS: int = os.environ.get("CYNC_CMD_BROADCASTS", 2)
 if not CYNC_CMD_BROADCASTS:
@@ -134,9 +138,7 @@ CYNC_CONFIG_FILE_PATH: str = f"{CYNC_CONFIG_DIR}/cync_mesh.yaml"
 CYNC_UUID_PATH: str = f"{CYNC_CONFIG_DIR}/uuid.txt"
 CYNC_CLOUD_AUTH_PATH: str = f"{CYNC_CONFIG_DIR}/.cloud_auth.enc.json"
 
-CYNC_SSL_CERT: str = os.environ.get(
-    "CYNC_DEVICE_CERT", "/root/cync-lan/certs/cert.pem"
-)
+CYNC_SSL_CERT: str = os.environ.get("CYNC_DEVICE_CERT", "/root/cync-lan/certs/cert.pem")
 CYNC_SSL_KEY: str = os.environ.get("CYNC_DEVICE_KEY", "/root/cync-lan/certs/key.pem")
 
 CYNC_SRV_PORT = int(os.environ.get("CYNC_PORT", 23779))
@@ -209,7 +211,9 @@ FACTORY_EFFECTS_BYTES: Dict[str, Tuple[int, int]] = {
 # FACTORY_EFFECTS_BYTES) so 0x00 is a safe placeholder for every preset
 # that doesn't have a real captured value.
 LIGHT_RUN_MODE_EFFECTS: Dict[str, Tuple[int, int, int]] = {
-    **{name: (0x01, idx, nonce) for name, (idx, nonce) in FACTORY_EFFECTS_BYTES.items()},
+    **{
+        name: (0x01, idx, nonce) for name, (idx, nonce) in FACTORY_EFFECTS_BYTES.items()
+    },
     "static": (0x00, 0x00, 0x00),
     "music_midnight": (0x02, 1, 0x00),
     "music_earth_tones": (0x02, 2, 0x00),

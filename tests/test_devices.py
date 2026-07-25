@@ -119,7 +119,12 @@ async def test_broadcast_control_command_matches_packet_builder():
     # using the same msg_id the fake bridge's first get_ctrl_msg_id_bytes()
     # call returns (1).
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=5, sub_id=0, op_code=0xD0, cmd_code=0x0D, command_payload=payload
+        msg_id=1,
+        target_id=5,
+        sub_id=0,
+        op_code=0xD0,
+        cmd_code=0x0D,
+        command_payload=payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
         packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
@@ -187,7 +192,9 @@ async def test_set_fine_brightness_payload_shape():
     assert args[0] == 0xE2  # op
     assert args[1] == 0x0F  # predicted cmd_
     payload = args[3]
-    assert payload == struct.pack(">BBB", 0x11, 0x02, 0x08) + struct.pack(">HH", 500, 2000)
+    assert payload == struct.pack(">BBB", 0x11, 0x02, 0x08) + struct.pack(
+        ">HH", 500, 2000
+    )
 
 
 async def test_set_fine_brightness_rejects_invalid_brightness():
@@ -210,7 +217,9 @@ async def test_set_fine_brightness_clamps_fade_ms():
     await node.set_fine_brightness(50, 999999)
 
     payload = node.send_command.call_args.args[3]
-    assert payload == struct.pack(">BBB", 0x11, 0x02, 0x08) + struct.pack(">HH", 500, 65535)
+    assert payload == struct.pack(">BBB", 0x11, 0x02, 0x08) + struct.pack(
+        ">HH", 500, 65535
+    )
 
 
 async def test_set_indicator_led_payload_shape():
@@ -219,12 +228,16 @@ async def test_set_indicator_led_payload_shape():
     node.id = 5
     node.send_command = AsyncMock()
 
-    await node.set_indicator_led(mode=2, color=1, brightness=80, wifi_disconnect_blink=True)
+    await node.set_indicator_led(
+        mode=2, color=1, brightness=80, wifi_disconnect_blink=True
+    )
 
     args, kwargs = node.send_command.call_args
     assert args[0] == 0x8E  # op - real mesh-relay op, not the misread 0xF7
     assert args[1] == 0x0E  # predicted cmd_
-    assert args[3] == struct.pack(">BBBBBBB", 0xF7, 0x11, 0x02, 0x06, (2 << 4) | 1, 80, 1)
+    assert args[3] == struct.pack(
+        ">BBBBBBB", 0xF7, 0x11, 0x02, 0x06, (2 << 4) | 1, 80, 1
+    )
     assert kwargs["repeat_op_code"] is False
 
 
@@ -251,9 +264,9 @@ async def test_set_motion_sensor_settings_wires_into_send_command():
     args, kwargs = node.send_command.call_args
     assert args[0] == 0x8E  # op - real mesh-relay op, not the misread 0xF7
     assert args[1] == 0x13  # predicted cmd_ (corrected from an earlier miscount)
-    assert args[3] == struct.pack(">B", 0xF7) + CyncDevice._build_motion_sensor_settings_payload(
-        1, enabled=True
-    )
+    assert args[3] == struct.pack(
+        ">B", 0xF7
+    ) + CyncDevice._build_motion_sensor_settings_payload(1, enabled=True)
     assert kwargs["repeat_op_code"] is False
 
 
@@ -266,7 +279,10 @@ async def test_set_motion_sensor_schedule_cct_payload_shape():
     await node.set_motion_sensor_schedule(
         slot_id=1,  # Daytime
         mode=3,  # simple
-        start_hour=6, start_minute=30, end_hour=18, end_minute=0,
+        start_hour=6,
+        start_minute=30,
+        end_hour=18,
+        end_minute=0,
         brightness=80,
         cct=50,
     )
@@ -277,11 +293,19 @@ async def test_set_motion_sensor_schedule_cct_payload_shape():
     flags = 1 | 0x10  # slot_id=1, SIMPLE=0x10, no rgb flag
     assert args[3] == struct.pack(
         ">BBBBBBBBBBBBB",
-        0xF7, 0x11, 0x02, 0x0B,
+        0xF7,
+        0x11,
+        0x02,
+        0x0B,
         flags,
-        6, 30, 18, 0,
+        6,
+        30,
+        18,
+        0,
         80,
-        50, 0x00, 0x00,
+        50,
+        0x00,
+        0x00,
     )
     assert kwargs["repeat_op_code"] is False
 
@@ -295,7 +319,10 @@ async def test_set_motion_sensor_schedule_rgb_sets_flag_bit():
     await node.set_motion_sensor_schedule(
         slot_id=3,  # Sleep
         mode=0,  # disabled
-        start_hour=22, start_minute=0, end_hour=5, end_minute=59,
+        start_hour=22,
+        start_minute=0,
+        end_hour=5,
+        end_minute=59,
         brightness=10,
         rgb=(255, 128, 0),
     )
@@ -304,11 +331,19 @@ async def test_set_motion_sensor_schedule_rgb_sets_flag_bit():
     flags = 3 | 0x80 | 0x40  # slot_id=3, DISABLED=0x80, rgb flag=0x40
     assert args[3] == struct.pack(
         ">BBBBBBBBBBBBB",
-        0xF7, 0x11, 0x02, 0x0B,
+        0xF7,
+        0x11,
+        0x02,
+        0x0B,
         flags,
-        22, 0, 5, 59,
+        22,
+        0,
+        5,
+        59,
         10,
-        255, 128, 0,
+        255,
+        128,
+        0,
     )
 
 
@@ -319,9 +354,14 @@ async def test_set_motion_sensor_schedule_occupancy_mode_sets_no_bit():
     node.send_command = AsyncMock()
 
     await node.set_motion_sensor_schedule(
-        slot_id=0, mode=1,  # occupancy - no mode bit set
-        start_hour=0, start_minute=0, end_hour=0, end_minute=0,
-        brightness=0, cct=0,
+        slot_id=0,
+        mode=1,  # occupancy - no mode bit set
+        start_hour=0,
+        start_minute=0,
+        end_hour=0,
+        end_minute=0,
+        brightness=0,
+        cct=0,
     )
 
     args, _ = node.send_command.call_args
@@ -339,10 +379,16 @@ async def test_set_motion_sensor_schedule_rejects_invalid_inputs():
     await node.set_motion_sensor_schedule(0, 9, 0, 0, 0, 0, 50, cct=50)  # bad mode
     await node.set_motion_sensor_schedule(0, 3, 24, 0, 0, 0, 50, cct=50)  # bad hour
     await node.set_motion_sensor_schedule(0, 3, 0, 60, 0, 0, 50, cct=50)  # bad minute
-    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 101, cct=50)  # bad brightness
+    await node.set_motion_sensor_schedule(
+        0, 3, 0, 0, 0, 0, 101, cct=50
+    )  # bad brightness
     await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 50)  # neither cct nor rgb
-    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 50, cct=50, rgb=(1, 1, 1))  # both
-    await node.set_motion_sensor_schedule(0, 3, 0, 0, 0, 0, 50, rgb=(256, 0, 0))  # bad rgb channel
+    await node.set_motion_sensor_schedule(
+        0, 3, 0, 0, 0, 0, 50, cct=50, rgb=(1, 1, 1)
+    )  # both
+    await node.set_motion_sensor_schedule(
+        0, 3, 0, 0, 0, 0, 50, rgb=(256, 0, 0)
+    )  # bad rgb channel
     node.send_command.assert_not_awaited()
 
 
@@ -357,8 +403,13 @@ async def test_execute_scene_payload_shape():
     assert len(fake_bridge.written) == 1
     inner_payload = struct.pack(">BBBBB", 0xEF, 0x11, 0x02, 5, 0x01)
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0, op_code=0x8E, cmd_code=0x0C,
-        command_payload=inner_payload, repeat_op_code=False,
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0,
+        op_code=0x8E,
+        cmd_code=0x0C,
+        command_payload=inner_payload,
+        repeat_op_code=False,
     )
     expected_outer = PacketBuilder.build_outer_packet(
         packet_type=0x73, queue_id=b"\x00\x01\x02\x03", inner_packet=expected_inner
@@ -375,11 +426,18 @@ async def test_build_control_packet_matches_real_captured_packet():
     scenes), after set_indicator_led silently did nothing on real
     hardware with the previous op=0xF7 guess."""
     packet = PacketBuilder.build_control_packet(
-        msg_id=0x20, target_id=0xFF, sub_id=0xFF, op_code=0x8E, cmd_code=0x0B,
-        command_payload=bytes([0xF7, 0x11, 0x02, 0x21]), repeat_op_code=False,
+        msg_id=0x20,
+        target_id=0xFF,
+        sub_id=0xFF,
+        op_code=0x8E,
+        cmd_code=0x0B,
+        command_payload=bytes([0xF7, 0x11, 0x02, 0x21]),
+        repeat_op_code=False,
     )
     assert packet == bytes.fromhex(
-        "7e 20 00 00 00 f8 8e 0b 00 20 00 00 00 00 ff ff f7 11 02 21 e2 7e".replace(" ", "")
+        "7e 20 00 00 00 f8 8e 0b 00 20 00 00 00 00 ff ff f7 11 02 21 e2 7e".replace(
+            " ", ""
+        )
     )
 
 
@@ -402,7 +460,11 @@ async def test_delete_scene_payload_shape():
     assert len(fake_bridge.written) == 1
     inner_payload = struct.pack("<H", 300)
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0, op_code=0x1F, cmd_code=9,
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0,
+        op_code=0x1F,
+        cmd_code=9,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -430,7 +492,11 @@ async def test_delete_schedule_payload_shape():
     assert len(fake_bridge.written) == 1
     inner_payload = struct.pack("<H", 42)
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0, op_code=0x94, cmd_code=9,
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0,
+        op_code=0x94,
+        cmd_code=9,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -458,7 +524,11 @@ async def test_toggle_automation_payload_shape():
     )
     assert len(inner_payload) == 52
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0, op_code=0x93, cmd_code=7 + 52,
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0,
+        op_code=0x93,
+        cmd_code=7 + 52,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -484,7 +554,11 @@ async def test_toggle_automation_disabled_flag_byte():
         + bytes(16)
     )
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0, op_code=0x93, cmd_code=7 + 52,
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0,
+        op_code=0x93,
+        cmd_code=7 + 52,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -546,7 +620,11 @@ async def test_set_group_power_splits_group_id_into_target_and_sub_id():
     assert len(fake_bridge.written) == 1
     payload = struct.pack(">BBBBB", 0x11, 0x02, 1, 0x00, 0x00)
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x02, sub_id=0x80, op_code=0xD0, cmd_code=0x0D,
+        msg_id=1,
+        target_id=0x02,
+        sub_id=0x80,
+        op_code=0xD0,
+        cmd_code=0x0D,
         command_payload=payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -567,7 +645,11 @@ async def test_set_group_power_reuses_confirmed_set_power_op_and_cmd():
 
     inner_payload = struct.pack(">BBBBB", 0x11, 0x02, 0, 0x00, 0x00)
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0xD0, cmd_code=0x0D,
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0x00,
+        op_code=0xD0,
+        cmd_code=0x0D,
         command_payload=inner_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -625,9 +707,12 @@ async def test_set_group_membership_add_payload_shape_common_case():
 
     args, kwargs = node.send_command.call_args
     assert args[0] == 0x8E  # op - 0x8E-relay substitution, not the embedded 0xD7
-    payload = struct.pack(">B", 0xD7) + struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack(
-        "<H", 32770
-    ) + struct.pack(">B", 0x00)
+    payload = (
+        struct.pack(">B", 0xD7)
+        + struct.pack(">BBB", 0x11, 0x02, 1)
+        + struct.pack("<H", 32770)
+        + struct.pack(">B", 0x00)
+    )
     assert args[3] == payload
     assert args[1] == 7 + len(payload)  # predicted cmd_
     assert kwargs == {"repeat_op_code": False}
@@ -666,9 +751,9 @@ async def test_set_group_membership_add_payload_shape_sol_lamp():
     args, kwargs = node.send_command.call_args
     assert args[0] == 0xD7
     assert args[1] == 0x0E  # predicted cmd_ (8 + 6-byte payload)
-    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack("<H", 32770) + struct.pack(
-        ">B", 0x00
-    )
+    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 1) + struct.pack(
+        "<H", 32770
+    ) + struct.pack(">B", 0x00)
     assert kwargs == {}
 
 
@@ -683,9 +768,9 @@ async def test_set_group_membership_remove_payload_shape_sol_lamp():
 
     args, kwargs = node.send_command.call_args
     assert args[0] == 0xD7
-    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 0) + struct.pack("<H", 32770) + struct.pack(
-        ">B", 0x87
-    )
+    assert args[3] == struct.pack(">BBB", 0x11, 0x02, 0) + struct.pack(
+        "<H", 32770
+    ) + struct.pack(">B", 0x87)
 
 
 async def test_set_group_membership_rejects_invalid_inputs():
@@ -699,13 +784,18 @@ async def test_set_group_membership_rejects_invalid_inputs():
     node.send_command.assert_not_awaited()
 
 
-def _build_xlink_frame(msg_id: int, direction: int, op_code: int, payload: bytes) -> bytes:
+def _build_xlink_frame(
+    msg_id: int, direction: int, op_code: int, payload: bytes
+) -> bytes:
     """Reference encoder for tests only - cync-lan itself never emits a
     genuine Xlink/Frame frame, see xlink_legacy.py's module docstring."""
     body = struct.pack("<BH", op_code, len(payload)) + payload
     checksum = sum(body) % 256
-    inner = struct.pack("<I", msg_id) + struct.pack("B", direction) + body + struct.pack(
-        "B", checksum
+    inner = (
+        struct.pack("<I", msg_id)
+        + struct.pack("B", direction)
+        + body
+        + struct.pack("B", checksum)
     )
     stuffed = bytearray()
     for b in inner:
@@ -748,7 +838,9 @@ async def test_try_resolve_xlink_notification_ignores_unrelated_op_code():
 
 
 async def test_try_resolve_xlink_notification_returns_false_for_non_frame_bytes():
-    assert try_resolve_xlink_notification(b"\xfa\xdb\x13\x00\x00\x00\x00\x00\x01") is False
+    assert (
+        try_resolve_xlink_notification(b"\xfa\xdb\x13\x00\x00\x00\x00\x00\x01") is False
+    )
 
 
 async def test_await_xlink_notification_returns_payload_when_resolved():
@@ -815,11 +907,17 @@ async def test_create_scene_payload_shape_and_success_response():
 
     assert scene_id == 42
     assert len(fake_bridge.written) == 1
-    expected_payload = "Movie Night".encode("utf-8").ljust(30, b"\x00") + struct.pack(
-        "<H", 0
-    ) + bytes(18)
+    expected_payload = (
+        "Movie Night".encode("utf-8").ljust(30, b"\x00")
+        + struct.pack("<H", 0)
+        + bytes(18)
+    )
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0x10, cmd_code=7 + len(expected_payload),
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0x00,
+        op_code=0x10,
+        cmd_code=7 + len(expected_payload),
         command_payload=expected_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -919,7 +1017,11 @@ async def test_create_schedule_payload_shape_and_success_response():
     )
     assert len(expected_payload) == 50
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0x92, cmd_code=7 + len(expected_payload),
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0x00,
+        op_code=0x92,
+        cmd_code=7 + len(expected_payload),
         command_payload=expected_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -971,7 +1073,11 @@ async def test_add_automation_payload_shape():
     )
     assert len(expected_payload) == 11
     expected_inner = PacketBuilder.build_control_packet(
-        msg_id=1, target_id=0x00, sub_id=0x00, op_code=0x95, cmd_code=7 + len(expected_payload),
+        msg_id=1,
+        target_id=0x00,
+        sub_id=0x00,
+        op_code=0x95,
+        cmd_code=7 + len(expected_payload),
         command_payload=expected_payload,
     )
     expected_outer = PacketBuilder.build_outer_packet(
@@ -1076,7 +1182,9 @@ async def test_remove_from_scene_non_sol_lamp_payload_shape():
 
     args, kwargs = node.send_command.call_args
     assert args[0] == 0x8E
-    expected_payload = struct.pack(">BBBB", 0xEE, 0x11, 0x02, 0x00) + struct.pack(">B", 3)
+    expected_payload = struct.pack(">BBBB", 0xEE, 0x11, 0x02, 0x00) + struct.pack(
+        ">B", 3
+    )
     assert len(expected_payload) == 5
     assert args[1] == 7 + len(expected_payload)
     assert args[3] == expected_payload
@@ -1123,7 +1231,9 @@ async def test_set_multicolor_gradient_mode_enabled_payload_shape():
 
     args, kwargs = node.send_command.call_args
     assert args[0] == 0x8E
-    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0x00, 1)
+    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(
+        ">BB", 0x00, 1
+    )
     assert args[1] == 7 + len(expected_payload)
     assert args[3] == expected_payload
     assert kwargs == {"repeat_op_code": False}
@@ -1137,7 +1247,9 @@ async def test_set_multicolor_gradient_mode_disabled_payload_shape():
     await node.set_multicolor_gradient_mode(enabled=False)
 
     args, kwargs = node.send_command.call_args
-    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0x00, 0)
+    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(
+        ">BB", 0x00, 0
+    )
     assert args[3] == expected_payload
 
 
@@ -1150,7 +1262,9 @@ async def test_set_multicolor_segment_count_payload_shape():
 
     args, kwargs = node.send_command.call_args
     assert args[0] == 0x8E
-    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0xFF, 12)
+    expected_payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(
+        ">BB", 0xFF, 12
+    )
     assert args[1] == 7 + len(expected_payload)
     assert args[3] == expected_payload
     assert kwargs == {"repeat_op_code": False}
@@ -1346,7 +1460,9 @@ def _fake_session(node=None):
     test to close()'s device-offline-marking behavior specifically."""
     from cync_lan.devices import CyncTCPSession
 
-    session = CyncTCPSession(reader=MagicMock(), writer=MagicMock(), ip_address="127.0.0.1")
+    session = CyncTCPSession(
+        reader=MagicMock(), writer=MagicMock(), ip_address="127.0.0.1"
+    )
     session.writer = None
     session.reader = None
     session.node = node
@@ -1413,9 +1529,13 @@ async def test_parse_83_device_state_records_relay_source():
 
     packet_data = bytearray(26)
     packet_data[14] = 5  # dev_id
-    packet_data[19:26] = bytes([1, 1, 100, 50, 0, 0, 0])  # recently_seen/power/bri/tmp/r/g/b
+    packet_data[19:26] = bytes(
+        [1, 1, 100, 50, 0, 0, 0]
+    )  # recently_seen/power/bri/tmp/r/g/b
 
-    await session._parse_83_device_state(bytes(packet_data), checksum=0, calc_chksum=0, lp="test:")
+    await session._parse_83_device_state(
+        bytes(packet_data), checksum=0, calc_chksum=0, lp="test:"
+    )
 
     assert node.relay_source is session
     node.handle_entity_update.assert_awaited_once()

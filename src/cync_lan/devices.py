@@ -29,7 +29,8 @@ from cync_lan.const import (
     LIGHT_RUN_MODE_EFFECTS,
     RAW_MSG,
     STREAM_CHUNK_SIZE,
-    TCP_BLACKHOLE_DELAY, CYNC_MITM_APP_LOGGER,
+    TCP_BLACKHOLE_DELAY,
+    CYNC_MITM_APP_LOGGER,
 )
 from cync_lan.metadata.model_info import (
     MULTI_ENDPOINT_TYPES,
@@ -45,7 +46,8 @@ from cync_lan.structs import (
     FanSpeed,
     GlobalObject,
     MessageCache,
-    Tasks, ConnectionType,
+    Tasks,
+    ConnectionType,
 )
 from cync_lan.utils import bytes2list, extract_firmware_dynamically, format_socat_style
 
@@ -195,7 +197,9 @@ def _get_experimental_logger() -> logging.Logger:
         formatter = logging.Formatter(
             "%(asctime)s.%(msecs)03d %(message)s", datefmt="%Y/%m/%d %H:%M:%S"
         )
-        file_handler = logging.handlers.TimedRotatingFileHandler(log_path, when="midnight")
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            log_path, when="midnight"
+        )
         file_handler.setFormatter(formatter)
         elogger.addHandler(file_handler)
     except OSError as e:
@@ -421,7 +425,9 @@ def try_resolve_xlink_notification(packet_data: bytes) -> bool:
     return True
 
 
-async def _await_xlink_notification(op_code: int, timeout: float = 10.0) -> Optional[bytes]:
+async def _await_xlink_notification(
+    op_code: int, timeout: float = 10.0
+) -> Optional[bytes]:
     """Register a pending wait for a legacy Xlink/Frame HDLC notification
     with this op_code, then wait up to `timeout` seconds (10s matches the
     real app's own StatusNotificationQueryCommand default). Returns the raw
@@ -468,7 +474,9 @@ async def broadcast_control_command(
     tasks = []
     tcp_pool = await g.ncync_server.get_dev_tcp_pool()
     if not tcp_pool:
-        logger.debug(f"{lp} no eligible TCP connections available for command broadcast")
+        logger.debug(
+            f"{lp} no eligible TCP connections available for command broadcast"
+        )
         return
 
     tcp_connections: List["CyncTCPSession"] = random.sample(
@@ -492,7 +500,7 @@ async def broadcast_control_command(
             full_packet = PacketBuilder.build_outer_packet(
                 packet_type=0x73,
                 queue_id=bridge_device.queue_id,
-                inner_packet=inner_pkt
+                inner_packet=inner_pkt,
             )
 
             # bridge_device.node can still be None here: ready_to_control is set
@@ -502,12 +510,15 @@ async def broadcast_control_command(
             # whole MQTT receive loop (uncaught AttributeError propagating out
             # of send_command), taking down MQTT state updates and command
             # handling until a manual restart.
-            bridge_node_id = bridge_device.node.id if bridge_device.node else "unidentified"
+            bridge_node_id = (
+                bridge_device.node.id if bridge_device.node else "unidentified"
+            )
 
             if bridge_device.mitm_mode is True:
                 logger.debug(
                     f"{lp} MITM mode active for this device: {bridge_device.ip_address} (ID: {bridge_node_id})"
-                    f" not writing data >>> \n\n{full_packet.hex(" ")}")
+                    f" not writing data >>> \n\n{full_packet.hex(' ')}"
+                )
             else:
                 m_cb.id = cmsg_id
                 m_cb.message = full_packet
@@ -516,9 +527,11 @@ async def broadcast_control_command(
                 tasks.append(bridge_device.write(full_packet))
                 str_appnd = "..."
                 if CYNC_RAW:
-                    str_appnd = (f' state to device ({bridge_device.ip_address}[{bridge_node_id}|queue_id: {bridge_device.queue_id.hex(" ")}):\n'
-                                 f'HEX: {full_packet.hex(" ")}\n'
-                                 f'INT: {bytes2list(full_packet)}\n')
+                    str_appnd = (
+                        f" state to device ({bridge_device.ip_address}[{bridge_node_id}|queue_id: {bridge_device.queue_id.hex(' ')}):\n"
+                        f"HEX: {full_packet.hex(' ')}\n"
+                        f"INT: {bytes2list(full_packet)}\n"
+                    )
                     logger.debug(f"{lp} Sending{str_appnd}")
 
     if tasks:
@@ -809,7 +822,9 @@ async def create_scene(name: str, timeout: float = 10.0) -> Optional[int]:
         )
         return None
     if len(response) < 3:
-        logger.error(f"{lp} Malformed response (expected >=3 bytes, got {len(response)})")
+        logger.error(
+            f"{lp} Malformed response (expected >=3 bytes, got {len(response)})"
+        )
         return None
     error_code = response[0]
     scene_id = struct.unpack_from("<H", response, 1)[0]
@@ -877,12 +892,16 @@ async def create_schedule(
         )
         return None
     if len(response) < 3:
-        logger.error(f"{lp} Malformed response (expected >=3 bytes, got {len(response)})")
+        logger.error(
+            f"{lp} Malformed response (expected >=3 bytes, got {len(response)})"
+        )
         return None
     error_code = response[0]
     schedule_id = struct.unpack_from("<H", response, 1)[0]
     if error_code != 0:
-        logger.error(f"{lp} Hub reported errorCode={error_code} for scene_id={scene_id}")
+        logger.error(
+            f"{lp} Hub reported errorCode={error_code} for scene_id={scene_id}"
+        )
         return None
     logger.info(
         f"{lp} Created schedule -> schedule_id={schedule_id} (scene_id={scene_id})"
@@ -1434,14 +1453,18 @@ class CyncDevice:
         ts = time.time()
         is_recent = bool(e_state.recently_seen)
         sub_fmt_str = (
-            " '{}' ({})".format(e_state.name, e_state.sub_id) if e_state.sub_id > 0 else ""
+            " '{}' ({})".format(e_state.name, e_state.sub_id)
+            if e_state.sub_id > 0
+            else ""
         )
         if not is_recent:
             if self.metadata is not None:
                 if not self.metadata.supported:
                     return False
 
-            logger.debug(f"{self.lp}{sub_fmt_str} seems to have STALE data (no BT mesh activity)")
+            logger.debug(
+                f"{self.lp}{sub_fmt_str} seems to have STALE data (no BT mesh activity)"
+            )
             self.num_late_states += 1
             tcp_pool = await g.ncync_server.get_dev_tcp_pool()
             tcp_count = len(tcp_pool) or 1
@@ -1462,8 +1485,10 @@ class CyncDevice:
                     )
                 return True
             else:
-                logger.debug(f"{self.lp} recently seeen: {is_recent} but its marked as shouldnt be offline: "
-                             f"stale state count {self.num_late_states} / num tcp nodes {tcp_count}\nTCP pool: {tcp_pool}")
+                logger.debug(
+                    f"{self.lp} recently seeen: {is_recent} but its marked as shouldnt be offline: "
+                    f"stale state count {self.num_late_states} / num tcp nodes {tcp_count}\nTCP pool: {tcp_pool}"
+                )
 
         if not self.online:
             logger.info(
@@ -1479,7 +1504,9 @@ class CyncDevice:
         g.ncync_server.node_devices[self.id] = self
         return await g.mqtt_client.parse_entity_state(e_state, from_pkt=from_pkt)
 
-    async def handle_motion_update(self, motion: bool, from_pkt: Optional[str] = None) -> bool:
+    async def handle_motion_update(
+        self, motion: bool, from_pkt: Optional[str] = None
+    ) -> bool:
         """Publish a motion-sensor trigger state.
 
         Deliberately does NOT route through handle_entity_update: that function's
@@ -1546,8 +1573,7 @@ class CyncDevice:
             return False
         try:
             await self.set_brightness(
-                perc,
-                callback=partial(g.mqtt_client.update_fan_percent, self, perc)
+                perc, callback=partial(g.mqtt_client.update_fan_percent, self, perc)
             )
         except asyncio.CancelledError as ce:
             raise ce
@@ -1572,7 +1598,7 @@ class CyncDevice:
         try:
             await self.set_brightness(
                 speed.to_perc(),
-                callback=partial(g.mqtt_client.update_fan_speed, self, speed)
+                callback=partial(g.mqtt_client.update_fan_speed, self, speed),
             )
         except asyncio.CancelledError as ce:
             raise ce
@@ -1596,13 +1622,13 @@ class CyncDevice:
             msg_id=0x00,
             message=None,
             sent_at=0.0,
-            callback=partial(
-                g.mqtt_client.update_entity_power, self, state, _sub_id
-            ),
+            callback=partial(g.mqtt_client.update_entity_power, self, state, _sub_id),
         )
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
-    async def set_brightness(self, bri: int, sub_id: Optional[int] = None, callback = None):
+    async def set_brightness(
+        self, bri: int, sub_id: Optional[int] = None, callback=None
+    ):
         lp = f"{self.lp}set_brightness:"
         if not (0 <= bri <= 100):
             logger.error(f"{lp} Invalid brightness: {bri} must be 0-100")
@@ -1617,7 +1643,9 @@ class CyncDevice:
             payload = struct.pack(">BBBBB", 0x11, 0x02, bri, 0x00, 0x00)
         else:
             # 8 bytes, all unsigned chars
-            payload = struct.pack(">BBBBBBBB", 0x11, 0x02, 0x01, bri, 0xFF, 0xFF, 0xFF, 0xFF)
+            payload = struct.pack(
+                ">BBBBBBBB", 0x11, 0x02, 0x01, bri, 0xFF, 0xFF, 0xFF, 0xFF
+            )
         if callback is None:
             callback = partial(g.mqtt_client.update_brightness, self, bri)
         m_cb = ControlMessageCallback(
@@ -1694,7 +1722,7 @@ class CyncDevice:
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
     async def set_rgb(
-            self, red: int, green: int, blue: int, sub_id: Optional[int] = None
+        self, red: int, green: int, blue: int, sub_id: Optional[int] = None
     ):
         lp = f"{self.lp}set_rgb:"
         if not (0 <= red <= 255) or not (0 <= green <= 255) or not (0 <= blue <= 255):
@@ -1713,9 +1741,7 @@ class CyncDevice:
             msg_id=0x00,
             message=None,
             sent_at=0.0,
-            callback=partial(
-                g.mqtt_client.update_rgb, self, (red, green, blue)
-            ),
+            callback=partial(g.mqtt_client.update_rgb, self, (red, green, blue)),
         )
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
@@ -1740,9 +1766,7 @@ class CyncDevice:
             message=None,
             sent_at=0.0,
             # set to black to make it standout
-            callback=partial(
-                g.mqtt_client.update_rgb, self, (0, 0, 0)
-            ),
+            callback=partial(g.mqtt_client.update_rgb, self, (0, 0, 0)),
         )
         await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
 
@@ -1800,12 +1824,16 @@ class CyncDevice:
         lp = f"{self.lp}set_multicolor_gradient_mode:"
         _warn_experimental_cmd_code(lp, "set_multicolor_gradient_mode")
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
         payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(
             ">BB", 0x00, 1 if enabled else 0
         )
         cmd_ = 7 + len(payload)
-        await self.send_command(0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        await self.send_command(
+            0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
     async def set_multicolor_segment_count(
         self, count: int, sub_id: Optional[int] = None
@@ -1831,10 +1859,16 @@ class CyncDevice:
             logger.error(f"{lp} Invalid count: {count} must be 0-255")
             return
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">BB", 0xFF, count)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        payload = struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(
+            ">BB", 0xFF, count
+        )
         cmd_ = 7 + len(payload)
-        await self.send_command(0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        await self.send_command(
+            0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
     async def set_multicolor_segments(
         self,
@@ -1876,7 +1910,9 @@ class CyncDevice:
         lp = f"{self.lp}set_multicolor_segments:"
         _warn_experimental_cmd_code(lp, "set_multicolor_segments")
         if not (1 <= len(segments) <= 2):
-            logger.error(f"{lp} Invalid segments: must be 1 or 2 tuples, got {len(segments)}")
+            logger.error(
+                f"{lp} Invalid segments: must be 1 or 2 tuples, got {len(segments)}"
+            )
             return
         slot_bytes = b""
         for position, rgb in segments:
@@ -1896,12 +1932,18 @@ class CyncDevice:
             slot_bytes += struct.pack(">BBBB", pos_byte, r, g, b)
         slot_bytes += b"\xff\xff\xff\xff" * (2 - len(segments))
         payload = (
-            struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E) + struct.pack(">B", 1) + slot_bytes
+            struct.pack(">BBBB", 0xF7, 0x11, 0x02, 0x4E)
+            + struct.pack(">B", 1)
+            + slot_bytes
         )
         cmd_ = 7 + len(payload)
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
     async def set_group_membership(
         self,
@@ -1970,7 +2012,9 @@ class CyncDevice:
         _sub_id = sub_id if sub_id is not None else 0x00
         action = 1 if member else 0
         group_bytes = struct.pack("<H", group_id)
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
         if self.is_sol_lamp:
             # Confirmed real op_code, trustworthy f()/mo14054f envelope -
             # the SDK's own "is this device a Hub product" flag is true.
@@ -1995,7 +2039,9 @@ class CyncDevice:
                 + struct.pack(">B", reach_flag)
             )
             cmd_ = 7 + len(payload)
-            await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+            await self.send_command(
+                op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+            )
 
     async def add_to_scene(
         self,
@@ -2059,7 +2105,9 @@ class CyncDevice:
             )
             return
         if not (0 <= scene_id <= 0xFF):
-            logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-255 (1-byte field)")
+            logger.error(
+                f"{lp} Invalid scene_id: {scene_id} must be 0-255 (1-byte field)"
+            )
             return
         if (cct is None) == (rgb is None):
             logger.error(f"{lp} Exactly one of cct or rgb must be given")
@@ -2091,10 +2139,16 @@ class CyncDevice:
         )
         cmd_ = 7 + len(payload)
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
-    async def remove_from_scene(self, scene_id: int, sub_id: Optional[int] = None) -> None:
+    async def remove_from_scene(
+        self, scene_id: int, sub_id: Optional[int] = None
+    ) -> None:
         """EXPERIMENTAL: removes THIS device's captured state from an
         existing scene (by scene_id) - the counterpart to add_to_scene().
         Unlike add_to_scene(), BOTH product-family branches are
@@ -2140,20 +2194,32 @@ class CyncDevice:
         lp = f"{self.lp}remove_from_scene:"
         _warn_experimental_cmd_code(lp, "remove_from_scene")
         if not (0 <= scene_id <= 0xFF):
-            logger.error(f"{lp} Invalid scene_id: {scene_id} must be 0-255 (1-byte field)")
+            logger.error(
+                f"{lp} Invalid scene_id: {scene_id} must be 0-255 (1-byte field)"
+            )
             return
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
         if self.is_sol_lamp:
             op = 0xEE
-            payload = struct.pack(">BBB", 0x11, 0x02, 0x00) + struct.pack(">B", scene_id)
-            cmd_ = 7 + len(payload) + 1  # +1: repeated op_code byte (repeat_op_code default True)
+            payload = struct.pack(">BBB", 0x11, 0x02, 0x00) + struct.pack(
+                ">B", scene_id
+            )
+            cmd_ = (
+                7 + len(payload) + 1
+            )  # +1: repeated op_code byte (repeat_op_code default True)
             await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp)
         else:
             op = 0x8E
-            payload = struct.pack(">BBBB", 0xEE, 0x11, 0x02, 0x00) + struct.pack(">B", scene_id)
+            payload = struct.pack(">BBBB", 0xEE, 0x11, 0x02, 0x00) + struct.pack(
+                ">B", scene_id
+            )
             cmd_ = 7 + len(payload)
-            await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+            await self.send_command(
+                op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+            )
 
     @staticmethod
     def _build_motion_sensor_settings_payload(
@@ -2274,15 +2340,24 @@ class CyncDevice:
         cmd_ = 0x13
         payload = struct.pack(">B", 0xF7) + inner_payload
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
     # MotionSensorResponseMode.java's ordinals (the natural/public input value)
     # mapped to their real wire-format flags-byte bits - NOT the same numbers,
     # confirmed via SetMotionSensorScheduleCommand.m14101x()'s if/else-if chain,
     # not derived from the ordinals themselves. OCCUPANCY sets no bit at all
     # (the implicit "else" case).
-    _MOTION_SCHEDULE_MODE_BITS = {0: 0x80, 1: 0x00, 2: 0x20, 3: 0x10}  # DISABLED/OCCUPANCY/VACANCY/SIMPLE
+    _MOTION_SCHEDULE_MODE_BITS = {
+        0: 0x80,
+        1: 0x00,
+        2: 0x20,
+        3: 0x10,
+    }  # DISABLED/OCCUPANCY/VACANCY/SIMPLE
 
     async def set_motion_sensor_schedule(
         self,
@@ -2375,16 +2450,25 @@ class CyncDevice:
         cmd_ = 0x14
         payload = struct.pack(
             ">BBBBBBBBBBBBB",
-            0xF7, 0x11, 0x02, 0x0B,
+            0xF7,
+            0x11,
+            0x02,
+            0x0B,
             flags,
-            start_hour, start_minute,
-            end_hour, end_minute,
+            start_hour,
+            start_minute,
+            end_hour,
+            end_minute,
             brightness,
             *color,
         )
         _sub_id = sub_id if sub_id is not None else 0x00
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
     async def set_indicator_led(
         self,
@@ -2428,10 +2512,14 @@ class CyncDevice:
         """
         lp = f"{self.lp}set_indicator_led:"
         if mode not in (0, 1, 2):
-            logger.error(f"{lp} Invalid mode: {mode} must be 0 (always on), 1 (always off), or 2 (normal)")
+            logger.error(
+                f"{lp} Invalid mode: {mode} must be 0 (always on), 1 (always off), or 2 (normal)"
+            )
             return
         if color not in (0, 1, 2, 3):
-            logger.error(f"{lp} Invalid color: {color} must be 0-3 (white/red/green/blue)")
+            logger.error(
+                f"{lp} Invalid color: {color} must be 0-3 (white/red/green/blue)"
+            )
             return
         if not (1 <= brightness <= 100):
             logger.error(f"{lp} Invalid brightness: {brightness} must be 1-100")
@@ -2453,8 +2541,12 @@ class CyncDevice:
             brightness,
             1 if wifi_disconnect_blink else 0,
         )
-        m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-        await self.send_command(op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            op, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
 
 
 class CyncTCPSession:
@@ -2521,7 +2613,6 @@ class CyncTCPSession:
         self.closing = False
         self.mitm_button_added = False
 
-
     async def existing_init(self):
         """Used when replacing an existing TCP connection, when a device reconnects"""
         lp = f"{self.lp}existing init:"
@@ -2541,7 +2632,9 @@ class CyncTCPSession:
         self.lp = f"{self.ip_address}:"
         self.tasks = Tasks()
         if self.mitm_mode is True:
-            logger.debug(f"{lp} MITM mode is active, making sure the proxy is started...")
+            logger.debug(
+                f"{lp} MITM mode is active, making sure the proxy is started..."
+            )
             if self.node:
                 await g.mqtt_client.add_mitm_button(self.node)
             if not self.is_proxy_good():
@@ -2550,7 +2643,6 @@ class CyncTCPSession:
                 await self.start_proxy()
             else:
                 logger.debug(f"{lp} Proxy connection is up!")
-
 
     async def start_proxy(self):
         lp = f"{self.lp}start proxy:"
@@ -2571,7 +2663,7 @@ class CyncTCPSession:
             )
             self.tasks.proxy_conn_watcher = asyncio.create_task(
                 self.connection_watcher_task(ConnectionType.proxy),
-                name=f"proxy_connection_watcher-{self.ip_address}"
+                name=f"proxy_connection_watcher-{self.ip_address}",
             )
         except Exception as e:
             logger.error(f"{lp} Failed to start MITM: {e}")
@@ -2614,10 +2706,14 @@ class CyncTCPSession:
         if self.tasks.proxy_conn_watcher and not self.tasks.proxy_conn_watcher.done():
             logger.debug(f"{self.lp} Proxy connection watcher task is active!")
         elif not self.tasks.proxy_conn_watcher:
-            logger.debug(f"{self.lp} Proxy connection watcher task is None, need to restart...")
+            logger.debug(
+                f"{self.lp} Proxy connection watcher task is None, need to restart..."
+            )
             return False
         elif self.tasks.proxy_conn_watcher.done():
-            logger.debug(f"{self.lp} Proxy connection watcher task is done, need to restart...")
+            logger.debug(
+                f"{self.lp} Proxy connection watcher task is done, need to restart..."
+            )
             return False
 
         if self.cloud_reader:
@@ -2671,7 +2767,9 @@ class CyncTCPSession:
                 await asyncio.wait_for(self.cloud_writer.wait_closed(), timeout=5.0)
                 logger.debug(f"{lp} Cloud writer closed cleanly")
             except asyncio.TimeoutError:
-                logger.warning(f"{lp} Cloud writer.wait_closed() timed out, continuing anyway")
+                logger.warning(
+                    f"{lp} Cloud writer.wait_closed() timed out, continuing anyway"
+                )
             except Exception as e:
                 logger.debug(f"{lp} Cloud writer close error (ignored): {e}")
         self.cloud_writer = None
@@ -2688,7 +2786,9 @@ class CyncTCPSession:
         await self.stop_proxy()
         self.mitm_mode = False
         self.mitm_logger = None
-        logger.info(f"{self.lp} MITM Mode disabled, forcing disconnect to enable normal operation...")
+        logger.info(
+            f"{self.lp} MITM Mode disabled, forcing disconnect to enable normal operation..."
+        )
         await self.close()
 
     async def _cloud_proxy_task(self):
@@ -2704,7 +2804,10 @@ class CyncTCPSession:
                     self.proxy_last_packet_ts = time.time()
                     self.mitm_logger.debug(
                         format_socat_style(
-                            data, "from_cloud", self.ip_address, self.mitm_bytes_from_cloud
+                            data,
+                            "from_cloud",
+                            self.ip_address,
+                            self.mitm_bytes_from_cloud,
                         )
                     )
                     self.mitm_bytes_from_cloud += len(data)
@@ -2737,8 +2840,10 @@ class CyncTCPSession:
         mitm_logger = logging.getLogger(logger_name)
         self.mitm_logger = mitm_logger
         if self.is_app and not g.env.app_mitm_logging:
-            logger.warning(f"{lp} This is an App TCP connection and global App MITM logging is disabled, "
-                           f"not logging this proxied connection...")
+            logger.warning(
+                f"{lp} This is an App TCP connection and global App MITM logging is disabled, "
+                f"not logging this proxied connection..."
+            )
             return
         self.log_start_time = datetime.datetime.now().strftime("%Y%m%d")
         log_dir = Path(CYNC_MITM_LOG_DIR)
@@ -2746,16 +2851,21 @@ class CyncTCPSession:
         os.chmod(log_dir, 0o777)
         log_file = log_dir / f"mitm_{identifier}-{self.log_start_time}.log"
         formatter = logging.Formatter(
-            "%(asctime)s.%(msecs)03d [%(name)s] %(message)s", datefmt="%Y/%m/%d %H:%M:%S"
+            "%(asctime)s.%(msecs)03d [%(name)s] %(message)s",
+            datefmt="%Y/%m/%d %H:%M:%S",
         )
 
         self.mitm_logger.setLevel(logging.DEBUG)
         self.mitm_logger.propagate = False
 
-        file_handler = logging.handlers.TimedRotatingFileHandler(log_file, when="midnight")
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            log_file, when="midnight"
+        )
         file_handler.setFormatter(formatter)
         self.mitm_logger.addHandler(file_handler)
-        if (CYNC_MITM_DEV_LOGGER and not self.is_app) or (CYNC_MITM_APP_LOGGER and self.is_app):
+        if (CYNC_MITM_DEV_LOGGER and not self.is_app) or (
+            CYNC_MITM_APP_LOGGER and self.is_app
+        ):
             stdout_handler = logging.StreamHandler(sys.stdout)
             stdout_handler.setLevel(logging.DEBUG)
             stdout_handler.setFormatter(formatter)
@@ -2843,26 +2953,19 @@ class CyncTCPSession:
             except asyncio.CancelledError:
                 pass
 
-        if (
-            self.tasks.callback_cleanup
-            and not self.tasks.callback_cleanup.done()
-        ):
+        if self.tasks.callback_cleanup and not self.tasks.callback_cleanup.done():
             self.tasks.callback_cleanup.cancel()
             try:
                 await self.tasks.callback_cleanup
             except asyncio.CancelledError:
                 pass
 
-        if (
-            self.tasks.dev_conn_watcher
-            and not self.tasks.dev_conn_watcher.done()
-        ):
+        if self.tasks.dev_conn_watcher and not self.tasks.dev_conn_watcher.done():
             self.tasks.dev_conn_watcher.cancel()
             try:
                 await self.tasks.dev_conn_watcher
             except asyncio.CancelledError:
                 pass
-
 
         # python will garbage collect the task if you dont keep a reference
         self.tasks.receive = asyncio.create_task(
@@ -2871,7 +2974,6 @@ class CyncTCPSession:
         self.tasks.callback_cleanup = asyncio.create_task(
             self.callback_cleanup_task(), name=f"callback_cleanup-{self.ip_address}"
         )
-
 
     def get_ctrl_msg_id_bytes(self) -> List[int]:
         """
@@ -2962,9 +3064,7 @@ class CyncTCPSession:
                     # header, discarding several real device status updates).
                     # 5 is the minimum needed to compute a real length_needed.
                     length_needed = 5
-                    logger.debug(
-                        f"DBG>>>{loop_lp} Packet length is less than 4 bytes"
-                    )
+                    logger.debug(f"DBG>>>{loop_lp} Packet length is less than 4 bytes")
             else:
                 logger.warning(
                     f"{loop_lp} Unknown packet header: {data[0].to_bytes(1, 'big').hex(' ')}"
@@ -3055,7 +3155,6 @@ class CyncTCPSession:
                 pkt_type, data, packet_data, queue_id, msg_id, packet_length, lp
             )
         elif PacketBuilder.is_app_request(pkt_type):
-
             if not self.is_app:
                 logger.info(
                     f"{lp} Device has been identified as the Cync mobile app, enabling proxying to the Cync cloud for all App connections..."
@@ -3098,7 +3197,8 @@ class CyncTCPSession:
         if pkt_type == 0x23:
             self.queue_id = raw_data[6:10]
             self.tasks.dev_conn_watcher = asyncio.create_task(
-                self.connection_watcher_task(ConnectionType.device), name=f"connection_watcher-{self.ip_address}"
+                self.connection_watcher_task(ConnectionType.device),
+                name=f"connection_watcher-{self.ip_address}",
             )
             logger.debug(
                 f"{lp} Device IDENTIFICATION KEY: '{self.queue_id.hex(' ')}'\nRAW HEX: {raw_data.hex(' ')}"
@@ -3215,7 +3315,10 @@ class CyncTCPSession:
                     if fw_type == "device":
                         self.version, self.version_str = fw_ver, fw_str
                     else:
-                        self.protocol_version, self.protocol_version_str = fw_ver, fw_str
+                        self.protocol_version, self.protocol_version_str = (
+                            fw_ver,
+                            fw_str,
+                        )
                 except Exception as e:
                     logger.debug(f"{lp} exception during firmware parsing: {e}")
 
@@ -3276,10 +3379,14 @@ class CyncTCPSession:
                             sub_id = packet_data[idx + 1]
                             status_type = packet_data[idx + 2]
                             value = packet_data[idx + 3]
-                            devices.append({
-                                "node_id": dev_id, "sub_id": sub_id,
-                                "type": status_type, "value": value
-                            })
+                            devices.append(
+                                {
+                                    "node_id": dev_id,
+                                    "sub_id": sub_id,
+                                    "type": status_type,
+                                    "value": value,
+                                }
+                            )
                             idx += 4
                         return devices
                     except IndexError as e:
@@ -3381,7 +3488,9 @@ class CyncTCPSession:
             raise ValueError("Packet too short for standard status update")
         try:
             dev_id = packet_data[14]
-            recently_seen, power, bri, tmp, r, gr, b = struct.unpack(">BBBBBBB", packet_data[19:26])
+            recently_seen, power, bri, tmp, r, gr, b = struct.unpack(
+                ">BBBBBBB", packet_data[19:26]
+            )
             parsed_state = EntityState(
                 **{
                     "name": "",
@@ -3413,12 +3522,19 @@ class CyncTCPSession:
             return
         cync_device.relay_source = self
 
-        if cync_device.metadata and cync_device.metadata.type == DeviceClassification.SENSOR:
+        if (
+            cync_device.metadata
+            and cync_device.metadata.type == DeviceClassification.SENSOR
+        ):
             # Standalone motion sensor: recently_seen carries the actual trigger flag
             # for this device type (confirmed via a real capture), not staleness -
             # route through the dedicated path instead of handle_entity_update.
-            logger.debug(f"{lp} Motion STATUS for {cync_device.name}: {bool(recently_seen)}")
-            await cync_device.handle_motion_update(bool(recently_seen), from_pkt=from_pkt)
+            logger.debug(
+                f"{lp} Motion STATUS for {cync_device.name}: {bool(recently_seen)}"
+            )
+            await cync_device.handle_motion_update(
+                bool(recently_seen), from_pkt=from_pkt
+            )
             return
 
         if cync_device.type in MULTI_ENDPOINT_TYPES:
@@ -3435,9 +3551,7 @@ class CyncTCPSession:
         else:
             parsed_state.name = cync_device.name
             logger.debug(f"{lp} Internal STATUS for {parsed_state}")
-            await cync_device.handle_entity_update(
-                parsed_state, from_pkt=from_pkt
-            )
+            await cync_device.handle_entity_update(parsed_state, from_pkt=from_pkt)
 
         # Checksum Stream Logic, the LED light controller sends 0x83 in a stream of data with checksum mismatches
         # if list(packet_data[9:12]) == [17, 17, 17]:
@@ -3516,7 +3630,12 @@ class CyncTCPSession:
                             packet_data[1:-1],
                         )
 
-                elif ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (0xD0, 0xD2, 0xF0, 0xE2):
+                elif ctrl_bytes[0] == 0xF9 and ctrl_bytes[1] in (
+                    0xD0,
+                    0xD2,
+                    0xF0,
+                    0xE2,
+                ):
                     # Handle Callbacks for control messages
                     ctrl_msg_id = packet_data[1]
                     success = packet_data[7] == 1
@@ -3557,7 +3676,10 @@ class CyncTCPSession:
                             if fw_type == "device":
                                 self.version, self.version_str = fw_ver, fw_str
                             else:
-                                self.protocol_version, self.protocol_version_str = fw_ver, fw_str
+                                self.protocol_version, self.protocol_version_str = (
+                                    fw_ver,
+                                    fw_str,
+                                )
                         except Exception as e:
                             logger.debug(f"{lp} Exception during firmware parsing: {e}")
 
@@ -3692,15 +3814,15 @@ class CyncTCPSession:
                         self.name = node_repr.name
                         self.lp = f"{self.ip_address}[{self.node.id}]:"
                         logger.debug(
-                            f"{self.lp}0x73: Setting TCP"
-                            f" Node ID to: {self.node.id}"
+                            f"{self.lp}0x73: Setting TCP Node ID to: {self.node.id}"
                         )
                         # dynamically add the MITM mode button for nodes that are connected via TCP
                         self.mitm_button_added = True
                         await g.mqtt_client.add_mitm_button(node_repr)
                         # check mqtt mitm button retain state
                         payload = g.mqtt_client.get_startup_topic_state_sync(
-                            f"{g.mqtt_client.topic}/status/{node_repr.home_id}-{node_repr.id}/mitm")
+                            f"{g.mqtt_client.topic}/status/{node_repr.home_id}-{node_repr.id}/mitm"
+                        )
                         if payload is not None:
                             # Find the TCP device instance and trigger start/stop
                             tcp_pool = g.ncync_server.get_dev_tcp_pool_sync()
@@ -3793,7 +3915,9 @@ class CyncTCPSession:
             )
             return
         if len(self.queue_id) != 4:
-            logger.warning(f"{lp} queue_id is not initialized, skipping mesh info request")
+            logger.warning(
+                f"{lp} queue_id is not initialized, skipping mesh info request"
+            )
             return
         mesh_info_data = PacketBuilder.build_mesh_info_request(self.queue_id)
         _rdmsg = ""
@@ -3819,7 +3943,9 @@ class CyncTCPSession:
         rand_bytes = self.xa3_msg_id = random.getrandbits(16).to_bytes(2, "big")
         rand_bytes += bytes([0x00])
         if len(self.queue_id) != 4:
-            logger.warning(f"{self.lp} queue_id is not initialized, skipping 0xA3 control request")
+            logger.warning(
+                f"{self.lp} queue_id is not initialized, skipping 0xA3 control request"
+            )
             return
         a3_packet = PacketBuilder.build_a3_control_request(self.queue_id, rand_bytes)
         logger.debug(f"{self.lp} Sending 0xA3 (want to control) packet...")
@@ -3829,7 +3955,6 @@ class CyncTCPSession:
         # send mesh info request
         await asyncio.sleep(1.5)
         await self.ask_for_mesh_info()
-
 
     async def connection_watcher_task(self, conn_type: ConnectionType):
         """Go through the callback queue and remove any callbacks that are older than 5 minutes"""
@@ -3855,9 +3980,15 @@ class CyncTCPSession:
                 if last_packet_ts:
                     elapsed = now - last_packet_ts
                     if elapsed > threshold:
-                        logger.debug(f"{lp} This {conn_type.value} connection hasnt received any data in "
-                                     f"{elapsed:.1f} seconds, closing...")
-                        task = self.close if conn_type in (ConnectionType.device, ConnectionType.app) else self.stop_proxy
+                        logger.debug(
+                            f"{lp} This {conn_type.value} connection hasnt received any data in "
+                            f"{elapsed:.1f} seconds, closing..."
+                        )
+                        task = (
+                            self.close
+                            if conn_type in (ConnectionType.device, ConnectionType.app)
+                            else self.stop_proxy
+                        )
                         asyncio.create_task(task())
                         break
 
@@ -3868,7 +3999,6 @@ class CyncTCPSession:
             logger.error(f"{lp} Unexpected crash: {e}", exc_info=True)
 
         logger.info(f"{lp} FINISHED")
-
 
     async def callback_cleanup_task(self):
         """Go through the callback queue and remove any callbacks that are older than 5 minutes"""
@@ -3932,7 +4062,9 @@ class CyncTCPSession:
                     await self.parse_raw_data(data)
 
                 except Exception as e:
-                    logger.error(f"{lp} Exception in task {name} LOOP: {e}", exc_info=True)
+                    logger.error(
+                        f"{lp} Exception in task {name} LOOP: {e}", exc_info=True
+                    )
                     asyncio.create_task(self.close())
                     break
         except asyncio.CancelledError:
@@ -4038,7 +4170,7 @@ class CyncTCPSession:
                     self.writer.close()
                     task = self.writer.wait_closed()
                     await asyncio.wait_for(task, 3.0)
-        except (AttributeError, TimeoutError):
+        except AttributeError, TimeoutError:
             pass
         except Exception as e:
             logger.debug(f"{lp}writer: EXCEPTION: {e}")
@@ -4092,11 +4224,15 @@ class CyncTCPSession:
             state_closing = self.closing == g_dev.closing
             state_closed = self._closed == g_dev.closed
             if state_closed is False or state_closing is False:
-                logger.debug(f"{lp} There is a mismatch between states in the global device and this device: closed: {state_closed | closing: {state_closing}}, replacing...")
+                logger.debug(
+                    f"{lp} There is a mismatch between states in the global device and this device: closed: {state_closed | closing: {state_closing}}, replacing..."
+                )
                 del g_dev
                 g.ncync_server.tcp_connections[self.ip_address] = self
             elif g_dev != self:
-                logger.debug(f"{lp} There is a python object mismatch between the global device and this one...")
+                logger.debug(
+                    f"{lp} There is a python object mismatch between the global device and this one..."
+                )
                 del g_dev
                 g.ncync_server.tcp_connections[self.ip_address] = self
             else:
@@ -4397,8 +4533,8 @@ class CyncTCPSession:
                                     _green = packet_data[g_idx]
                                     _blue = packet_data[b_idx]
                                     recently_seen = packet_data[not_stale_idx]
-                                    node_repr: CyncDevice = g.ncync_server.node_devices.get(
-                                        dev_id
+                                    node_repr: CyncDevice = (
+                                        g.ncync_server.node_devices.get(dev_id)
                                     )
                                     if node_repr:
                                         dev_name = node_repr.name
@@ -4676,7 +4812,9 @@ class CyncTCPSession:
                                                 if dev_state == 0 and dev_bri > 0:
                                                     dev_bri = 0
                                                 node_repr: Optional["CyncDevice"] = (
-                                                    g.ncync_server.node_devices.get(dev_id)
+                                                    g.ncync_server.node_devices.get(
+                                                        dev_id
+                                                    )
                                                 )
                                                 if node_repr:
                                                     dev_name = node_repr.name
@@ -4719,7 +4857,7 @@ class CyncTCPSession:
                                                             # since we know the state of up to 8 endpoints at once, parse them all
                                                             for e_state_ in node_repr.entities.values():
                                                                 bit_shift = (
-                                                                        e_state_.sub_id - 1
+                                                                    e_state_.sub_id - 1
                                                                 )
                                                                 e_state_.power = (
                                                                     1
@@ -4779,7 +4917,9 @@ class CyncTCPSession:
                                         # 73 00 00 00 14 2d e4 b5 d2 15 2d 00 7e 1e 00 00
                                         #  00 f8 {af 02 00 af 01} 61 7e
                                         # checksum 61 hex = int 97 solved: {af+02+00+af+01} % 256 = 97
-                                        mesh_ack = PacketBuilder.build_mesh_status_ack(self.queue_id)
+                                        mesh_ack = PacketBuilder.build_mesh_status_ack(
+                                            self.queue_id
+                                        )
                                         # logger.debug(f"{lp} Sending MESH INFO ACK -> {mesh_ack.hex(' ')}")
                                         await self.write(mesh_ack)
                                         # Only clear the status once all paginated packets have arrived

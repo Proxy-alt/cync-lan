@@ -107,8 +107,22 @@ R_APP = bytes([0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7])
 FACTORY_DEFAULT_PAIRING_WRITE = bytes(
     [
         0x0C,
-        0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
-        0x8D, 0xB6, 0x74, 0x71, 0x1B, 0x85, 0x5A, 0x79,
+        0xA0,
+        0xA1,
+        0xA2,
+        0xA3,
+        0xA4,
+        0xA5,
+        0xA6,
+        0xA7,
+        0x8D,
+        0xB6,
+        0x74,
+        0x71,
+        0x1B,
+        0x85,
+        0x5A,
+        0x79,
     ]
 )
 
@@ -117,8 +131,22 @@ FACTORY_DEFAULT_PAIRING_WRITE = bytes(
 # when no custom LTK is supplied.
 DEFAULT_LTK = bytes(
     [
-        0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7,
-        0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF,
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC4,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xD8,
+        0xD9,
+        0xDA,
+        0xDB,
+        0xDC,
+        0xDD,
+        0xDE,
+        0xDF,
     ]
 )
 
@@ -200,16 +228,22 @@ def build_pairing_write(mesh_name: str, mesh_password: str) -> bytes:
     return bytes([0x0C]) + R_APP + ciphertext
 
 
-def derive_session_key(mesh_name: str, mesh_password: str, r_app: bytes, r_dev: bytes) -> bytes:
+def derive_session_key(
+    mesh_name: str, mesh_password: str, r_app: bytes, r_dev: bytes
+) -> bytes:
     """Derives the AES session key from both sides' random contributions -
     confirmed via TelinkDeviceBleManager$..d (C2184d.mo14353a, the pairing-
     characteristic read-response callback) and python-dimond's real
     `connect()`. `r_dev` is bytes [1:9] of the device's response to the
     `build_pairing_write()` write."""
-    return generate_sk(mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), r_app, r_dev)
+    return generate_sk(
+        mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), r_app, r_dev
+    )
 
 
-def verify_pairing_response(mesh_name: str, mesh_password: str, response: bytes) -> bool:
+def verify_pairing_response(
+    mesh_name: str, mesh_password: str, response: bytes
+) -> bool:
     """Real mutual-auth check the actual Cync app performs on the pairing
     response, confirmed via C2184d.java's DataReceivedCallback -
     contradicting this module's own earlier assumption (based only on
@@ -256,7 +290,9 @@ def build_mesh_credential_write(kind: str, value: bytes, session_key: bytes) -> 
     password bytes, or DEFAULT_LTK/a custom 16-byte LTK for kind="ltk".
     """
     if kind not in _PAIR_CREDENTIAL_OPCODES:
-        raise ValueError(f"kind must be one of {sorted(_PAIR_CREDENTIAL_OPCODES)}, got {kind!r}")
+        raise ValueError(
+            f"kind must be one of {sorted(_PAIR_CREDENTIAL_OPCODES)}, got {kind!r}"
+        )
     opcode = _PAIR_CREDENTIAL_OPCODES[kind]
     ciphertext = _aes_ecb_encrypt(session_key, _pad16(value))[:8]
     payload = bytes([opcode]) + ciphertext
@@ -368,7 +404,9 @@ async def provision_device(
                 f"{response.hex()}"
             )
         r_dev = response[1:9]
-        if not verify_pairing_response(FACTORY_MESH_NAME, FACTORY_MESH_PASSWORD, response):
+        if not verify_pairing_response(
+            FACTORY_MESH_NAME, FACTORY_MESH_PASSWORD, response
+        ):
             logger.warning(
                 f"{lp} device's pairing response did not pass the mutual-auth proof "
                 f"check the real app performs (see verify_pairing_response()'s docstring) - "
@@ -419,7 +457,9 @@ def _parse_cli(argv=None):
     provision_parser = sub.add_parser(
         "provision", help="Provision a device onto a target mesh"
     )
-    provision_parser.add_argument("address", help="BLE address of the device to provision")
+    provision_parser.add_argument(
+        "address", help="BLE address of the device to provision"
+    )
     provision_parser.add_argument("mesh_name", help="Target mesh name")
     provision_parser.add_argument("mesh_password", help="Target mesh password")
     provision_parser.add_argument(
@@ -453,7 +493,9 @@ async def _async_main(args) -> int:
 
 
 def main(argv=None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     args = _parse_cli(argv)
     sys.exit(asyncio.run(_async_main(args)))
 

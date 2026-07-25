@@ -43,7 +43,9 @@ from cync_lan.ble_provision import (
     verify_pairing_response,
 )
 
-bleak = pytest.importorskip("bleak", reason="bleak is an optional dependency (cync_lan[ble])")
+bleak = pytest.importorskip(
+    "bleak", reason="bleak is an optional dependency (cync_lan[ble])"
+)
 
 
 def test_build_pairing_write_reproduces_the_factory_default_constant():
@@ -185,8 +187,11 @@ async def test_provision_device_writes_pairing_then_credentials_then_confirms():
     fake_client.write_gatt_char = AsyncMock()
     fake_client.read_gatt_char = AsyncMock(
         side_effect=[
-            bytes([0x0D]) + b"\x01\x02\x03\x04\x05\x06\x07\x08",  # pairing response, R_dev
-            bytes([PAIR_CONFIRM_BYTE]),  # confirmation - must be literally 7, not just nonzero
+            bytes([0x0D])
+            + b"\x01\x02\x03\x04\x05\x06\x07\x08",  # pairing response, R_dev
+            bytes(
+                [PAIR_CONFIRM_BYTE]
+            ),  # confirmation - must be literally 7, not just nonzero
         ]
     )
     fake_client_cls = MagicMock(return_value=fake_client)
@@ -257,12 +262,16 @@ async def test_provision_device_raises_for_nonzero_but_wrong_confirmation_byte()
             await provision_device("AA:BB:CC:DD:EE:FF", "target_mesh", "target_pass")
 
 
-def _build_valid_pairing_response(mesh_name: str, mesh_password: str, r_dev: bytes, status: int = 0x0D) -> bytes:
+def _build_valid_pairing_response(
+    mesh_name: str, mesh_password: str, r_dev: bytes, status: int = 0x0D
+) -> bytes:
     """Reference builder matching the real device's expected response
     shape (status byte + R_dev + mutual-auth proof), for testing
     verify_pairing_response() against a self-consistent, known-correct
     response rather than only ever mocking success/failure."""
-    proof = key_encrypt(mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), _pad16(r_dev))[:8]
+    proof = key_encrypt(
+        mesh_name.encode("utf-8"), mesh_password.encode("utf-8"), _pad16(r_dev)
+    )[:8]
     return bytes([status]) + r_dev + proof
 
 

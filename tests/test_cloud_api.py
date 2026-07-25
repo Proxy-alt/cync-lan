@@ -20,10 +20,46 @@ from cync_lan.cloud_api import (
 # Real (slightly malformed - see docs/cync_automations.md's data-quality
 # caveat) example from a live account: duplicate id=1, no id=0.
 REAL_RAW_SCHEDULES = [
-    {"brightness": 100, "cct": 1, "displayName": "", "endTime": "2021-05-30 08:59", "id": 1, "isEnabled": True, "simpleMode": True, "startTime": "2021-05-30 06:00"},
-    {"brightness": 100, "cct": 1, "displayName": "", "endTime": "2021-05-30 18:59", "id": 1, "isEnabled": True, "simpleMode": True, "startTime": "2021-05-30 09:00"},
-    {"brightness": 100, "cct": 1, "displayName": "", "endTime": "2021-05-30 20:59", "id": 2, "isEnabled": True, "simpleMode": True, "startTime": "2021-05-30 19:00"},
-    {"brightness": 100, "cct": 1, "displayName": "", "endTime": "2021-05-30 05:59", "id": 3, "isEnabled": True, "simpleMode": True, "startTime": "2021-05-30 21:00"},
+    {
+        "brightness": 100,
+        "cct": 1,
+        "displayName": "",
+        "endTime": "2021-05-30 08:59",
+        "id": 1,
+        "isEnabled": True,
+        "simpleMode": True,
+        "startTime": "2021-05-30 06:00",
+    },
+    {
+        "brightness": 100,
+        "cct": 1,
+        "displayName": "",
+        "endTime": "2021-05-30 18:59",
+        "id": 1,
+        "isEnabled": True,
+        "simpleMode": True,
+        "startTime": "2021-05-30 09:00",
+    },
+    {
+        "brightness": 100,
+        "cct": 1,
+        "displayName": "",
+        "endTime": "2021-05-30 20:59",
+        "id": 2,
+        "isEnabled": True,
+        "simpleMode": True,
+        "startTime": "2021-05-30 19:00",
+    },
+    {
+        "brightness": 100,
+        "cct": 1,
+        "displayName": "",
+        "endTime": "2021-05-30 05:59",
+        "id": 3,
+        "isEnabled": True,
+        "simpleMode": True,
+        "startTime": "2021-05-30 21:00",
+    },
 ]
 
 
@@ -55,19 +91,29 @@ def test_decode_slot_happy_path():
 def test_decode_slot_disabled_and_occupancy_modes():
     base = {"id": 1, "startTime": "2021-05-30 06:00", "endTime": "2021-05-30 08:59"}
 
-    disabled = _decode_sensor_schedule_slot({**base, "isEnabled": False, "simpleMode": True})
+    disabled = _decode_sensor_schedule_slot(
+        {**base, "isEnabled": False, "simpleMode": True}
+    )
     assert disabled["mode"] == "disabled"
     assert disabled["enabled"] is False
 
-    occupancy = _decode_sensor_schedule_slot({**base, "isEnabled": True, "simpleMode": False})
+    occupancy = _decode_sensor_schedule_slot(
+        {**base, "isEnabled": True, "simpleMode": False}
+    )
     assert occupancy["mode"] == "occupancy"
 
-    simple = _decode_sensor_schedule_slot({**base, "isEnabled": True, "simpleMode": True})
+    simple = _decode_sensor_schedule_slot(
+        {**base, "isEnabled": True, "simpleMode": True}
+    )
     assert simple["mode"] == "simple"
 
 
 def test_decode_slot_rejects_out_of_range_id():
-    base = {"startTime": "2021-05-30 06:00", "endTime": "2021-05-30 08:59", "isEnabled": True}
+    base = {
+        "startTime": "2021-05-30 06:00",
+        "endTime": "2021-05-30 08:59",
+        "isEnabled": True,
+    }
     assert _decode_sensor_schedule_slot({**base, "id": 4}) is None
     assert _decode_sensor_schedule_slot({**base, "id": -1}) is None
     assert _decode_sensor_schedule_slot({**base, "id": None}) is None
@@ -76,7 +122,9 @@ def test_decode_slot_rejects_out_of_range_id():
 def test_decode_slot_rejects_missing_times():
     base = {"id": 0, "isEnabled": True}
     assert _decode_sensor_schedule_slot({**base, "endTime": "2021-05-30 08:59"}) is None
-    assert _decode_sensor_schedule_slot({**base, "startTime": "2021-05-30 06:00"}) is None
+    assert (
+        _decode_sensor_schedule_slot({**base, "startTime": "2021-05-30 06:00"}) is None
+    )
     assert _decode_sensor_schedule_slot(base) is None
 
 
@@ -214,9 +262,7 @@ async def test_parse_raw_export_schedules():
     result = await api._parse_raw_export([home])
 
     schedules = result["exported_homes"]["Our Home"]["schedules"]
-    assert schedules == {
-        7: {"name": "Weekday Morning", "scene_id": 3, "enabled": True}
-    }
+    assert schedules == {7: {"name": "Weekday Morning", "scene_id": 3, "enabled": True}}
 
 
 async def test_parse_raw_export_schedule_falls_back_to_id_field():

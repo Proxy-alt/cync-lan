@@ -317,7 +317,7 @@ class FanSpeed(StrEnum):
             return 100
 
 
-class   EntityState(BaseModel):
+class EntityState(BaseModel):
     """
     Holds the individual state for a specific entity (outlet, bulb, etc.).
     entity is the logical device. Node is the physical device (TCP/BTLE conn).
@@ -355,6 +355,7 @@ class   EntityState(BaseModel):
 
     def __repr__(self):
         return self.__str__()
+
 
 class ConnectionType(StrEnum):
     device: str = "device"

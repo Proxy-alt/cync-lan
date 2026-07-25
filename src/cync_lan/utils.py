@@ -114,12 +114,13 @@ def extract_firmware_dynamically(
 
     fw_type_byte = packet_data[idx + 2]
     fw_type = "device" if fw_type_byte == 0x01 else "network"
-    fw_bytes = packet_data[idx + 3: idx + 8]
+    fw_bytes = packet_data[idx + 3 : idx + 8]
     fw_str = fw_bytes.replace(b"\x00", b"").decode("ascii", errors="ignore")
     digits_only = "".join(ch for ch in fw_str if ch.isdigit())
     fw_int = int(digits_only) if digits_only else None
 
     return fw_type, fw_int, fw_str
+
 
 def parse_unbound_firmware_version(
     data_struct: bytes, lp: str

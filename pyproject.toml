@@ -56,7 +56,12 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
-ignore = []
+# `ruff format` owns line length for code. E501 only ever fires on what the
+# formatter deliberately will not split - long log strings, docstrings and
+# URLs - where the only "fix" is hand-wrapping a string literal. Enforcing
+# the formatter in CI covers the real intent; keeping E501 on top of it just
+# produced ~150 unfixable warnings that made `ruff check` useless to read.
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"

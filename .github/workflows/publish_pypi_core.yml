@@ -1,10 +1,16 @@
 name: Prerelease + PyPI publish - core package
 
-# Runs the test suite on every push, then (only for a version that hasn't
-# been tagged/released yet) tags the commit, creates a GitHub prerelease
-# with that version's CHANGELOG section, and publishes to PyPI via Trusted
-# Publishing (no stored token - see RELEASING.md). Always a prerelease:
-# this package has no "stable" designation yet.
+# Release pipeline: for a version that hasn't been tagged/released yet, tag
+# the commit, create a GitHub prerelease with that version's CHANGELOG
+# section, and publish to PyPI via Trusted Publishing (no stored token - see
+# RELEASING.md). Always a prerelease: this package has no "stable"
+# designation yet.
+#
+# The header used to claim it ran "the test suite on every push", but the
+# paths filter below is `pyproject.toml`, so tests only ever ran on a
+# version bump - a push that changed devices.py ran nothing at all. Routine
+# testing now lives in tests.yml (every push and every PR); this workflow
+# keeps its own test job purely as a release gate.
 
 on:
   push:
