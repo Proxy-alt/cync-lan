@@ -16,7 +16,6 @@ from cync_lan.cloud_api import (
     _decode_sensor_schedules,
 )
 
-
 # Real (slightly malformed - see docs/cync_automations.md's data-quality
 # caveat) example from a live account: duplicate id=1, no id=0.
 REAL_RAW_SCHEDULES = [

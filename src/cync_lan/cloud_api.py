@@ -251,10 +251,10 @@ class CyncCloudAPI:
         return True
 
     async def refresh_access_token(self) -> bool:
-        lp = f"{self.lp}:refresh token:"
         return await self._send_tkn_post(
             f"{CYNC_API_BASE}user/token/refresh",
             {"refresh_token": self.token_cache.refresh_token},
+            lp=f"{self.lp}:refresh token:",
         )
 
     async def send_otp(self, otp_code: int) -> bool:
@@ -281,9 +281,23 @@ class CyncCloudAPI:
         logger.debug(
             f"{lp} Sending OTP code: {otp_code} to Cync Cloud API for authentication"
         )
-        return await self._send_tkn_post(api_auth_url, auth_data)
+        return await self._send_tkn_post(api_auth_url, auth_data, lp=lp)
 
-    async def _send_tkn_post(self, url, data):
+    async def _send_tkn_post(
+        self, url: str, data: dict, lp: Optional[str] = None
+    ) -> bool:
+        """POST to a token-issuing endpoint and cache the resulting token.
+
+        `lp` is the caller's own log prefix. It used to be read as a bare
+        name here without ever being defined or passed in, so the generic
+        handler below raised NameError instead of returning False - and
+        that handler is what catches a plain network failure
+        (ClientConnectorError/TimeoutError are not ClientResponseError).
+        A dropped connection during token refresh or OTP submission
+        therefore blew up with "name 'lp' is not defined" instead of
+        reporting a clean auth failure to the caller.
+        """
+        lp = lp or f"{self.lp}:token post:"
         try:
             self.http_session: aiohttp.ClientSession
             resp = await self.http_session.post(
@@ -293,16 +307,16 @@ class CyncCloudAPI:
             iat = datetime.datetime.now(datetime.UTC)
             token_data = await resp.json()
         except aiohttp.ClientResponseError as e:
-            logger.error(f"Failed to authenticate: {e}")
+            logger.error(f"{lp} Failed to authenticate: {e}")
             return False
         except json.JSONDecodeError as je:
-            logger.error(f"Failed to decode JSON: {je}")
+            logger.error(f"{lp} Failed to decode JSON: {je}")
             return False
         except KeyError as ke:
-            logger.error(f"Failed to get key from JSON: {ke}")
+            logger.error(f"{lp} Failed to get key from JSON: {ke}")
             return False
-        except Exception:
-            logger.warning(f"{lp} Failed to refresh credentials")
+        except Exception as e:
+            logger.warning(f"{lp} Failed to refresh credentials: {e}")
             return False
         else:
             # add issued_at to the token data for computing the expiration datetime
@@ -583,7 +597,6 @@ class CyncCloudAPI:
                 raw_dev = raw_id.split(home_id)[1]
                 dev_id = int(raw_dev[-3:])
                 sub_id = 0
-                parent = None
                 # Seems the thermostat has a multi-endpoint deviceID but is a single entry
                 # 169573386
                 # 7 (multi endpoint is 3 digit, this is only 1)

@@ -5,10 +5,9 @@ import datetime
 import logging
 import os
 import time
-from argparse import Namespace
-from enum import StrEnum
-from typing import TYPE_CHECKING, Coroutine, Dict, List, Optional, Tuple, Union
 import uuid
+from enum import StrEnum
+from typing import TYPE_CHECKING, Coroutine, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, computed_field
 from pydantic.dataclasses import dataclass
@@ -29,7 +28,6 @@ if TYPE_CHECKING:
     from cync_lan.server import nCyncServer
 
 from cync_lan.protocols import MqttSink, StoppableService
-
 
 logger = logging.getLogger(CYNC_LOG_NAME)
 

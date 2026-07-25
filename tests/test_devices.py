@@ -16,9 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import cync_lan.devices as devices
 from cync_lan.const import FACTORY_EFFECTS_BYTES, LIGHT_RUN_MODE_EFFECTS
 from cync_lan.devices import (
-    CyncDevice,
     _EXPERIMENTAL_CMDS_WARNED,
     _PENDING_XLINK_RESPONSES,
+    CyncDevice,
     _await_xlink_notification,
     _get_experimental_logger,
     _log_experimental,
@@ -27,8 +27,8 @@ from cync_lan.devices import (
     _warn_experimental_transport_unconfirmed,
     add_automation,
     broadcast_control_command,
-    create_schedule,
     create_scene,
+    create_schedule,
     delete_scene,
     delete_schedule,
     execute_scene,
@@ -937,7 +937,6 @@ async def test_create_scene_truncates_and_pads_name():
     ):
         await create_scene("x" * 40)  # longer than 30 bytes
 
-    args_payload = PacketBuilder  # sanity import check only
     sent_name = fake_bridge.written[0]
     # Confirm the 30-byte name field is exactly 30 'x' bytes, not 40.
     assert (b"x" * 30) in sent_name

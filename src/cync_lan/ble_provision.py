@@ -196,7 +196,7 @@ def key_encrypt(name: bytes, password: bytes, key: bytes) -> bytes:
     (key=R_APP padded to 16) and, via generate_sk(), for session-key
     derivation (key=XOR(meshName,meshPass) there instead - a different
     role for the same two building blocks, not the same call)."""
-    xored = bytes(a ^ b for a, b in zip(_pad16(name), _pad16(password)))
+    xored = bytes(a ^ b for a, b in zip(_pad16(name), _pad16(password), strict=True))
     return _aes_ecb_encrypt(key, xored)
 
 
@@ -205,7 +205,7 @@ def generate_sk(name: bytes, password: bytes, data1: bytes, data2: bytes) -> byt
     data2[0:8]`; `return AES_ECB(key, data)` - confirmed via python-dimond's
     real `generate_sk()` (dimond/__init__.py:37-43). `data1`/`data2` are
     R_app/R_dev (in that order) when deriving the session key."""
-    key = bytes(a ^ b for a, b in zip(_pad16(name), _pad16(password)))
+    key = bytes(a ^ b for a, b in zip(_pad16(name), _pad16(password), strict=True))
     data = (data1[:8] + data2[:8])[:16].ljust(16, b"\x00")
     return _aes_ecb_encrypt(key, data)
 
@@ -335,7 +335,7 @@ async def scan_for_unprovisioned_devices(timeout: float = 10.0):
 
     discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
     found = []
-    for address, (device, adv) in discovered.items():
+    for _address, (device, adv) in discovered.items():
         if TELINK_COMPANY_ID not in (adv.manufacturer_data or {}):
             continue
         if (adv.local_name or device.name) != FACTORY_ADVERTISED_NAME:

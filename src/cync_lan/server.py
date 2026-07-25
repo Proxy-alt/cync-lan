@@ -4,7 +4,6 @@ import asyncio
 import datetime
 import logging
 import ssl
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
@@ -15,7 +14,7 @@ from cryptography.x509.oid import NameOID
 
 from cync_lan.const import CYNC_LOG_NAME, CYNC_SRV_HOST, CYNC_SRV_PORT
 from cync_lan.devices import CyncDevice, CyncTCPSession
-from cync_lan.structs import EntityState, GlobalObject
+from cync_lan.structs import GlobalObject
 
 if TYPE_CHECKING:
     # See structs.py's identical guard for why this is TYPE_CHECKING-only:
@@ -25,28 +24,15 @@ if TYPE_CHECKING:
     import uvloop
 
 # ---------------------------------------------------------------------------
-# Navigation index (quick lookups only - see each method's own docstring /
-# inline comments for behavioral detail). Line numbers are current as of
-# this edit; re-grep the method name if the file has since changed.
+# nCyncServer is the TLS listener Cync Wi-Fi devices connect to once DNS
+# redirection points them here instead of the real cloud. Roughly in
+# lifecycle order: __init__ -> start() (build SSL context, bind,
+# serve_forever) -> _register_new_connection (per accepted client) ->
+# add_tcp_device / remove_tcp_device -> stop().
 #
-# class nCyncServer                                                    L59
-#   singleton plumbing: __new__ / __init__                       L80  / L100
-#   TCP device pool accessors:
-#     get_dev_tcp_pool (async, filters closed/app sessions)             L85
-#     get_dev_tcp_pool_sync (sync variant, same filter)                 L97
-#   Device bookkeeping:
-#     remove_tcp_device (drop + publish updated counts)                L132
-#     add_tcp_device (register + start_tasks())                        L166
-#     _update_app_stats (publish app/device connection counts)         L177
-#   TLS / cert setup:
-#     _ensure_self_signed_cert (generate cert+key if either missing)   L196
-#     create_ssl_context (load chain, set allowed ciphers)              L240
-#   Server lifecycle:
-#     start() - build SSL context, bind, serve_forever                 L279
-#     stop() - close all device connections, then the server itself    L321
-#   _register_new_connection - asyncio.start_server client_connected_cb;
-#     replaces/re-inits an existing device session on reconnect, or
-#     creates a brand-new CyncTCPSession                                L375
+# (A hand-maintained index of line numbers used to live here. devices.py had
+# the same thing and every entry had drifted 650-1200 lines out of date, so
+# both were dropped in favor of grepping the method name.)
 # ---------------------------------------------------------------------------
 
 __all__ = [
@@ -82,28 +68,34 @@ class nCyncServer:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    async def get_dev_tcp_pool(self):
-        # Was `or` - by De Morgan's law that's equivalent to "exclude only a
-        # session that is BOTH closed AND the app simultaneously", which is
-        # almost never true: a real device always has is_app=False, so
-        # `not d.is_app` is always True, making the whole expression always
-        # True regardless of is_closed(). Stale, already-closed sessions
-        # (writer=None) never actually got filtered out of the broadcast
-        # pool - confirmed via a real user's logs showing "writer is None,
-        # can't write data!" thousands of times, once per command broadcast
-        # per dead session still sitting in tcp_connections.
+    def get_dev_tcp_pool_sync(self) -> list[CyncTCPSession]:
+        """Live device sessions only - excludes closed sessions and the Cync
+        app's own connections.
+
+        The filter was `or` at one point, which by De Morgan's law means
+        "exclude only a session that is BOTH closed AND the app", almost
+        never true: a real device always has is_app=False, so `not d.is_app`
+        was always True and the whole expression was always True regardless
+        of is_closed(). Stale, already-closed sessions (writer=None) never
+        got filtered out of the broadcast pool - confirmed via a real user's
+        logs showing "writer is None, can't write data!" thousands of times,
+        once per command broadcast per dead session still in tcp_connections.
+        """
         return [
             d
             for d in self.tcp_connections.values()
             if not d.is_closed() and not d.is_app
         ]
 
-    def get_dev_tcp_pool_sync(self):
-        return [
-            d
-            for d in self.tcp_connections.values()
-            if not d.is_closed() and not d.is_app
-        ]
+    async def get_dev_tcp_pool(self) -> list[CyncTCPSession]:
+        """Awaitable alias for get_dev_tcp_pool_sync.
+
+        Kept because callers in devices.py await it. It does no I/O and has
+        nothing to await - it delegates rather than duplicating the filter,
+        which is how the `or`/`and` bug above came to be fixed in one copy
+        and not the other.
+        """
+        return self.get_dev_tcp_pool_sync()
 
     def __init__(self, node_map: Dict[int, "CyncDevice"]):
         self.node_devices: Dict[int, "CyncDevice"] = node_map
@@ -129,7 +121,7 @@ class nCyncServer:
         self.start_task = None
         self.ssl_context: Optional[ssl.SSLContext] = None
         self.host: str = CYNC_SRV_HOST
-        self.port: str = CYNC_SRV_PORT
+        self.port: int = CYNC_SRV_PORT
         g.reload_env()
         self.cert_file = g.env.cync_srv_ssl_cert
         self.key_file = g.env.cync_srv_ssl_key
@@ -417,7 +409,6 @@ class nCyncServer:
                     # max TCP connections reached" churn.
                     can_connect = await existing_device.can_connect()
                     if can_connect is False:
-                        del existing_device
                         existing_device = None
                         dev2add = None
                 if existing_device is not None:
