@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cync-lan-mqtt"
-version = "0.1.1"
+version = "0.2.0"
 description = "Docker/MQTT add-on for local async MQTT control of Cync/C by GE smart devices (DNS redirection required) - built on the cync-lan core protocol library"
 readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
@@ -18,7 +18,7 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "cync-lan>=0.1.2",
+    "cync-lan>=0.2.0",
     "pyyaml==6.0.2",
     "uvloop>=0.21.0",
     "aiomqtt==2.3.0",

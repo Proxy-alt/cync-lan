@@ -1,3 +1,45 @@
+### 0.2.0
+
+**Requires `cync-lan` 0.2.0, and Python 3.12+.** The previous `>=3.9` claim was
+never true for this dependency chain - the core library needs 3.12 - so an
+install on an older interpreter resolved and then failed on import.
+
+Picking up core 0.2.0 also fixes six hub commands (create/delete scene,
+create/delete schedule, add/toggle automation) that sent a length field one
+byte short, which made device firmware read a truncated body and the command
+silently do nothing. See the core changelog for detail.
+
+**Fixed: fan speed updates reported success when every publish had failed.**
+`update_fan_speed` gathers its two publishes with `return_exceptions=True`, so
+a failure comes back as a result object rather than raising - and result
+objects are truthy, so `all(results)` was `True` even when nothing reached the
+broker. It now checks for exceptions explicitly. The same method's error
+handler also referenced an undefined name, so a publish failure raised
+`NameError` instead of being logged.
+
+**Fixed: Home Assistant discovery froze for ~3 seconds per motion sensor.**
+Seeding a motion sensor's retained state opened its own blocking broker
+connection and spun a synchronous wait loop, inline on the event loop. With
+several sensors that stalled all other traffic for the duration. Moved to an
+executor.
+
+**Fixed: `import cync_lan_mqtt.exporter` raised `RuntimeError` outside Docker.**
+The web UI's static assets were mounted at import time against a path that
+only exists inside the add-on image. The mount is now skipped with a warning
+when the directory is absent - which is also why this package had no tests
+before now.
+
+**Fixed:** the two "Cync app active" markers were near-identical copies with
+separate timer handles; they now share one implementation keyed by flag name,
+so a fix cannot land in one and miss the other. `get_startup_topic_state_sync`
+was annotated `-> getattr` (the builtin function) and is now `Optional[str]`.
+Unhandled MQTT messages are logged rather than silently dropped.
+
+Housekeeping: this package now has a test suite and CI at all - 13 tests
+covering fan-speed updates, the app-activity markers, the executor offload and
+singleton behaviour, running on 3.12 and 3.14. ruff runs in CI too; it was
+configured but had never been run (124 violations).
+
 ### 0.1.1
 
 - No functional change - verifies the CI publish workflow's PyPI Trusted
