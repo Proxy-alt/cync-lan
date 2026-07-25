@@ -10,14 +10,13 @@ readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "cync-lan>=0.1.2",
     "pyyaml==6.0.2",
@@ -46,7 +45,7 @@ Issues = "https://github.com/Proxy-alt/cync-lan/issues"
 
 [tool.ruff]
 line-length = 88
-target-version = "py314"
+target-version = "py312"  # must match requires-python
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]

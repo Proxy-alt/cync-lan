@@ -17,9 +17,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.11 is the real floor: this depends on cync-lan, whose structs.py
-        # imports enum.StrEnum and whose cloud_api.py uses datetime.UTC.
-        python-version: ["3.11", "3.13"]
+        # 3.12 is the real floor: this depends on cync-lan, whose devices.py
+        # uses a PEP 701 nested-quote f-string (3.12+) on top of enum.StrEnum
+        # and datetime.UTC (3.11+).
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: actions/setup-python@v5
