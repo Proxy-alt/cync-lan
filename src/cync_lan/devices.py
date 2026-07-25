@@ -60,6 +60,9 @@ __all__ = [
     "delete_schedule",
     "toggle_automation",
     "create_scene",
+    "DIMMER_LED_BRIEFLY_DISPLAY",
+    "DIMMER_LED_ALWAYS_ON",
+    "set_time",
     "delete_automation",
     "delete_group",
     "query_hub_info",
@@ -72,6 +75,16 @@ __all__ = [
 ]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
+
+# DimmingLedsIndicatorMode.java - the only two values that exist; there is no
+# "off", so the level bar cannot be disabled, only made momentary.
+DIMMER_LED_BRIEFLY_DISPLAY = 1
+DIMMER_LED_ALWAYS_ON = 2
+# SetDimmingLedsIndicatorBrightnessCommand.java's Action subclasses. Only
+# Preview carries a level; Save and ExitPreview are bare.
+DIMMER_LED_ACTION_PREVIEW = 1
+DIMMER_LED_ACTION_SAVE = 2
+DIMMER_LED_ACTION_EXIT_PREVIEW = 3
 
 _unsupported_logger: Optional[logging.Logger] = None
 _experimental_logger: Optional[logging.Logger] = None
@@ -743,6 +756,77 @@ async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> N
     cmd_ = 8 + len(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
     await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp)
+
+
+async def set_time(
+    when: Optional[datetime.datetime] = None, us_style_dst: Optional[bool] = None
+) -> None:
+    """EXPERIMENTAL: set the clock a hub runs its native Schedules from.
+
+    The counterpart to query_device_time(). Cync Schedules fire off the
+    hub's own clock, so a drifted hub runs them at the wrong moment and
+    nothing in Home Assistant can compensate.
+
+    Confirmed via SetTimeCommand.java (real op_code (byte)64 = 0x40).
+    17-byte WriteBuffer, of which 9 are written:
+
+        [0:4]  epoch seconds at the given UTC offset (4-byte LE)
+        [4]    UTC offset whole hours, signed
+        [5]    remaining offset minutes (0 for whole-hour zones)
+        [6]    DST flag
+        [7:9]  {0x01, 0x00}
+        [9:17] zero padding, genuinely on the wire
+
+    The DST flag is the app's own heuristic, reproduced here rather than
+    improved on: it writes minutes=0, flag=1 when the zone id starts with
+    "America", and minutes=<remainder>, flag=0 otherwise. That is a string
+    prefix test on a timezone name, not a real DST calculation, so
+    `us_style_dst` is exposed to override it; left as None it follows the
+    app by checking for an America/* zone.
+
+    `when` defaults to now in the local timezone. Naive datetimes are
+    assumed local.
+
+    cmd_ is PREDICTED via the length formula, not confirmed.
+    """
+    lp = "set_time:"
+    _warn_experimental_cmd_code(lp, "set_time")
+    _warn_experimental_transport_unconfirmed(lp, "set_time")
+
+    if when is None:
+        when = datetime.datetime.now().astimezone()
+    elif when.tzinfo is None:
+        when = when.astimezone()
+
+    offset = when.utcoffset() or datetime.timedelta(0)
+    total_minutes = int(offset.total_seconds() // 60)
+    hours = int(total_minutes / 60)
+    minutes_remainder = total_minutes - hours * 60
+
+    if us_style_dst is None:
+        tz_name = str(when.tzinfo) if when.tzinfo else ""
+        us_style_dst = tz_name.startswith("America")
+
+    if us_style_dst:
+        # Matches the app exactly: it zeroes the minute remainder in this
+        # branch, which is harmless only because America/* zones are all
+        # whole-hour offsets.
+        minutes_byte, dst_byte = 0, 1
+    else:
+        minutes_byte, dst_byte = minutes_remainder, 0
+
+    payload = (
+        struct.pack("<i", int(when.timestamp()))
+        + struct.pack("<b", hours)
+        + struct.pack("<b", minutes_byte)
+        + struct.pack(">B", dst_byte)
+        + bytes([0x01, 0x00])
+        + bytes(8)
+    )
+    # See delete_scene() for why this is 8 and not 7.
+    cmd_ = 8 + len(payload)
+    m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
+    await broadcast_control_command(0x40, cmd_, 0x00, 0x00, payload, m_cb, lp)
 
 
 async def delete_automation(schedule_id: int) -> None:
@@ -2030,6 +2114,114 @@ class CyncDevice:
             return
         mode_code, index, nonce = LIGHT_RUN_MODE_EFFECTS[effect]
         await self._send_light_run_mode(mode_code, index, nonce, sub_id)
+
+    async def identify(self, on: bool = True, sub_id: Optional[int] = None) -> None:
+        """EXPERIMENTAL: make this device announce itself physically, so you
+        can tell which bulb or switch an entity actually is.
+
+        Confirmed via IdentifyDeviceCommand.java: opcode array
+        `{0xF7,0x11,0x02,0x03}` plus a single byte - 1 to start, 2 to stop -
+        dispatched through the same
+        XlinkCommandDelegate.DefaultImpls.c()->h() path (real outer op_code
+        0x8E, no repeated op byte) as set_indicator_led, which is the one
+        command in this family confirmed working on real hardware.
+
+        The device keeps announcing until told to stop; call with on=False
+        to end it.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}identify:"
+        _warn_experimental_cmd_code(lp, "identify")
+        _sub_id = sub_id if sub_id is not None else 0x00
+        payload = struct.pack(">BBBBB", 0xF7, 0x11, 0x02, 0x03, 1 if on else 2)
+        cmd_ = 7 + len(payload)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
+
+    async def set_dimmer_led_mode(
+        self, mode: int, sub_id: Optional[int] = None
+    ) -> None:
+        """EXPERIMENTAL: how a dimmer switch's LED level bar behaves.
+
+        Confirmed via SetDimmingLedsIndicatorModeCommand.java: opcode array
+        `{0xF7,0x11,0x02,0x62}` plus one enum byte. Only two values exist in
+        DimmingLedsIndicatorMode.java - BRIEFLY_DISPLAY (1) and ALWAYS_ON
+        (2); there is no "off" value, so this cannot disable the bar.
+
+        Distinct from set_indicator_led (0xF7/0x06), which is the small
+        status LED on a switch. This is the row of level LEDs on a dimmer.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}set_dimmer_led_mode:"
+        _warn_experimental_cmd_code(lp, "set_dimmer_led_mode")
+        if mode not in (DIMMER_LED_BRIEFLY_DISPLAY, DIMMER_LED_ALWAYS_ON):
+            logger.error(
+                f"{lp} mode must be {DIMMER_LED_BRIEFLY_DISPLAY} (briefly display) "
+                f"or {DIMMER_LED_ALWAYS_ON} (always on), got {mode}"
+            )
+            return
+        _sub_id = sub_id if sub_id is not None else 0x00
+        payload = struct.pack(">BBBBB", 0xF7, 0x11, 0x02, 0x62, mode)
+        cmd_ = 7 + len(payload)
+        m_cb = ControlMessageCallback(
+            msg_id=0x00, message=None, sent_at=0.0, callback=None
+        )
+        await self.send_command(
+            0x8E, cmd_, _sub_id, payload, m_cb, lp, repeat_op_code=False
+        )
+
+    async def set_dimmer_led_brightness(
+        self, level: int, sub_id: Optional[int] = None
+    ) -> None:
+        """EXPERIMENTAL: brightness of a dimmer switch's LED level bar.
+
+        The real app does this in two steps, and so does this: a Preview
+        carrying the level, then a Save to commit it. Confirmed via
+        SetDimmingLedsIndicatorBrightnessCommand.java - opcode array
+        `{0xF7,0x11,0x02,0x63}` then:
+
+            Preview(1) -> [0x01, 0xF0, level]
+            Save(2)    -> [0x02]
+            ExitPreview(3) -> [0x03]   (cancel, not used here)
+
+        Only Preview carries a level; Save and ExitPreview are bare. That is
+        why setting a brightness is two packets rather than one - a single
+        Save would commit whatever the device was already previewing.
+
+        cmd_ is PREDICTED via the length formula, not confirmed.
+        """
+        lp = f"{self.lp}set_dimmer_led_brightness:"
+        _warn_experimental_cmd_code(lp, "set_dimmer_led_brightness")
+        if not (0 <= level <= 100):
+            logger.error(f"{lp} level must be 0-100, got {level}")
+            return
+        _sub_id = sub_id if sub_id is not None else 0x00
+
+        for payload in (
+            struct.pack(
+                ">BBBBBBB",
+                0xF7,
+                0x11,
+                0x02,
+                0x63,
+                DIMMER_LED_ACTION_PREVIEW,
+                0xF0,
+                level,
+            ),
+            struct.pack(">BBBBB", 0xF7, 0x11, 0x02, 0x63, DIMMER_LED_ACTION_SAVE),
+        ):
+            m_cb = ControlMessageCallback(
+                msg_id=0x00, message=None, sent_at=0.0, callback=None
+            )
+            await self.send_command(
+                0x8E, 7 + len(payload), _sub_id, payload, m_cb, lp, repeat_op_code=False
+            )
 
     async def set_multicolor_gradient_mode(
         self, enabled: bool, sub_id: Optional[int] = None

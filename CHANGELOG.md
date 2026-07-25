@@ -26,6 +26,38 @@ on `feature/ha-custom-component` for how the three artifacts relate.
   PyPI (0.1.0 was published manually after the pending publisher wasn't
   yet recognized on the first automated attempt).
 
+### 0.4.0
+
+**New: `CyncDevice.identify()`** - makes a device announce itself physically,
+so you can tell which bulb or switch an entity actually is. Payload is
+`{0xF7,0x11,0x02,0x03}` plus 1 to start or 2 to stop, on the same dispatch
+path as `set_indicator_led` - the one command in this family confirmed
+working on real hardware, which makes this the most likely of the new
+commands to work.
+
+**New: dimmer level-bar LEDs.** `set_dimmer_led_mode()` (0xF7/0x62) and
+`set_dimmer_led_brightness()` (0xF7/0x63). These are the row of level LEDs on
+a dimmer switch, not the small status LED `set_indicator_led` controls.
+
+`DimmingLedsIndicatorMode` has exactly two values, `BRIEFLY_DISPLAY` and
+`ALWAYS_ON` - there is no "off", so the bar cannot be disabled, only made
+momentary. Brightness deliberately sends **two** packets, Preview then Save,
+because only Preview carries a level; a lone Save would commit whatever the
+device happened to be previewing.
+
+**New: `set_time()`** - sets the clock a hub runs its native Schedules from,
+the counterpart to 0.3.0's `query_device_time()`. A drifted hub runs its
+Schedules at the wrong moment and nothing on the Home Assistant side can
+compensate.
+
+Its DST byte reproduces a quirk rather than improving on it: the app decides
+by testing whether the timezone id starts with `"America"`, and writes
+minutes=0/flag=1 in that case. That is a string prefix test, not a DST
+calculation, so `us_style_dst` is exposed to override it.
+
+All three carry the usual caveat for this family: the `cmd_code` is predicted
+from the length formula rather than confirmed against a capture.
+
 ### 0.3.0
 
 **New: five more hub commands**, all with op_codes and request payloads read

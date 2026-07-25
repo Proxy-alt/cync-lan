@@ -145,6 +145,9 @@ def _command_matrix(dev: Any, fan: Any) -> list[tuple[str, Any]]:
         ("set_fine_brightness", lambda: dev.set_fine_brightness(50, 1000)),
         ("set_light_effect", lambda: dev.set_light_effect("Rainbow")),
         ("set_indicator_led", lambda: dev.set_indicator_led(2, 0, 100, False)),
+        ("identify", lambda: dev.identify(True)),
+        ("set_dimmer_led_mode", lambda: dev.set_dimmer_led_mode(2)),
+        ("set_dimmer_led_brightness", lambda: dev.set_dimmer_led_brightness(50)),
         (
             "set_motion_sensor_settings",
             lambda: dev.set_motion_sensor_settings(
@@ -202,6 +205,7 @@ def _module_matrix() -> list[tuple[str, Any]]:
         ("query_hub_info", lambda: d.query_hub_info()),
         ("query_device_time", lambda: d.query_device_time()),
         ("query_sol_config", lambda: d.query_sol_config()),
+        ("set_time", lambda: d.set_time()),
     ]
 
 
