@@ -382,12 +382,29 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
                     )
                 )
+            experimental_changed = user_input.get(
+                CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+            ) != self._config_entry.options.get(
+                CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+            )
             result = self.async_create_entry(data=user_input)
             # Register or remove the experimental_* services to match the
             # toggle immediately. async_create_entry has already written
             # the new options by this point, so experimental_enabled()
             # reads the just-saved value rather than the stale one.
             async_setup_services(self.hass)
+            if experimental_changed:
+                # The button platform only builds its entities when the
+                # option is on, and entities - unlike services - cannot be
+                # added or dropped without re-running platform setup. Only
+                # reload when the flag actually flipped: a reload drops
+                # every device's TCP connection, which is far too heavy a
+                # price for someone who just changed the refresh interval.
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(
+                        self._config_entry.entry_id
+                    )
+                )
             return result
 
         current = self._config_entry.options

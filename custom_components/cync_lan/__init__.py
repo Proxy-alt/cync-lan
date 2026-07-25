@@ -49,6 +49,9 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
+    # Platform.BUTTON: UI entry points for the experimental actions, created
+    # only when the experimental option is on - see button.py.
+    Platform.BUTTON,
     Platform.FAN,
     Platform.LIGHT,
     Platform.NUMBER,

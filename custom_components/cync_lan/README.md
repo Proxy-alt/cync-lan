@@ -198,12 +198,46 @@ sensor sensitivity and timing tuning as an entity (service + guided wizard
 only, not a bare entity), and OTA firmware update triggering - see
 [Known limitations](#known-limitations).
 
+### Experimental features are opt-in
+
+None of the `experimental_*` actions exist until you turn them on:
+
+**Settings -> Devices & services -> Cync LAN -> Configure -> General
+settings -> "Enable experimental commands (advanced)"**
+
+They are off by default because every one of them sends a mesh command whose
+outer envelope byte is *predicted* from a length formula rather than
+confirmed against a real packet capture, and most have never been exercised
+against real hardware. Turning the option on registers the actions and adds
+the buttons below; turning it back off removes them again.
+
+#### Buttons (easier than the raw actions)
+
+With the option on, the **Cync LAN Bridge** device gains buttons that carry
+the ID they act on, so you never have to look up a numeric `scene_id` or
+`schedule_id`:
+
+| Button | What it does |
+|---|---|
+| Query mesh credentials | Reads your BTLE mesh name and password off a connected hub and shows them in a notification. Pass them to `cync-lan-ble-provision` to add a new device to your *existing* mesh instead of only a factory-default one. |
+| Delete scene *&lt;name&gt;* | Deletes that specific Cync scene. One per scene. |
+| Delete schedule *&lt;name&gt;* | Deletes that specific Cync schedule. One per schedule. |
+
+The two delete buttons are **disabled by default**: Home Assistant has no
+"are you sure?" dialog for a button press, and recreating a deleted scene
+means going back to the phone app. Enable the entity first if you want it -
+that deliberate extra step is the confirmation.
+
+The mesh password is your mesh's shared secret. It is shown in a
+dismissible notification rather than written to the log; dismiss it when you
+are done.
+
 ### Services
 
 Every raw service is prefixed `experimental_` as a visible risk signal in
 Developer Tools -> Actions and the automation/script action picker - see
 each service's own description there for its specific transport-confidence
-caveats.
+caveats. They appear only when the option above is enabled.
 
 | Service | Purpose |
 |---|---|
@@ -213,6 +247,7 @@ caveats.
 | `set_group_power` | Turn a Cync device group on or off as one command. |
 | `set_motion_sensor_schedule` | Write one slot of a device's native motion-sensor schedule. |
 | `delete_scene` | Delete a saved Cync scene. |
+| `query_mesh_credentials` | Return the BTLE mesh name and password as action response data. |
 | `delete_schedule` | Delete a saved Cync schedule. |
 | `toggle_automation` | Enable or disable a saved Cync schedule without deleting it. |
 | `set_group_membership` | Add or remove one device from a Cync group's mesh address. |

@@ -150,6 +150,17 @@
       "diagnostic_relay_source": {
         "name": "Connected via"
       }
+    },
+    "button": {
+      "query_mesh_credentials": {
+        "name": "Query mesh credentials"
+      },
+      "delete_scene": {
+        "name": "Delete scene {scene_name}"
+      },
+      "delete_schedule": {
+        "name": "Delete schedule {schedule_name}"
+      }
     }
   },
   "exceptions": {
