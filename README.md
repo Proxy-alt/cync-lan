@@ -34,7 +34,7 @@ repository, each on its own branch. **You are on `core`.**
 | Artifact | Branch | What it is | Distributed via |
 |---|---|---|---|
 | `cync-lan` | **`core`** (here) | This library - protocol, sessions, cloud auth, BLE | [PyPI](https://pypi.org/project/cync-lan/) |
-| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + Docker image |
+| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + [ghcr.io](https://github.com/Proxy-alt/cync-lan/pkgs/container/cync-lan-mqtt) image |
 | `cync_lan` custom_component | [`feature/ha-custom-component`](https://github.com/Proxy-alt/cync-lan/tree/feature/ha-custom-component) | Native Home Assistant integration (no MQTT) | GitHub Release / HACS |
 
 Bumping this library does not require bumping either consumer, or vice
