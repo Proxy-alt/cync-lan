@@ -19,6 +19,10 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+          # This branch has no requirements.txt and no root pyproject.toml,
+          # so setup-python's default cache key finds nothing and the step
+          # hard-fails. Point it at the file that does exist.
+          cache-dependency-path: requirements_test.txt
 
       - name: Install dependencies
         run: |

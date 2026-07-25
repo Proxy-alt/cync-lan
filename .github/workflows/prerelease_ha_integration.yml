@@ -21,7 +21,23 @@ permissions:
   contents: write
 
 jobs:
+  # Gate the release on the suite, the way publish_pypi_core.yml and
+  # publish_pypi_addon.yml already do. Without this the tag and GitHub
+  # release were created regardless - v2.0.0 shipped while Tests was red.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - run: pip install -r requirements_test.txt
+      - run: pytest tests -q
+
   prerelease:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
