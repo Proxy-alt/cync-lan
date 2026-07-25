@@ -1,3 +1,10 @@
+### 0.2.1
+
+Requires `cync-lan` 0.2.1, which relaxes its exact `pyyaml==6.0.2` pin - that
+pin made the core package uninstallable alongside Home Assistant, which
+requires `PyYAML==6.0.3`. This package carried the identical exact pin, so it
+is relaxed here too; nothing in it needs a specific PyYAML version.
+
 ### 0.2.0
 
 **Requires `cync-lan` 0.2.0, and Python 3.12+.** The previous `>=3.9` claim was
