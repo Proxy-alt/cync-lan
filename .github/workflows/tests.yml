@@ -36,3 +36,26 @@ jobs:
       - name: Type check
         continue-on-error: true
         run: mypy -p custom_components.cync_lan
+
+  docs-in-sync:
+    name: docs match the canonical copy on core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+      # docs/ is mirrored on core, python and feature/ha-custom-component
+      # because each is a separately published artifact. core is canonical.
+      # mesh_opcodes.md had already drifted 9 lines between branches before
+      # this check existed, so nothing catches it but CI.
+      - name: Compare docs/ against origin/core
+        run: |
+          git fetch --no-tags --depth=1 origin core
+          if ! git diff --quiet FETCH_HEAD -- docs/; then
+            echo "docs/ differs from the canonical copy on the core branch:"
+            git --no-pager diff --stat FETCH_HEAD -- docs/
+            echo
+            echo "Copy the updated files from core, or update core first."
+            exit 1
+          fi
+          echo "docs/ is in sync with core"

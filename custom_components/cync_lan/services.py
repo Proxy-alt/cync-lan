@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
@@ -26,7 +26,13 @@ from homeassistant.helpers import (
 )
 
 from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT
-from .const import DOMAIN, MOTION_SENSOR_SENSITIVITY, MOTION_SENSOR_TYPE
+from .const import (
+    CONF_ENABLE_EXPERIMENTAL,
+    DEFAULT_ENABLE_EXPERIMENTAL,
+    DOMAIN,
+    MOTION_SENSOR_SENSITIVITY,
+    MOTION_SENSOR_TYPE,
+)
 
 if TYPE_CHECKING:
     from homeassistant.components import automation as automation_component
@@ -50,6 +56,7 @@ SERVICE_REMOVE_DEVICE_FROM_SCENE = "experimental_remove_device_from_scene"
 SERVICE_SET_MULTICOLOR_GRADIENT_MODE = "experimental_set_multicolor_gradient_mode"
 SERVICE_SET_MULTICOLOR_SEGMENT_COUNT = "experimental_set_multicolor_segment_count"
 SERVICE_SET_MULTICOLOR_SEGMENTS = "experimental_set_multicolor_segments"
+SERVICE_QUERY_MESH_CREDENTIALS = "experimental_query_mesh_credentials"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -343,6 +350,49 @@ async def _handle_set_multicolor_segments(hass: HomeAssistant, call: ServiceCall
             "segment_2_position/segment_2_rgb) must be given."
         )
     await node.set_multicolor_segments(segments)
+
+
+async def _handle_query_mesh_credentials(
+    hass: HomeAssistant, call: ServiceCall
+) -> ServiceResponse:
+    """Ask a connected hub for the BTLE mesh name and password (op_code
+    0x8A, confirmed via QueryHubMeshNameAndPasswordCommand.java).
+
+    These are the two values cync_lan.ble_provision's key_encrypt()/
+    generate_sk() derive their AES key from, so they are what a user needs
+    to provision a new device onto their EXISTING mesh with the
+    cync-lan-ble-provision CLI - which cannot obtain them itself, having no
+    server of its own.
+
+    Returned as a service response rather than logged: the password is the
+    mesh's shared secret, and HA's own log is a much wider audience than
+    the person who deliberately invoked this action.
+    """
+    try:
+        from cync_lan.devices import (  # type: ignore[attr-defined]
+            query_hub_mesh_credentials,
+        )
+    except ImportError as err:
+        # Added to cync-lan after 0.1.2. manifest.json pins the minimum, but
+        # a user on an older wheel would otherwise get a bare ImportError
+        # traceback instead of being told what to do about it.
+        raise HomeAssistantError(
+            "This action needs a newer cync-lan library than the one "
+            "installed. Update the integration (or the cync-lan package) and "
+            "restart Home Assistant."
+        ) from err
+
+    _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
+    result: Optional[tuple[str, str]] = await query_hub_mesh_credentials()
+    if result is None:
+        raise HomeAssistantError(
+            "No connected Cync device answered the mesh-credentials query within "
+            "the timeout. This command's response channel is experimental (see "
+            "docs/mesh_opcodes.md); it may not ride the TCP relay this "
+            "integration intercepts on your hardware."
+        )
+    mesh_name, mesh_password = result
+    return {"mesh_name": mesh_name, "mesh_password": mesh_password}
 
 
 def _resolve_cync_light_entity(
@@ -746,6 +796,11 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_COUNT): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
         }
     ),
+    SERVICE_QUERY_MESH_CREDENTIALS: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+        }
+    ),
     SERVICE_SET_MULTICOLOR_SEGMENTS: vol.Schema(
         {
             vol.Required(ATTR_DEVICE_ID): cv.string,
@@ -769,7 +824,11 @@ _SERVICE_SCHEMAS = {
     ),
 }
 
-_HANDLERS: dict[str, Callable[[HomeAssistant, ServiceCall], Coroutine[Any, Any, None]]] = {
+# Handlers either act (returning None) or return response data - see
+# _RESPONSE_SERVICES.
+_HANDLERS: dict[
+    str, Callable[[HomeAssistant, ServiceCall], Coroutine[Any, Any, ServiceResponse]]
+] = {
     SERVICE_SET_INDICATOR_LED: _handle_set_indicator_led,
     SERVICE_SET_MOTION_SENSOR_SETTINGS: _handle_set_motion_sensor_settings,
     SERVICE_EXECUTE_SCENE: _handle_execute_scene,
@@ -785,14 +844,44 @@ _HANDLERS: dict[str, Callable[[HomeAssistant, ServiceCall], Coroutine[Any, Any, 
     SERVICE_SET_MULTICOLOR_GRADIENT_MODE: _handle_set_multicolor_gradient_mode,
     SERVICE_SET_MULTICOLOR_SEGMENT_COUNT: _handle_set_multicolor_segment_count,
     SERVICE_SET_MULTICOLOR_SEGMENTS: _handle_set_multicolor_segments,
+    SERVICE_QUERY_MESH_CREDENTIALS: _handle_query_mesh_credentials,
+}
+
+# Services that return data to the caller instead of only acting.
+_RESPONSE_SERVICES = {
+    SERVICE_QUERY_MESH_CREDENTIALS: SupportsResponse.ONLY,
 }
 
 
+def experimental_enabled(hass: HomeAssistant) -> bool:
+    """Whether any loaded Cync LAN entry has opted in to experimental
+    commands, via the hub's Configure screen."""
+    return any(
+        entry.options.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL)
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN)
+    )
+
+
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register all 15 experimental services - idempotent, so calling this
-    from every config entry's async_setup_entry (there's only ever one
-    entry per the unique-config-entry design, but this is cheap insurance)
-    is safe."""
+    """Register the experimental services, but only if the user opted in.
+
+    Every one of these sends a mesh command whose cmd_code is PREDICTED
+    from the length formula in docs/mesh_opcodes.md rather than confirmed
+    against a packet capture, and most have never been exercised against
+    real hardware. Registering them unconditionally put 15 entries in
+    Developer Tools -> Actions that look as ordinary as any other, so the
+    "experimental_" prefix was the only thing standing between a user and
+    an unproven mesh write. The prefix stays; the opt-in gate means the
+    services do not exist at all until it is switched on.
+
+    Idempotent in both directions - safe to call whenever the option might
+    have changed (entry setup, and the options flow), and it removes the
+    services again if the user turns the option back off.
+    """
+    if not experimental_enabled(hass):
+        _async_remove_services(hass)
+        return
+
     for service, schema in _SERVICE_SCHEMAS.items():
         if hass.services.has_service(DOMAIN, service):
             continue
@@ -801,12 +890,29 @@ def async_setup_services(hass: HomeAssistant) -> None:
         async def _call(
             call: ServiceCall,
             _handler: Callable[
-                [HomeAssistant, ServiceCall], Coroutine[Any, Any, None]
+                [HomeAssistant, ServiceCall], Coroutine[Any, Any, ServiceResponse]
             ] = handler,
-        ) -> None:
-            await _handler(hass, call)
+        ) -> ServiceResponse:
+            # Must RETURN, not just await: a SupportsResponse service whose
+            # wrapper drops the handler's dict fails with "expected a
+            # dictionary, but got NoneType".
+            return await _handler(hass, call)
 
-        hass.services.async_register(DOMAIN, service, _call, schema=schema)
+        hass.services.async_register(
+            DOMAIN,
+            service,
+            _call,
+            schema=schema,
+            supports_response=_RESPONSE_SERVICES.get(
+                service, SupportsResponse.NONE
+            ),
+        )
+
+
+def _async_remove_services(hass: HomeAssistant) -> None:
+    for service in _SERVICE_SCHEMAS:
+        if hass.services.has_service(DOMAIN, service):
+            hass.services.async_remove(DOMAIN, service)
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
@@ -817,6 +923,4 @@ def async_unload_services(hass: HomeAssistant) -> None:
     otherwise always still show up in async_loaded_entries()."""
     if len(hass.config_entries.async_loaded_entries(DOMAIN)) > 1:
         return
-    for service in _SERVICE_SCHEMAS:
-        if hass.services.has_service(DOMAIN, service):
-            hass.services.async_remove(DOMAIN, service)
+    _async_remove_services(hass)

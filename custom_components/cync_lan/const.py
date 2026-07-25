@@ -11,11 +11,17 @@ CONF_LOCAL_PORT = "local_port"
 CONF_EXPORT_REFRESH_INTERVAL = "export_refresh_interval"
 CONF_ENABLE_LIGHT_GROUPS = "enable_light_groups"
 CONF_HIDE_GROUP_MEMBERS = "hide_group_members"
+# Opt-in gate for the experimental_* services. Every one of them sends a
+# mesh command whose cmd_code is PREDICTED from a length formula rather than
+# confirmed against a packet capture (see docs/mesh_opcodes.md), so they are
+# off unless the user turns them on from the hub's Configure screen.
+CONF_ENABLE_EXPERIMENTAL = "enable_experimental"
 
 DEFAULT_LOCAL_PORT = 23779
 DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS = 24
 DEFAULT_ENABLE_LIGHT_GROUPS = False
 DEFAULT_HIDE_GROUP_MEMBERS = False
+DEFAULT_ENABLE_EXPERIMENTAL = False
 
 MANUFACTURER = "Savant"
 

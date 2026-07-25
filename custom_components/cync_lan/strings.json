@@ -58,7 +58,8 @@
           "local_port": "Local TCP port (devices must be redirected here via DNS)",
           "export_refresh_interval": "Hours between automatic device-list refreshes (0 to disable)",
           "enable_light_groups": "Create light group entities for Cync device groups",
-          "hide_group_members": "Hide each group's individual member lights from dashboards"
+          "hide_group_members": "Hide each group's individual member lights from dashboards",
+          "enable_experimental": "Enable experimental commands (advanced) - adds the experimental_* actions for scenes, schedules, motion-sensor tuning and mesh queries. Their wire format is predicted, not confirmed against real hardware; they may do nothing, or something unintended."
         }
       },
       "motion_sensor_select": {
@@ -543,6 +544,16 @@
         "segment_2_rgb": {
           "name": "Segment 2 color",
           "description": "This segment's color. Leave blank to send \"no color\" (0,0,0)."
+        }
+      }
+    },
+    "experimental_query_mesh_credentials": {
+      "name": "Experimental: query mesh credentials",
+      "description": "Asks a connected hub for the BTLE mesh name and password. These are what cync-lan-ble-provision needs to add a new device to your EXISTING mesh instead of only a factory-default one. Returns them as action response data - the password is your mesh's shared secret, so treat the response accordingly. EXPERIMENTAL: the response channel is unconfirmed and may simply time out on your hardware.",
+      "fields": {
+        "device_id": {
+          "name": "Bridge device",
+          "description": "The 'Cync LAN Bridge' device, not an individual light."
         }
       }
     }

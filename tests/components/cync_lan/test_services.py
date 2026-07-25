@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,6 +18,7 @@ from custom_components.cync_lan.services import (
     SERVICE_DELETE_SCHEDULE,
     SERVICE_EXECUTE_SCENE,
     SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
+    SERVICE_QUERY_MESH_CREDENTIALS,
     SERVICE_REMOVE_DEVICE_FROM_SCENE,
     SERVICE_SET_GROUP_MEMBERSHIP,
     SERVICE_SET_GROUP_POWER,
@@ -26,6 +29,7 @@ from custom_components.cync_lan.services import (
     SERVICE_SET_MULTICOLOR_SEGMENTS,
     SERVICE_SET_MULTICOLOR_SEGMENT_COUNT,
     SERVICE_TOGGLE_AUTOMATION,
+    _async_remove_services,
     async_setup_services,
     async_unload_services,
 )
@@ -111,6 +115,22 @@ def _register_automation_entity(hass, entity_id: str, raw_config: dict, name: st
         )
     entities[entity_id] = fake_entity
     return fake_entity
+
+
+
+@pytest.fixture(autouse=True)
+def opted_in_to_experimental(request):
+    """The experimental_* services only register once the user opts in from
+    the hub's Configure screen. These tests are about what the services DO,
+    so they assume the opt-in; the gate itself is covered by the
+    test_experimental_gate_* tests, which opt out of this fixture."""
+    if "no_experimental_optin" in request.keywords:
+        yield
+        return
+    with patch(
+        "custom_components.cync_lan.services.experimental_enabled", return_value=True
+    ):
+        yield
 
 
 def _make_entry(hass, dev_ids: list[int] = ()):
@@ -1559,3 +1579,136 @@ async def test_push_automation_rejects_action_missing_entity_id(hass):
             blocking=True,
         )
     async_unload_services(hass)
+
+
+# ---------------------------------------------------------------------------
+# The experimental opt-in gate
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _loaded_entry(hass, *, experimental: bool):
+    """Yield an entry that experimental_enabled() will see as loaded.
+
+    async_loaded_entries is patched rather than the entry being marked
+    LOADED for real: a real LOADED MockConfigEntry makes HA run the actual
+    async_unload_entry at teardown, which expects a full CyncLanRuntimeData
+    rather than the stub these tests use.
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.cync_lan.const import CONF_ENABLE_EXPERIMENTAL
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@example.com",
+        options={CONF_ENABLE_EXPERIMENTAL: experimental},
+    )
+    entry.add_to_hass(hass)
+    with patch.object(
+        hass.config_entries, "async_loaded_entries", return_value=[entry]
+    ):
+        yield entry
+
+
+@pytest.mark.no_experimental_optin
+async def test_experimental_gate_registers_nothing_by_default(hass):
+    """Off by default: every one of these sends a mesh command whose
+    cmd_code is predicted rather than confirmed, so they must not appear in
+    the action picker until the user asks for them."""
+    with _loaded_entry(hass, experimental=False):
+        async_setup_services(hass)
+
+        assert not hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
+        assert not hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
+        assert not hass.services.has_service(
+            DOMAIN, SERVICE_PUSH_AUTOMATION_TO_HARDWARE
+        )
+
+
+@pytest.mark.no_experimental_optin
+async def test_experimental_gate_registers_when_opted_in(hass):
+    with _loaded_entry(hass, experimental=True):
+        async_setup_services(hass)
+
+        assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
+        assert hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
+        assert hass.services.has_service(DOMAIN, SERVICE_QUERY_MESH_CREDENTIALS)
+    _async_remove_services(hass)
+
+
+@pytest.mark.no_experimental_optin
+async def test_experimental_gate_removes_services_when_turned_back_off(hass):
+    """Toggling the option off must take effect without a reload - the
+    options flow calls async_setup_services again after saving."""
+    from custom_components.cync_lan.const import CONF_ENABLE_EXPERIMENTAL
+
+    with _loaded_entry(hass, experimental=True) as entry:
+        async_setup_services(hass)
+        assert hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
+
+        hass.config_entries.async_update_entry(
+            entry, options={CONF_ENABLE_EXPERIMENTAL: False}
+        )
+        async_setup_services(hass)
+
+        assert not hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
+
+
+@pytest.mark.no_experimental_optin
+async def test_query_mesh_credentials_returns_response_data(hass):
+    """The password is the mesh's shared secret, so it comes back as action
+    response data rather than being logged."""
+    ctx = _loaded_entry(hass, experimental=True)
+    entry = ctx.__enter__()
+    entry.runtime_data = SimpleNamespace(
+        ncync_server=SimpleNamespace(node_devices={}),
+        bridge=CyncLanBridge(hass, entry.entry_id),
+    )
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.query_hub_mesh_credentials",
+        new=AsyncMock(return_value=("my_mesh", "s3cret")),
+        create=True,
+    ):
+        result = await hass.services.async_call(
+            DOMAIN,
+            SERVICE_QUERY_MESH_CREDENTIALS,
+            {"device_id": bridge_device.id},
+            blocking=True,
+            return_response=True,
+        )
+
+    assert result == {"mesh_name": "my_mesh", "mesh_password": "s3cret"}
+    ctx.__exit__(None, None, None)
+    _async_remove_services(hass)
+
+
+@pytest.mark.no_experimental_optin
+async def test_query_mesh_credentials_raises_on_timeout(hass):
+    ctx = _loaded_entry(hass, experimental=True)
+    entry = ctx.__enter__()
+    entry.runtime_data = SimpleNamespace(
+        ncync_server=SimpleNamespace(node_devices={}),
+        bridge=CyncLanBridge(hass, entry.entry_id),
+    )
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.query_hub_mesh_credentials",
+        new=AsyncMock(return_value=None),
+        create=True,
+    ):
+        with pytest.raises(HomeAssistantError):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_QUERY_MESH_CREDENTIALS,
+                {"device_id": bridge_device.id},
+                blocking=True,
+                return_response=True,
+            )
+    ctx.__exit__(None, None, None)
+    _async_remove_services(hass)

@@ -30,10 +30,12 @@ from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
+    CONF_ENABLE_EXPERIMENTAL,
     CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_HIDE_GROUP_MEMBERS,
     CONF_LOCAL_PORT,
+    DEFAULT_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_HIDE_GROUP_MEMBERS,
@@ -42,6 +44,7 @@ from .const import (
     MOTION_SENSOR_SENSITIVITY,
     MOTION_SENSOR_TYPE,
 )
+from .services import async_setup_services
 from .util import configure_environment, get_cloud_api, refresh_cloud_export
 
 _LOGGER = logging.getLogger(__name__)
@@ -379,7 +382,13 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
                     )
                 )
-            return self.async_create_entry(data=user_input)
+            result = self.async_create_entry(data=user_input)
+            # Register or remove the experimental_* services to match the
+            # toggle immediately. async_create_entry has already written
+            # the new options by this point, so experimental_enabled()
+            # reads the just-saved value rather than the stale one.
+            async_setup_services(self.hass)
+            return result
 
         current = self._config_entry.options
         return self.async_show_form(
@@ -407,6 +416,12 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         CONF_HIDE_GROUP_MEMBERS,
                         default=current.get(
                             CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_ENABLE_EXPERIMENTAL,
+                        default=current.get(
+                            CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
                         ),
                     ): bool,
                 }

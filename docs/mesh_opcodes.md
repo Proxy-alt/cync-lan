@@ -13,6 +13,13 @@ Sourcing conventions used throughout this doc, matching the existing standard se
 - **plausible** — a reasonable inference from decompiled evidence, not directly proven.
 - **not found / blocked** — explicitly flagged as absent, not guessed at.
 
+
+> **This file is mirrored on three branches** (`core`, `python`,
+> `feature/ha-custom-component`), because each is a separately published
+> artifact with its own repo view. `core` is canonical. Edit it there and
+> copy to the others in the same change - CI fails the build if they drift
+> (see `.github/workflows/tests.yml`'s `docs-in-sync` job).
+
 ### Source trees
 
 Two different decompiles are cited across this repo's docs, and they are not interchangeable:

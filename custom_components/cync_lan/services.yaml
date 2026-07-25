@@ -356,3 +356,12 @@ experimental_set_multicolor_segments:
     segment_2_rgb:
       selector:
         color_rgb:
+
+experimental_query_mesh_credentials:
+  target:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
