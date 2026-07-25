@@ -28,6 +28,114 @@ query command depends on `_await_xlink_notification`, and there is no evidence
 the reply channel rides the transport this project intercepts. If replies
 never arrive, no further read-back commands are worth building.
 
+## Run them in this order
+
+Ordered by information gained per minute, with the branch to take when a step
+fails. Stop whenever you run out of patience - the value drops off sharply
+after step 3.
+
+### Step 0 — Establish a baseline (5 min, do not skip)
+
+Turn a light on and off from Home Assistant. Check the bridge's **Connected
+devices** reads more than zero, and that the device you plan to test shows
+**Ready to control** as on.
+
+Without this, every later result is uninterpretable: "the command did nothing"
+and "that device was never reachable" look identical. Also turn on debug
+logging now - Settings → Devices & services → Cync LAN → Enable debug logging,
+or set `custom_components.cync_lan` and `cync_lan` to `debug` in
+`configuration.yaml` - so every later step records the bytes it actually sent.
+
+**If basic on/off does not work, stop.** Nothing below will mean anything.
+
+### Step 1 — Identify, on any device (2 min) → 12 commands
+
+Press **Identify** on any device. Watch the device.
+
+The cleanest signal available: a visible physical effect, on hardware you
+already have, from a command that cannot damage anything. Its family already
+contains the one confirmed command, so success is expected - and *failure*
+here would be the most surprising result in this document, because it would
+contradict that existing evidence.
+
+Note what it actually does. "Announce itself" is inferred from the class name,
+not observed.
+
+- **Works** → the `0x8E` envelope is right. Family 1 is credible; go to step 2.
+- **Nothing** → the predicted `cmd_code` is wrong for the whole family,
+  including the entities that already appear to work. Skip to step 3, which
+  tests a different family, before concluding anything.
+
+### Step 2 — Hub clock, read only (5 min) → up to 16 commands
+
+Enable the **Hub clock** sensor on the bridge (it ships disabled), wait for a
+poll, and see whether it reports a plausible date and time.
+
+The highest ceiling of any single test here, because a hub query is a
+hub-family command that also has to get an answer back. A real reading proves
+**both** that the hub envelope is right *and* that the reply channel rides
+this transport - 11 commands plus 5 queries at once.
+
+Its weakness is that failure is ambiguous, which is what step 3 is for.
+
+- **Reads a sensible time** → families 2 and 4 are both credible. You are
+  done with the structural questions; the rest is detail.
+- **Stays unavailable** → either the hub envelope is wrong or replies never
+  arrive. Go to step 3 to tell those apart.
+
+### Step 3 — Delete a scene (5 min) → disambiguates step 2
+
+Only needed if step 2 failed. Requires a scene you do not mind losing;
+create a throwaway one in the Cync app first.
+
+Enable the **Delete scene** button for it (destructive buttons ship disabled),
+press it, then check the Cync phone app.
+
+This is a hub-family **write** with an externally visible outcome, so it
+isolates the two failure modes step 2 conflates.
+
+- **Scene disappears** → the hub envelope is right; the *reply channel* is
+  what is broken. Query commands cannot work over this transport, and no
+  further read-back commands should be built.
+- **Scene remains** → the hub envelope itself is wrong. All 11 hub commands
+  are suspect, including the six whose length field was corrected in 0.2.0.
+
+### Step 4 — Dimmer LED bar and brightness (5 min)
+
+On a dimmer switch, set **Dimmer LED bar** to each of its two values, then
+move **Dimmer LED brightness** between roughly 20 and 100.
+
+Detail rather than structure, but it tests one thing nothing else does: the
+brightness change sends two packets, Preview then Save. If the bar changes
+while you drag and then snaps back, the Save byte is wrong - a distinct
+failure worth reporting precisely.
+
+### Step 5 — A light transition (2 min) → 2 commands
+
+Call `light.turn_on` on a dimmable light with a `transition:` of a few
+seconds. This is the only route to `set_fine_brightness` and the only test of
+the `0xE2` sub-command family.
+
+- **Fades** → that family works.
+- **Jumps straight to the level** → the transition was ignored; `0xE2/0x08`
+  is wrong.
+
+### Step 6 — Motion-sensor settings (10 min)
+
+**Hold the sensor's off button for about 5 seconds until its LED turns green
+first.** The real app requires this before it will accept a settings write,
+and without it the app itself reports success without transmitting - so a
+result recorded without the wake step means nothing.
+
+Then use Configure → Experimental commands → *Write a motion-sensor schedule
+slot*. Worth noting separately whether the wake requirement also applies to
+dimmer/motion combination switches, or only to standalone sensors.
+
+### Step 7 — Sync hub clock (2 min)
+
+Only meaningful if step 2 read a value. Press **Sync hub clock**, wait for the
+next poll, and see whether the reading moved to your Home Assistant time.
+
 ## Family 1 — `0x8E` mesh-relay
 
 One confirmed member, so the framing is probably right for all of them.
