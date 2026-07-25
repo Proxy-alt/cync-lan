@@ -66,7 +66,12 @@ def _count_wifi_devices(cfg_file: Path) -> int:
     return count
 
 
-async def configure_environment(hass: HomeAssistant, username: str, password: str) -> None:
+async def configure_environment(
+    hass: HomeAssistant,
+    username: str,
+    password: str,
+    capture_unknown_packets: bool = False,
+) -> None:
     """Point the upstream package's env-var-driven config at this entry.
 
     Must run before the first `import cync_lan.const` anywhere in the
@@ -111,6 +116,11 @@ async def configure_environment(hass: HomeAssistant, username: str, password: st
     # re-read the environment on a config-entry reload within the same
     # running process, a limitation of the underlying env-var-at-import-
     # time design this integration has no control over.
+    # Read by cync_lan.const at import time, so a change only takes effect
+    # after a full Home Assistant restart - a config-entry reload leaves the
+    # already-imported module holding the old value. The options flow says so.
+    os.environ["CYNC_UNSUPPORTED_RAW_DEBUG"] = "1" if capture_unknown_packets else "0"
+
     os.environ["CYNC_MAX_TCP_CONN"] = str(
         max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)
     )

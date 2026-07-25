@@ -30,11 +30,13 @@ from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
+    CONF_CAPTURE_UNKNOWN_PACKETS,
     CONF_ENABLE_EXPERIMENTAL,
     CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_HIDE_GROUP_MEMBERS,
     CONF_LOCAL_PORT,
+    DEFAULT_CAPTURE_UNKNOWN_PACKETS,
     DEFAULT_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
@@ -460,6 +462,13 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         CONF_HIDE_GROUP_MEMBERS,
                         default=current.get(
                             CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_CAPTURE_UNKNOWN_PACKETS,
+                        default=current.get(
+                            CONF_CAPTURE_UNKNOWN_PACKETS,
+                            DEFAULT_CAPTURE_UNKNOWN_PACKETS,
                         ),
                     ): bool,
                     vol.Required(

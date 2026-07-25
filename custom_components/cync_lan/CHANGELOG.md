@@ -9,6 +9,29 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.3.0
+
+**New: "Capture unrecognised packets to a log file" (advanced)**, in
+Configure → General settings.
+
+The underlying library has always been able to dump the raw hex of anything
+that connects to the local port but does not speak Cync - it was just gated
+behind an environment variable, which is not something you can set on Home
+Assistant OS. So the one situation it exists for, "something is connecting
+and I have no idea what", was exactly the situation you could not use it in.
+Diagnosing it otherwise needs `tcpdump` on the host, which HA does not ship.
+
+Turn it on, restart, and unrecognised traffic is written as hex to its own
+log file under the integration's config directory. Usually the ASCII in that
+hex names the client outright.
+
+It needs a **full restart**, not a reload: the library reads this setting at
+import time, so an already-imported module keeps the old value. The option's
+description says so.
+
+Off by default - it is noisy, and only useful when you are actually chasing
+something.
+
 ### 2.2.1
 
 **Fixed: "Ready to control" read false for almost every device.** It was a

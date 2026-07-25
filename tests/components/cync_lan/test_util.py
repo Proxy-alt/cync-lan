@@ -229,3 +229,24 @@ def test_group_sensor_schedules_for_device_no_membership():
     groups = {1: {"name": "Utility Room", "device_ids": [5], "sensor_schedules": {}}}
     device_map = build_device_group_map(groups)
     assert group_sensor_schedules_for_device(groups, device_map, 999) == []
+
+
+async def test_capture_unknown_packets_flag_reaches_the_environment(hass, monkeypatch):
+    """The library reads CYNC_UNSUPPORTED_RAW_DEBUG at import time, so the
+    option has to land in the environment before anything imports it."""
+    from custom_components.cync_lan.util import configure_environment
+
+    monkeypatch.delenv("CYNC_UNSUPPORTED_RAW_DEBUG", raising=False)
+    await configure_environment(hass, "u@e.com", "pw", capture_unknown_packets=True)
+    assert os.environ["CYNC_UNSUPPORTED_RAW_DEBUG"] == "1"
+
+    await configure_environment(hass, "u@e.com", "pw", capture_unknown_packets=False)
+    assert os.environ["CYNC_UNSUPPORTED_RAW_DEBUG"] == "0"
+
+
+async def test_capture_unknown_packets_defaults_off(hass, monkeypatch):
+    from custom_components.cync_lan.util import configure_environment
+
+    monkeypatch.delenv("CYNC_UNSUPPORTED_RAW_DEBUG", raising=False)
+    await configure_environment(hass, "u@e.com", "pw")
+    assert os.environ["CYNC_UNSUPPORTED_RAW_DEBUG"] == "0"

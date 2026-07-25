@@ -59,7 +59,8 @@
           "export_refresh_interval": "Hours between automatic device-list refreshes (0 to disable)",
           "enable_light_groups": "Create light group entities for Cync device groups",
           "hide_group_members": "Hide each group's individual member lights from dashboards",
-          "enable_experimental": "Enable experimental commands (advanced) - adds the experimental_* actions for scenes, schedules, motion-sensor tuning and mesh queries. Their wire format is predicted, not confirmed against real hardware; they may do nothing, or something unintended."
+          "enable_experimental": "Enable experimental commands (advanced) - adds the experimental_* actions for scenes, schedules, motion-sensor tuning and mesh queries. Their wire format is predicted, not confirmed against real hardware; they may do nothing, or something unintended.",
+          "capture_unknown_packets": "Capture unrecognised packets to a log file (advanced) - writes the raw hex of anything connecting to the local port that isn't a Cync device. Use this to identify an unknown client; it is noisy, and needs a full Home Assistant restart to take effect, not just a reload."
         }
       },
       "motion_sensor_select": {

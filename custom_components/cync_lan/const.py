@@ -16,12 +16,18 @@ CONF_HIDE_GROUP_MEMBERS = "hide_group_members"
 # confirmed against a packet capture (see docs/mesh_opcodes.md), so they are
 # off unless the user turns them on from the hub's Configure screen.
 CONF_ENABLE_EXPERIMENTAL = "enable_experimental"
+# Writes every unrecognised packet, as hex, to its own log file. Off by
+# default because it is noisy; the one thing that identifies a non-Cync
+# client connecting to the listener, which is otherwise invisible without
+# packet capture on the host.
+CONF_CAPTURE_UNKNOWN_PACKETS = "capture_unknown_packets"
 
 DEFAULT_LOCAL_PORT = 23779
 DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS = 24
 DEFAULT_ENABLE_LIGHT_GROUPS = False
 DEFAULT_HIDE_GROUP_MEMBERS = False
 DEFAULT_ENABLE_EXPERIMENTAL = False
+DEFAULT_CAPTURE_UNKNOWN_PACKETS = False
 
 MANUFACTURER = "Savant"
 

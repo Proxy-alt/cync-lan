@@ -31,9 +31,11 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 from .bridge import CyncLanBridge
 from .const import (
     CONF_ACCOUNT_PASSWORD,
+    CONF_CAPTURE_UNKNOWN_PACKETS,
     CONF_ACCOUNT_USERNAME,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
+    DEFAULT_CAPTURE_UNKNOWN_PACKETS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
@@ -154,7 +156,12 @@ def _import_cync_lan_symbols() -> tuple[
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await configure_environment(
-        hass, entry.data[CONF_ACCOUNT_USERNAME], entry.data[CONF_ACCOUNT_PASSWORD]
+        hass,
+        entry.data[CONF_ACCOUNT_USERNAME],
+        entry.data[CONF_ACCOUNT_PASSWORD],
+        capture_unknown_packets=entry.options.get(
+            CONF_CAPTURE_UNKNOWN_PACKETS, DEFAULT_CAPTURE_UNKNOWN_PACKETS
+        ),
     )
     os.environ["CYNC_PORT"] = str(
         entry.options.get(CONF_LOCAL_PORT, DEFAULT_LOCAL_PORT)
