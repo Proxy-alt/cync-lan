@@ -144,7 +144,13 @@ class CyncLanBridge:
         # refresh timer (which may be hours away, or disabled).
         self._on_unknown_device = on_unknown_device
         self._unknown_device_sightings: dict[int, int] = {}
-        self._last_unknown_device_trigger: float = 0.0
+        # None, not 0.0, means "never triggered". time.monotonic() is
+        # seconds since boot on Linux, so with 0.0 the cooldown check reads
+        # `monotonic() - 0.0 < 900` and suppresses the FIRST trigger on any
+        # host that booted less than the cooldown ago - a rebooted Pi, an HA
+        # OS restart, a fresh container. It only looked fine on a
+        # long-running dev machine, where monotonic() is already huge.
+        self._last_unknown_device_trigger: Optional[float] = None
         # BridgeEntityState field name -> its pending auto-clear timer.
         self._app_active_expiry_unsubs: dict[str, Callable[[], None]] = {}
 
@@ -289,7 +295,8 @@ class CyncLanBridge:
             return
         now = time.monotonic()
         if (
-            now - self._last_unknown_device_trigger
+            self._last_unknown_device_trigger is not None
+            and now - self._last_unknown_device_trigger
             < self.UNKNOWN_DEVICE_TRIGGER_COOLDOWN_SECONDS
         ):
             return

@@ -9,15 +9,6 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
-### 2.0.1
-
-**Fixed: the integration's requirements could not be installed.** `cync-lan`
-pinned `pyyaml` to exactly `6.0.2`, while Home Assistant requires
-`PyYAML==6.0.3` - a hard conflict, so installing this integration's
-requirements failed with a pip resolution error. Fixed in `cync-lan` 0.2.1,
-which this release now requires. If 2.0.0 would not install for you, this is
-why.
-
 ### 2.0.0
 
 **Breaking: the `experimental_*` actions are now opt-in.** If you call any of
@@ -32,7 +23,10 @@ real packet capture, and most have never been exercised on real hardware.
 Previously they sat in Developer Tools and the automation picker looking as
 ordinary as any other action, with only the name prefix as a warning.
 
-**Requires `cync-lan` 0.2.0**, which brings a fix worth knowing about: six hub
+**Requires `cync-lan` 0.2.1.** Earlier builds of that library pinned `pyyaml`
+to exactly `6.0.2` while Home Assistant requires `PyYAML==6.0.3`, so this
+integration's requirements could not be installed at all. 0.2.1 relaxes the
+pin. It also brings a fix worth knowing about: six hub
 commands (create/delete scene, create/delete schedule, add/toggle automation)
 were sending a length field one byte short, so device firmware read a
 truncated body and the command silently did nothing. If you tried these and
@@ -44,6 +38,13 @@ expired, the reauth flow crashed on its final step - Home Assistant rejects
 creating a new entry from a reauth flow, which is what this did. It now
 updates the existing entry in place. Anyone who hit an expired token and could
 not get back in should be able to now.
+
+**Fixed: a newly-added device was ignored for the first 15 minutes after a
+reboot.** The "re-export as soon as a new device appears" cooldown compared
+against a marker initialised to zero, and `time.monotonic()` counts from boot
+on Linux - so for the first 15 minutes of uptime the check suppressed the very
+first trigger. A rebooted Raspberry Pi or a restarted HA OS would quietly skip
+a device it had just discovered.
 
 **Fixed: several operations blocked Home Assistant's event loop**, which shows
 up as the whole instance stuttering: creating the config directory, checking

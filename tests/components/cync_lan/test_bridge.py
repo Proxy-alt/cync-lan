@@ -496,3 +496,60 @@ async def test_mark_app_wifi_active_independent_expiry_from_mesh_active(bridge, 
     await hass.async_block_till_done()
     assert bridge._get(-1).app_mesh_active is False
     assert bridge._get(-1).app_wifi_active is True
+
+
+async def test_report_unknown_device_id_triggers_on_a_freshly_booted_host(hass):
+    """The cooldown must not swallow the FIRST trigger after a reboot.
+
+    time.monotonic() is seconds since boot on Linux. With the "last
+    triggered" marker initialised to 0.0, the check reads
+    `monotonic() - 0.0 < 900`, which is true for the first 15 minutes of
+    uptime - so a rebooted Raspberry Pi, an HA OS restart or a fresh
+    container would silently ignore a genuinely new device. It only ever
+    looked correct on a long-running machine, where monotonic() is already
+    far past the window.
+    """
+    from unittest.mock import patch as _patch
+
+    from custom_components.cync_lan.bridge import CyncLanBridge
+
+    triggered = []
+
+    async def _on_unknown():
+        triggered.append(True)
+
+    bridge = CyncLanBridge(hass, "entry1", on_unknown_device=_on_unknown)
+
+    # 30 seconds of uptime - well inside the cooldown window.
+    with _patch("custom_components.cync_lan.bridge.time.monotonic", return_value=30.0):
+        for _ in range(bridge.UNKNOWN_DEVICE_SEEN_THRESHOLD):
+            bridge.report_unknown_device_id(77)
+        await hass.async_block_till_done()
+
+    assert triggered == [True]
+
+
+async def test_cooldown_still_applies_after_a_real_trigger_on_a_fresh_host(hass):
+    """The fix must not disable the cooldown, only stop it firing before
+    anything has actually triggered."""
+    from unittest.mock import patch as _patch
+
+    from custom_components.cync_lan.bridge import CyncLanBridge
+
+    triggered = []
+
+    async def _on_unknown():
+        triggered.append(True)
+
+    bridge = CyncLanBridge(hass, "entry1", on_unknown_device=_on_unknown)
+
+    with _patch("custom_components.cync_lan.bridge.time.monotonic", return_value=30.0):
+        for _ in range(bridge.UNKNOWN_DEVICE_SEEN_THRESHOLD):
+            bridge.report_unknown_device_id(77)
+        await hass.async_block_till_done()
+        # a second device, 10s later, still inside the cooldown
+        for _ in range(bridge.UNKNOWN_DEVICE_SEEN_THRESHOLD):
+            bridge.report_unknown_device_id(78)
+        await hass.async_block_till_done()
+
+    assert triggered == [True]
