@@ -34,6 +34,20 @@ env:
   # RELEASING.md) and only this one is a container.
   IMAGE_NAME: proxy-alt/cync-lan-mqtt
 
+  # linux/arm/v7 was in this list and is deliberately not any more. It has
+  # never actually built: neither uvloop nor cffi publishes an armv7l wheel,
+  # so pip falls back to compiling from source, and python:3.14-slim-bookworm
+  # ships no C compiler - "configure: error: no acceptable C compiler found
+  # in $PATH", after ~4 minutes of QEMU-emulated work. amd64 and arm64 built
+  # cleanly in the same run; the failure was armv7-only.
+  #
+  # Supporting it would mean adding a full build toolchain to the image, and
+  # cryptography (a cync-lan dependency) has no armv7l wheel either, so that
+  # pulls in Rust as well - all compiled under emulation, on every build.
+  # Not worth it for a 32-bit target that Home Assistant itself has moved
+  # away from. arm64 covers Raspberry Pi 3/4/5 on any 64-bit OS.
+  PLATFORMS: linux/amd64,linux/arm64
+
 jobs:
   build:
     # Guards against the other release-creating workflows in this project
@@ -129,7 +143,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: ${{ env.PLATFORMS }}
 
       # ---------------------------------------------------------------
       # Docker Hub - optional, and must never block the above
@@ -164,7 +178,7 @@ jobs:
           labels: ${{ steps.meta2.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: ${{ env.PLATFORMS }}
 
       - name: Note when Docker Hub was skipped
         if: env.DOCKER_HUB_KEY == ''
