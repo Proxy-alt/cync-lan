@@ -74,8 +74,10 @@ async def test_setup_entry_skips_devices_without_motion_sensor_or_schedules(hass
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert len(added) == 2
-    assert all(isinstance(e, CyncLanIpAddressSensor) for e in added)
+    # Count only the type under test - the platform also adds last-seen,
+    # device-id and the bridge's connected-devices sensor.
+    ip_sensors = [e for e in added if isinstance(e, CyncLanIpAddressSensor)]
+    assert len(ip_sensors) == 2
 
 
 async def test_setup_entry_creates_one_sensor_per_slot(hass):
@@ -100,13 +102,14 @@ async def test_setup_entry_creates_one_sensor_per_slot(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert len(added) == 3
-    unique_ids = {e.unique_id for e in added}
-    assert unique_ids == {
+    # One schedule sensor per decoded slot...
+    schedule_sensors = [e for e in added if isinstance(e, CyncLanMotionScheduleSensor)]
+    assert {e.unique_id for e in schedule_sensors} == {
         "entry1_5_schedule_32770_daytime",
         "entry1_5_schedule_32770_sleep",
-        "entry1_5_ip_address",
     }
+    # ...alongside the connection diagnostic this WiFi device also gets.
+    assert any(e.unique_id == "entry1_5_ip_address" for e in added)
 
 
 def test_single_group_uses_ungrouped_translation_key():
@@ -204,9 +207,11 @@ async def test_setup_entry_creates_ip_address_sensor_for_wifi_devices(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert len(added) == 1
-    assert isinstance(added[0], CyncLanIpAddressSensor)
-    assert added[0].unique_id == "entry1_5_ip_address"
+    ip_sensors = [e for e in added if isinstance(e, CyncLanIpAddressSensor)]
+    assert len(ip_sensors) == 1
+    assert ip_sensors[0].unique_id == "entry1_5_ip_address"
+    # a WiFi device gets no relay-source sensor
+    assert not any(isinstance(e, CyncLanRelaySourceSensor) for e in added)
 
 
 async def test_setup_entry_creates_relay_source_sensor_for_bt_only_devices(hass):
@@ -225,9 +230,10 @@ async def test_setup_entry_creates_relay_source_sensor_for_bt_only_devices(hass)
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    assert len(added) == 1
-    assert isinstance(added[0], CyncLanRelaySourceSensor)
-    assert added[0].unique_id == "entry1_5_relay_source"
+    relay_sensors = [e for e in added if isinstance(e, CyncLanRelaySourceSensor)]
+    assert len(relay_sensors) == 1
+    assert relay_sensors[0].unique_id == "entry1_5_relay_source"
+    assert not any(isinstance(e, CyncLanIpAddressSensor) for e in added)
 
 
 def test_ip_address_sensor_reads_tcp_session_ip():
@@ -266,3 +272,105 @@ def test_relay_source_sensor_none_when_never_relayed():
     node.relay_source = None
     entity = CyncLanRelaySourceSensor(bridge, "entry1", node)
     assert entity.native_value is None
+
+
+# ---------------------------------------------------------------------------
+# per-device diagnostics
+# ---------------------------------------------------------------------------
+
+
+async def test_last_seen_starts_empty_and_records_inbound_evidence(hass):
+    from cync_lan.structs import EntityState
+
+    from custom_components.cync_lan.sensor import CyncLanLastSeenSensor
+
+    bridge = CyncLanBridge(hass, "entry1")
+    sensor = CyncLanLastSeenSensor(bridge, "entry1", _fake_node())
+
+    # Nothing heard yet: unavailable rather than a misleading timestamp.
+    assert sensor.native_value is None
+    assert sensor.available is False
+
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, power=1))
+
+    assert sensor.native_value is not None
+    assert sensor.available is True
+
+
+async def test_last_seen_survives_the_device_going_offline(hass):
+    """The entity exists to answer "offline since when?", so it must keep
+    reporting after the device stops responding - unlike every other entity,
+    which correctly goes unavailable."""
+    from cync_lan.structs import EntityState
+
+    from custom_components.cync_lan.sensor import CyncLanLastSeenSensor
+
+    bridge = CyncLanBridge(hass, "entry1")
+    sensor = CyncLanLastSeenSensor(bridge, "entry1", _fake_node())
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, power=1))
+    seen_at = sensor.native_value
+
+    await bridge.pub_online(5, False)
+
+    assert bridge.is_online(5) is False
+    assert sensor.available is True
+    assert sensor.native_value == seen_at
+
+
+async def test_last_seen_is_not_advanced_by_going_offline(hass):
+    """Only inbound evidence counts. An offline push must not look like the
+    device just checked in."""
+    from custom_components.cync_lan.sensor import CyncLanLastSeenSensor
+
+    bridge = CyncLanBridge(hass, "entry1")
+    sensor = CyncLanLastSeenSensor(bridge, "entry1", _fake_node())
+
+    await bridge.pub_online(5, False)
+
+    assert sensor.native_value is None
+
+
+async def test_device_id_sensor_reports_the_mesh_id_and_stays_available(hass):
+    from custom_components.cync_lan.sensor import CyncLanDeviceIdSensor
+
+    bridge = CyncLanBridge(hass, "entry1")
+    sensor = CyncLanDeviceIdSensor(bridge, "entry1", _fake_node())
+
+    await bridge.pub_online(5, False)
+
+    assert sensor.native_value == 5
+    # A config fact, not a device fact - readable even when offline, which is
+    # exactly when someone is filing a report that needs it.
+    assert sensor.available is True
+    assert sensor.entity_registry_enabled_default is False
+
+
+async def test_connected_devices_sensor_counts_sessions(hass):
+    from custom_components.cync_lan.sensor import CyncLanConnectedDevicesSensor
+
+    runtime_data = SimpleNamespace(
+        ncync_server=SimpleNamespace(tcp_connections={"10.0.0.1": object()})
+    )
+    sensor = CyncLanConnectedDevicesSensor("entry1", runtime_data)
+
+    assert sensor.native_value == 1
+
+
+async def test_connected_devices_sensor_reports_zero_when_nothing_connected(hass):
+    """Zero is the signature of DNS redirection not being in place - the most
+    common setup failure, otherwise only surfaced by a repair issue that waits
+    ten minutes."""
+    from custom_components.cync_lan.sensor import CyncLanConnectedDevicesSensor
+
+    runtime_data = SimpleNamespace(ncync_server=SimpleNamespace(tcp_connections={}))
+    sensor = CyncLanConnectedDevicesSensor("entry1", runtime_data)
+
+    assert sensor.native_value == 0
+
+
+async def test_connected_devices_sensor_degrades_instead_of_raising(hass):
+    from custom_components.cync_lan.sensor import CyncLanConnectedDevicesSensor
+
+    sensor = CyncLanConnectedDevicesSensor("entry1", SimpleNamespace())
+
+    assert sensor.native_value is None

@@ -178,6 +178,9 @@
       },
       "app_wifi_active": {
         "name": "Cync App Active (WiFi)"
+      },
+      "ready_to_control": {
+        "name": "Ready to control"
       }
     },
     "select": {
@@ -233,6 +236,15 @@
       },
       "diagnostic_relay_source": {
         "name": "Connected via"
+      },
+      "last_seen": {
+        "name": "Last seen"
+      },
+      "device_id": {
+        "name": "Cync device ID"
+      },
+      "connected_devices": {
+        "name": "Connected devices"
       }
     },
     "button": {

@@ -11,15 +11,18 @@ docs/mesh_opcodes.md). See docs/cync_automations.md for the full data model.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Optional
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .bridge import CyncLanBridge
+from .const import DOMAIN, MANUFACTURER
 from .entity import CyncLanEntity
 from .util import build_device_group_map, group_sensor_schedules_for_device
 
@@ -82,6 +85,10 @@ async def async_setup_entry(
             entities.append(CyncLanIpAddressSensor(bridge, entry.entry_id, node))
         else:
             entities.append(CyncLanRelaySourceSensor(bridge, entry.entry_id, node))
+        entities.append(CyncLanLastSeenSensor(bridge, entry.entry_id, node))
+        entities.append(CyncLanDeviceIdSensor(bridge, entry.entry_id, node))
+
+    entities.append(CyncLanConnectedDevicesSensor(entry.entry_id, runtime_data))
     async_add_entities(entities)
 
 
@@ -177,3 +184,91 @@ class CyncLanRelaySourceSensor(CyncLanEntity, SensorEntity):
         if relay is None or relay.node is None:
             return None
         return relay.node.name
+
+
+class CyncLanLastSeenSensor(CyncLanEntity, SensorEntity):
+    """When this device was last heard from.
+
+    "It went unavailable" is nearly always followed by "when?", and nothing
+    else in the integration records that. A timestamp also distinguishes a
+    device that dropped a minute ago from one that has been silent since the
+    last restart, which are very different problems.
+
+    Deliberately NOT marked unavailable along with the device: the whole
+    point is to still read something once the device stops responding, so it
+    overrides `available` to stay on as long as there is a value at all.
+    """
+
+    _attr_translation_key = "last_seen"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_last_seen")
+
+    @property
+    def available(self) -> bool:
+        return self.native_value is not None
+
+    @property
+    def native_value(self) -> Optional[datetime]:
+        return self._bridge.get_last_seen(self._node.id)
+
+
+class CyncLanDeviceIdSensor(CyncLanEntity, SensorEntity):
+    """This device's numeric Cync mesh ID.
+
+    Static, so it earns its place only as a support aid - it is the ID that
+    appears in debug logs and in every raw experimental_* action, and there
+    is otherwise no way to see it from the UI. Available even when the device
+    is offline, since it is a property of the config rather than the device.
+    """
+
+    _attr_translation_key = "device_id"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_device_id")
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> int:
+        return self._node.id
+
+
+class CyncLanConnectedDevicesSensor(SensorEntity):
+    """How many Cync devices currently hold a TCP connection to the listener.
+
+    On the bridge device, because it describes the listener rather than any
+    one device. Zero here is the signature of the DNS redirection not being
+    in place - the single most common setup failure - which is otherwise only
+    surfaced by a repair issue that waits ten minutes before firing.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _attr_translation_key = "connected_devices"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, entry_id: str, runtime_data: Any) -> None:
+        self._runtime_data = runtime_data
+        self._attr_unique_id = f"{entry_id}_connected_devices"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
+
+    @property
+    def native_value(self) -> Optional[int]:
+        # Polled rather than pushed: connections are opened and closed by the
+        # protocol layer, which has no hook to notify on.
+        try:
+            return len(self._runtime_data.ncync_server.tcp_connections)
+        except Exception:  # noqa: BLE001 - a diagnostic must not break setup
+            return None

@@ -49,9 +49,8 @@ async def test_setup_entry_skips_devices_without_motion_sensor(hass):
     added = []
     await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
 
-    # standalone motion sensor + the two always-present app-active diagnostics
-    # (app_mesh_active: BTLE proximity, app_wifi_active: TCP login handshake)
-    assert len(added) == 3
+    # Count only motion entities - the platform also adds the two app-active
+    # diagnostics and a ready-to-control sensor per WiFi device.
     motion_entities = [e for e in added if isinstance(e, CyncLanMotionSensor)]
     assert len(motion_entities) == 1
     assert motion_entities[0]._node is standalone
@@ -126,3 +125,56 @@ async def test_app_wifi_active_is_independent_of_app_mesh_active(hass):
     await bridge.mark_app_wifi_active()
     assert wifi_entity.is_on is True
     assert mesh_entity.is_on is False
+
+
+async def test_ready_to_control_distinguishes_connected_from_usable(hass):
+    """A device can be connected and still silently drop commands until its
+    session finishes handshaking. Nothing surfaced that before - an
+    unresponsive-but-available device looked identical to a working one."""
+    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
+
+    bridge = CyncLanBridge(hass, "entry1")
+    node = _fake_node()
+    node.tcp_session = SimpleNamespace(ready_to_control=False)
+    sensor = CyncLanReadyToControlSensor(bridge, "entry1", node)
+
+    assert sensor.is_on is False
+
+    node.tcp_session = SimpleNamespace(ready_to_control=True)
+    assert sensor.is_on is True
+
+
+async def test_ready_to_control_is_off_with_no_session(hass):
+    from custom_components.cync_lan.binary_sensor import CyncLanReadyToControlSensor
+
+    bridge = CyncLanBridge(hass, "entry1")
+    node = _fake_node()
+    node.tcp_session = None
+    sensor = CyncLanReadyToControlSensor(bridge, "entry1", node)
+
+    assert sensor.is_on is False
+    # Stays available on purpose: it describes the session, and is most
+    # useful precisely when the device looks reachable but is not behaving.
+    assert sensor.available is True
+
+
+async def test_ready_to_control_only_for_wifi_devices(hass):
+    """A BTLE-mesh device has no session of its own - sensor.py's relay-source
+    sensor is what reports its reachability instead."""
+    from custom_components.cync_lan.binary_sensor import (
+        CyncLanReadyToControlSensor,
+        async_setup_entry as bs_setup,
+    )
+
+    node = _fake_node(has_wifi=False, bt_only=True, has_motion_sensor=False)
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.options = {}
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = MagicMock()
+    entry.runtime_data.ncync_server.node_devices = {5: node}
+
+    added = []
+    await bs_setup(hass, entry, lambda e: added.extend(e))
+
+    assert not any(isinstance(e, CyncLanReadyToControlSensor) for e in added)

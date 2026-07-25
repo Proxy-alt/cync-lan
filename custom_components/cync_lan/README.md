@@ -175,6 +175,21 @@ Supported entity types in this integration specifically:
   (WiFi-capable devices - the LAN address of its own direct TCP
   connection) or **Connected via** (BTLE-mesh-only devices - which
   WiFi-capable device is currently relaying its status).
+
+  Every device additionally gets, in the **Diagnostic** section of its
+  device page:
+
+  | Entity | What it tells you |
+  |---|---|
+  | **Last seen** | When the device last reported anything. Answers "offline *since when*" - and unlike every other entity it deliberately stays readable after the device goes unavailable, which is exactly when you need it. |
+  | **Ready to control** | Whether the device's connection will actually accept commands. A device can be connected and still silently drop them until its session finishes handshaking; without this, that is indistinguishable from a working device. WiFi-capable devices only. |
+  | **Cync device ID** | The numeric mesh ID, which appears in debug logs and in every raw `experimental_*` action. Disabled by default - it never changes, so it is there for filing a bug report rather than for a dashboard. |
+
+  The **Cync LAN Bridge** device also gains **Connected devices**, the number
+  of devices currently holding a connection to the local listener. Zero is
+  the signature of the DNS redirection not being in place - the most common
+  setup failure, and otherwise only surfaced by a repair notice that waits
+  ten minutes before appearing.
 - **Switch (diagnostic, disabled by default)** - a MITM-mode toggle per
   WiFi-capable device, for capturing traffic to help add support for new
   devices/features - see [Known limitations](#known-limitations). While

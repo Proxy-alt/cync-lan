@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
@@ -89,6 +90,11 @@ class BridgeEntityState:
 
     entity_state: Optional["EntityState"] = None
     online: bool = True
+    # When this device last gave any evidence of being alive - a status
+    # packet, a motion report, or an explicit online push. "Offline since
+    # when" is the first thing worth knowing about a device that stopped
+    # responding, and nothing else records it.
+    last_seen: Optional[datetime] = None
     motion: Optional[bool] = None
     app_mesh_active: bool = False
     app_wifi_active: bool = False
@@ -219,12 +225,21 @@ class CyncLanBridge:
     def is_online(self, dev_id: int) -> bool:
         return self._get(dev_id).online
 
+    def get_last_seen(self, dev_id: int) -> Optional[datetime]:
+        """When this device was last heard from, or None if never."""
+        return self._get(dev_id).last_seen
+
     def _set_online(self, dev_id: int, value: bool) -> None:
         """log-when-unavailable (silver): log the transition, not every call -
         every one of this method's callers fires on every status packet, so
         logging unconditionally would be noise, not a useful diagnostic
         trail."""
         bucket = self._get(dev_id)
+        if value:
+            # Every caller reaching here with True has just had real inbound
+            # evidence from the device, which is exactly what "last seen"
+            # should mean - not the last time we sent it something.
+            bucket.last_seen = dt_util.utcnow()
         if bucket.online != value:
             _LOGGER.info(
                 "Cync device %s is now %s", dev_id, "online" if value else "offline"

@@ -43,6 +43,15 @@ async def async_setup_entry(
         # this as a secondary entity alongside their light/switch entity.
         is_secondary = node.is_light or node.is_switch
         entities.append(CyncLanMotionSensor(bridge, entry.entry_id, node, is_secondary))
+
+    for node in runtime_data.ncync_server.node_devices.values():
+        if node.metadata is None or not node.metadata.supported:
+            continue
+        # Only WiFi devices own a session to be ready or not - a BTLE-mesh
+        # device is reached through whichever WiFi device relays it, which
+        # sensor.py's relay-source sensor already reports.
+        if node.has_wifi:
+            entities.append(CyncLanReadyToControlSensor(bridge, entry.entry_id, node))
     entities.append(CyncLanAppMeshActiveSensor(bridge, entry.entry_id))
     entities.append(CyncLanAppWifiActiveSensor(bridge, entry.entry_id))
     async_add_entities(entities)
@@ -141,3 +150,36 @@ class CyncLanAppWifiActiveSensor(BinarySensorEntity):
                 self.async_write_ha_state,
             )
         )
+
+
+class CyncLanReadyToControlSensor(CyncLanEntity, BinarySensorEntity):
+    """Whether this device's own TCP session will actually accept commands.
+
+    A device can be connected and still refuse to act: `ready_to_control` is
+    only set once the session completes its handshake, and commands sent
+    before that are silently dropped. That is a genuinely distinct state from
+    "offline", and until now nothing surfaced it - a user seeing an
+    unresponsive-but-available device had no way to tell the two apart.
+
+    Overrides `available` for the same reason the MITM switch does: this
+    describes the device's own session, so it is meaningful precisely when
+    the device looks reachable but is not behaving.
+    """
+
+    _attr_translation_key = "ready_to_control"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+
+    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+        super().__init__(bridge, entry_id, node, unique_id_suffix="_ready_to_control")
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        session = self._node.tcp_session
+        if session is None:
+            return False
+        return bool(getattr(session, "ready_to_control", False))
