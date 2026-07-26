@@ -1,3 +1,12 @@
+### 0.2.2
+
+Packaging metadata only - no code change.
+
+Adds the `keywords` and the `Topic ::` / `Framework ::` / `Development Status`
+classifiers that PyPI weights in its own search ranking. `cync-lan-mqtt` previously
+declared none of them, so it was effectively unfindable on PyPI except by
+exact name.
+
 ### 0.2.1
 
 Requires `cync-lan` 0.2.1, which relaxes its exact `pyyaml==6.0.2` pin - that
