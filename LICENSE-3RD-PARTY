@@ -379,3 +379,27 @@ CONNECTION WITH THE SOFTWARE OR THIS LICENSE, UNDER ANY KIND OF LEGAL CLAIM.
 This Hippocratic License is an Ethical Source license (https://ethicalsource.dev) and is offered for use by licensors
 and licensees at their own risk, on an “AS IS” basis, and with no warranties express or implied, to the maximum extent
 permitted by Laws.
+--------------------------------------------------------------------------------
+
+Brand icons (custom_components/cync_lan/brand/)
+Derived from: https://github.com/home-assistant/brands (core_integrations/cync)
+
+The Cync mark in these icons is taken from the Home Assistant brands
+repository, with a "LAN" badge added to distinguish this local-control
+integration from the official cloud one. Regenerate with
+scripts/make_brand_icons.py.
+
+The brands repository carries no license file and states the following, which
+applies equally to the derived files here:
+
+    All product names, trademarks and registered trademarks in the images in
+    this repository, are property of their respective owners. All images in
+    this repository are used by the Home Assistant project for identification
+    purposes only.
+
+    The use of these names, trademarks and brands appearing in these image
+    files, do not imply endorsement.
+
+Cync and C by GE are trademarks of Savant Systems, Inc. / GE Lighting. This
+project is not affiliated with, endorsed by, or supported by either company;
+the mark is used only to identify the hardware the integration talks to.
