@@ -247,6 +247,28 @@ confirmed against a real packet capture, and most have never been exercised
 against real hardware. Turning the option on registers the actions and adds
 the buttons below; turning it back off removes them again.
 
+#### If hub commands do nothing: the envelope experiment
+
+With experimental commands on, the same screen gains **"Use the alternate
+'bare' hub envelope (experiment)"**.
+
+Hub commands - scenes, schedules, automations, groups, hub queries - are sent
+with a 7-byte block that addresses a mesh device. The decompiled Cync app
+does not include that block on its own hub commands, which is a reason to
+suspect ours, though not proof: the app talks phone-to-device, while this
+integration sits between device and cloud.
+
+So both shapes are available. If hub commands appear to do nothing with the
+toggle off, turn it on and try the same thing again. Either result is worth
+reporting - "it only worked with it on" and "it worked with it off" are both
+answers, and the question cannot be settled from the decompiled app alone.
+
+It applies immediately, with no reload or restart, so trying both is cheap.
+The default is exactly what earlier versions sent, and it needs `cync-lan`
+0.5.0 or newer (pinned in the manifest); with an older library the toggle
+cannot take effect and the log says so rather than leaving you to read a
+silent no-op as a result.
+
 #### Everything is reachable without Developer Tools
 
 With the option on, every experimental command has a UI route. Commands that

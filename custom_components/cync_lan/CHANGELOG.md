@@ -9,6 +9,34 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.4.0
+
+**New: "Use the alternate 'bare' hub envelope" (experiment)**, in
+Configure → General settings, shown once experimental commands are enabled.
+
+Hub commands - scenes, schedules, automations, groups, and the hub queries -
+are sent with a 7-byte block that addresses a mesh device. A pass over the
+decompiled Cync app found that all fifteen of its own hub command classes
+skip that block entirely, which makes sense: a hub command is not addressed
+to a mesh device, so there is nothing to route to.
+
+That is a reason to suspect our shape, not proof it is wrong - the app talks
+phone-to-device, while this integration sits between device and cloud. So
+rather than change what everyone sends, this adds the alternative as a
+toggle. If hub commands do nothing for you with it off, turn it on and try
+again, then report which setting worked.
+
+Unlike the other advanced options here, it applies **immediately** - no
+reload, no restart. Flipping between the two is meant to be cheap, because
+an experiment nobody can be bothered to finish answers nothing.
+
+Requires `cync-lan` 0.5.0, which the manifest now pins. If an older library
+is somehow installed, the toggle cannot take effect; the integration logs a
+warning saying so rather than letting a silent no-op look like a result.
+
+Everything else is unchanged, and the default is exactly what previous
+versions sent.
+
 ### 2.3.0
 
 **New: "Capture unrecognised packets to a log file" (advanced)**, in

@@ -22,8 +22,8 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Proxy-alt/cync-lan/issues",
   "requirements": [
-    "cync-lan>=0.4.0",
+    "cync-lan>=0.5.0",
     "pyyaml>=6.0.2"
   ],
-  "version": "2.3.0"
+  "version": "2.4.0"
 }
