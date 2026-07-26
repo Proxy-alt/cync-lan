@@ -156,6 +156,13 @@ class CyncLanGroupPowerSwitch(RestoreEntity, SwitchEntity):
 
     _attr_should_poll = False
     _attr_assumed_state = True
+    # Required for translation_key naming to apply at all. Without it the
+    # "{group_name} power" string is never used, Entity.name stays None, and
+    # every one of these falls back to the device name - so a home with six
+    # groups showed six switches all called "Cync LAN Bridge". Every other
+    # bridge-attached entity either sets this or sets _attr_name directly;
+    # this class did neither.
+    _attr_has_entity_name = True
     _attr_translation_key = "group_power"
 
     def __init__(self, entry_id: str, group_id: int, name: str) -> None:

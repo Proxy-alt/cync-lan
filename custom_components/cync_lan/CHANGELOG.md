@@ -9,6 +9,21 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.5.1
+
+**Fixes group power switches all showing up as "Cync LAN Bridge".** Every one
+of them fell back to the bridge's own device name instead of "<group> power",
+so a home with several groups got several identically-named switches with
+nothing to tell them apart.
+
+The cause: these switches declared a translated name but not
+`has_entity_name`, and Home Assistant only applies translated entity names
+when that is set. Every other bridge-attached entity in the integration either
+sets it or sets a plain name; this one did neither.
+
+Only affects the experimental group power switches - reported from a real
+install.
+
 ### 2.5.0
 
 **Writes to a sleeping motion sensor are now refused instead of vanishing.**

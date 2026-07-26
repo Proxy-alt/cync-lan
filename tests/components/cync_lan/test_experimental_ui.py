@@ -539,3 +539,41 @@ async def test_dimmer_led_brightness_sends_and_assumes_state(hass):
 
     node.set_dimmer_led_brightness.assert_awaited_once_with(40)
     assert entity.native_value == 40
+
+
+async def test_group_power_switches_are_named_per_group(hass):
+    """Each group's switch must carry its own name.
+
+    translation_key naming only applies when has_entity_name is set. Without
+    it Entity.name stays None and Home Assistant falls back to the device
+    name, so every group's switch renders identically as "Cync LAN Bridge" -
+    which is what a real install reported.
+    """
+    from custom_components.cync_lan.switch import (
+        CyncLanGroupPowerSwitch,
+        async_setup_entry as switch_setup,
+    )
+
+    entry = _platform_entry(
+        hass,
+        experimental=True,
+        groups={
+            32770: {"name": "Kitchen", "device_ids": [5]},
+            32771: {"name": "Hallway", "device_ids": [5]},
+        },
+    )
+    added: list = []
+    await switch_setup(hass, entry, lambda e: added.extend(e))
+
+    switches = [e for e in added if isinstance(e, CyncLanGroupPowerSwitch)]
+    assert len(switches) == 2
+    for sw in switches:
+        assert sw._attr_has_entity_name is True, (
+            "without has_entity_name the group name is dropped and every "
+            "switch falls back to the bridge device's name"
+        )
+        assert sw.translation_key == "group_power"
+
+    # The distinguishing part has to differ per group, or they render alike.
+    placeholders = [sw._attr_translation_placeholders["group_name"] for sw in switches]
+    assert sorted(placeholders) == ["Hallway", "Kitchen"]
