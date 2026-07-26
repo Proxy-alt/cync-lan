@@ -7,6 +7,41 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.5.0
+
+**New: an opt-in alternate envelope for the hub command family**, selected with
+the `CYNC_HUB_ENVELOPE` environment variable. Default is `routed`, which is
+byte-for-byte what has shipped since 0.3.0; `bare` is the alternative.
+
+This exists to settle a question, not because anything is known to be broken.
+Hub commands - scenes, schedules, automations, groups, and the hub queries -
+currently go out as `header(8) + routing(7) + op(1) + payload`, with the
+7-byte block that addresses a mesh device. A pass over the decompiled phone
+app found that all fifteen of its hub command classes bypass the method that
+prepends that block entirely, which makes structural sense: a hub command is
+not addressed to a mesh device, so there is nothing to route to.
+
+That is suggestive, not decisive. The app's path is phone-to-device, while
+this library sits on the device-to-cloud side, so the evidence does not
+transfer automatically. Setting `CYNC_HUB_ENVELOPE=bare` sends
+`header(8) + op(1) + payload` with the length field 7 shorter, so the two
+shapes can be compared against real hardware instead of argued about. The
+exact bytes each produces, for all six shipped hub commands, are tabulated in
+`docs/hub_envelope_ab_test.md`.
+
+Unlike every other `CYNC_*` setting, this one is re-read on each command
+rather than frozen when `cync_lan.const` is imported. Flipping between the two
+arms has to be cheap, or the second arm never gets run.
+
+Internally, the length field and the routing flag now come from a single
+helper instead of eleven hardcoded `8 + len(payload)` expressions. They have
+to move together - the length counts the bytes after the header, so dropping
+routing drops exactly 7 from it - and a packet whose declared length disagrees
+with its body is considerably harder to diagnose than either envelope simply
+being the wrong choice.
+
+No behaviour changes unless you set the variable.
+
 ### 0.1.2
 
 - Fix `protocols.py`'s `MqttSink.pub_online` being declared as a plain
