@@ -9,6 +9,22 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.4.2
+
+**Corrects the installation instructions.** Earlier versions told you HACS
+installs would not work, because the integration lived on a branch that was not
+the repository's default and HACS only ever tracks the default. That has since
+changed - `feature/ha-custom-component` *is* the default branch now - so HACS
+picks the integration up normally as a custom repository, and releases are
+offered as updates to existing installs.
+
+The old note stayed behind after the branch change and was actively steering
+people to the manual-install path for no reason. Removed from the integration
+README and the repository README; `RELEASING.md` now records why the default
+branch matters, so it does not get moved back by accident.
+
+Documentation only - no functional change.
+
 ### 2.4.1
 
 **A proper icon.** The integration now uses the Cync mark from the Home

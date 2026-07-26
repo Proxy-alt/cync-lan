@@ -65,16 +65,9 @@ accessories are the exception, both exposed as `occupancy` binary sensors.
 
 ## Installation
 
-Full instructions, including the manual-install path, are in the
+Install through HACS as a custom repository, or copy the component in by
+hand. Full instructions are in the
 [integration's own README](./custom_components/cync_lan/README.md#installing-the-integration).
-
->[!IMPORTANT]
-> This integration lives on the `feature/ha-custom-component` branch, not
-> the repository's default branch. **HACS 2.0 cannot select a non-default
-> branch** when adding a custom repository - it always tracks the default.
-> Until this branch is merged or promoted, HACS installs will not pick it
-> up, and the manual-install path is the working route. See the integration
-> README for the current workaround.
 
 Once installed and Home Assistant is restarted, go to **Settings → Devices &
 Services → Add Integration → "Cync LAN"**, and enter your account details.

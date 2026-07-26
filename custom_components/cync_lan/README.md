@@ -46,15 +46,6 @@ history (independent of the underlying `cync-lan` package's own versioning
 
 #### Via HACS (recommended)
 
->[!NOTE]
-> This integration currently lives on the `feature/ha-custom-component`
-> branch, not the repository's default branch (`python`). HACS 2.0 does
-> **not** support selecting a non-default branch when adding a custom
-> repository - it always tracks the repo's default branch. Until this
-> branch is merged into `python` (or made the new default branch), HACS
-> installs won't pick it up; see "Manual installation" below as a
-> workaround in the meantime.
-
 1. In HACS, go to **Integrations → ⋮ (top right) → Custom repositories**.
 2. Add `https://github.com/Proxy-alt/cync-lan`, category **Integration**.
 3. Find "Cync LAN" in HACS and install it.
