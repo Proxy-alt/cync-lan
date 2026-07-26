@@ -688,7 +688,9 @@ async def delete_scene(scene_id: int) -> None:
     # so the op_code IS emitted and the length field was one byte short.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 async def delete_schedule(schedule_id: int) -> None:
@@ -723,7 +725,9 @@ async def delete_schedule(schedule_id: int) -> None:
     # so the op_code IS emitted and the length field was one byte short.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> None:
@@ -796,7 +800,9 @@ async def toggle_automation(schedule_id: int, scene_id: int, enabled: bool) -> N
     # so the op_code IS emitted and the length field was one byte short.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 async def set_time(
@@ -867,7 +873,9 @@ async def set_time(
     # See delete_scene() for why this is 8 and not 7.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(0x40, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        0x40, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 async def delete_automation(schedule_id: int) -> None:
@@ -896,7 +904,9 @@ async def delete_automation(schedule_id: int) -> None:
     # See delete_scene() for why this is 8 and not 7.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 async def delete_group(group_address: int) -> None:
@@ -924,7 +934,9 @@ async def delete_group(group_address: int) -> None:
     payload = struct.pack("<H", group_address)
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 async def _query_hub(
@@ -947,7 +959,9 @@ async def _query_hub(
     payload = bytes(buffer_len)
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1095,7 +1109,9 @@ async def query_hub_mesh_credentials(
     # op_prefix byte.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1163,7 +1179,9 @@ async def create_scene(name: str, timeout: float = 10.0) -> Optional[int]:
     # op_prefix byte.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1235,7 +1253,9 @@ async def create_schedule(
     # op_prefix byte.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
     response = await _await_xlink_notification(op, timeout=timeout)
     if response is None:
@@ -1348,7 +1368,9 @@ async def add_automation(
     # so the op_code IS emitted and the length field was one byte short.
     cmd_, _hub_routing = _hub_envelope(payload)
     m_cb = ControlMessageCallback(msg_id=0x00, message=None, sent_at=0.0, callback=None)
-    await broadcast_control_command(op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing)
+    await broadcast_control_command(
+        op, cmd_, 0x00, 0x00, payload, m_cb, lp, include_routing=_hub_routing
+    )
 
 
 class CyncDevice:
