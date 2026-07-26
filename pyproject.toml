@@ -4,11 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cync-lan"
-version = "0.5.0"
+version = "0.5.1"
 description = "Core async protocol library for local LAN control of Cync/C by GE smart devices - device/session state machine, packet codec, cloud auth, and BLE provisioning"
+keywords = ["cync", "c-by-ge", "cbyge", "ge-lighting", "savant", "home-assistant", "homeassistant", "smart-home", "home-automation", "local-control", "bluetooth-mesh", "telink", "iot", "asyncio"]
 readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
 classifiers = [
+    "Topic :: Home Automation",
+    "Topic :: System :: Hardware",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

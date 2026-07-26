@@ -7,6 +7,15 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.5.1
+
+Packaging metadata only - no code change.
+
+Adds the `keywords` and the `Topic ::` / `Framework ::` / `Development Status`
+classifiers that PyPI weights in its own search ranking. `cync-lan` previously
+declared none of them, so it was effectively unfindable on PyPI except by
+exact name.
+
 ### 0.5.0
 
 **New: an opt-in alternate envelope for the hub command family**, selected with
