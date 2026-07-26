@@ -26,6 +26,7 @@ from homeassistant.helpers import (
 )
 
 from .bridge import LED_COLOR_TO_INT, LED_MODE_TO_INT
+from .util import sleeping_battery_device
 from .const import (
     CONF_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_EXPERIMENTAL,
@@ -195,7 +196,14 @@ async def _handle_set_indicator_led(hass: HomeAssistant, call: ServiceCall) -> N
 
 
 async def _handle_set_motion_sensor_settings(hass: HomeAssistant, call: ServiceCall) -> None:
-    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    entry, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    # Refuse rather than transmit into the void - see sleeping_battery_device.
+    if sleeping_battery_device(entry, node):
+        raise ServiceValidationError(
+            f"{node.name} is asleep, so this would not reach it. Press and hold "
+            "the device's off button for 5 seconds until its LED turns green, then "
+            "try again."
+        )
     sensitivity = call.data.get(ATTR_SENSITIVITY)
     await node.set_motion_sensor_settings(
         setting_type=MOTION_SENSOR_TYPE[call.data[ATTR_SENSOR_TYPE]],
@@ -223,7 +231,13 @@ async def _handle_set_group_power(hass: HomeAssistant, call: ServiceCall) -> Non
 
 
 async def _handle_set_motion_sensor_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
-    _, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    entry, node = _resolve_device(hass, call.data[ATTR_DEVICE_ID])
+    if sleeping_battery_device(entry, node):
+        raise ServiceValidationError(
+            f"{node.name} is asleep, so this would not reach it. Press and hold "
+            "the device's off button for 5 seconds until its LED turns green, then "
+            "try again."
+        )
     rgb = call.data.get(ATTR_RGB)
     await node.set_motion_sensor_schedule(
         slot_id=SCHEDULE_SLOT_OPTIONS[call.data[ATTR_SLOT]],

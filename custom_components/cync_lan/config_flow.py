@@ -714,8 +714,16 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
         if not nodes:
             return self.async_abort(reason="no_motion_sensors")
 
+        errors: dict[str, str] = {}
         if user_input is not None:
             node = nodes[int(user_input["device"])]
+            # Same gate the dedicated motion-sensor wizard applies. Without it
+            # this form silently no-ops against a sleeping sensor, because the
+            # device never receives the write - see util.sleeping_battery_device.
+            if not self._bridge_is_online(node.id):
+                errors["base"] = "still_offline"
+                user_input = None
+        if user_input is not None:
             return await self._run(
                 node.set_motion_sensor_schedule(
                     slot_id=SCHEDULE_SLOT_OPTIONS[user_input["slot"]],
@@ -734,6 +742,7 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="exp_motion_schedule",
+            errors=errors,
             data_schema=vol.Schema(
                 {
                     vol.Required("device"): self._device_selector(nodes),

@@ -135,6 +135,32 @@ async def configure_environment(
     )
 
 
+def sleeping_battery_device(entry: Any, node: Any) -> bool:
+    """Is this a battery device that is currently asleep?
+
+    Battery-powered devices - motion sensors, wireless switches, remotes -
+    sleep to save power and only join the mesh when woken by holding their
+    off button for five seconds, until the LED turns green. Writes aimed at a
+    sleeping device do not reach it.
+
+    The check is deliberately the device's ordinary mesh online status, not
+    anything sensor-specific, because that is exactly what the real Cync app
+    checks: its wake-up screen just watches the same AvailabilityState flow
+    every device type reports flip to Online, and no separate BLE
+    "discoverable" state exists. See docs/mesh_opcodes.md's "Operational
+    prerequisite" section for the decompiled-source trail.
+
+    Worth gating on rather than sending blind: the app's own writeSettings /
+    writeSchedule return a fake success when the target is offline, never
+    transmitting. Sending anyway would reproduce that silent no-op, which is
+    the single most confusing failure this integration can produce.
+    """
+    runtime_data = getattr(entry, "runtime_data", None)
+    if runtime_data is None:
+        return False
+    return not bool(runtime_data.bridge.is_online(node.id))
+
+
 def hub_envelope_supported() -> bool:
     """Does the installed cync_lan honour CYNC_HUB_ENVELOPE?
 

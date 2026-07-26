@@ -1710,3 +1710,73 @@ async def test_query_mesh_credentials_raises_on_timeout(hass):
             )
     ctx.__exit__(None, None, None)
     _async_remove_services(hass)
+
+
+async def test_motion_sensor_settings_refused_while_device_is_asleep(hass):
+    """Battery sensors only join the mesh while awake, and the real Cync app's
+    own writeSettings returns a fake success without transmitting when the
+    target is offline. Reproducing that silent no-op is the most confusing
+    failure this integration can produce, so refuse instead."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    entry.runtime_data.bridge._set_online(5, False)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError, match="asleep"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MOTION_SENSOR_SETTINGS,
+            {"device_id": device.id, "sensor_type": "motion", "enabled": True},
+            blocking=True,
+        )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_motion_sensor_settings.assert_not_awaited()
+
+
+async def test_motion_sensor_schedule_refused_while_device_is_asleep(hass):
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    entry.runtime_data.bridge._set_online(5, False)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError, match="asleep"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MOTION_SENSOR_SCHEDULE,
+            {
+                "device_id": device.id,
+                "slot": "morning",
+                "mode": "occupancy",
+                "start_hour": 8,
+                "start_minute": 0,
+                "end_hour": 9,
+                "end_minute": 0,
+                "brightness": 50,
+            },
+            blocking=True,
+        )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_motion_sensor_schedule.assert_not_awaited()
+
+
+async def test_motion_sensor_write_proceeds_once_the_device_is_awake(hass):
+    """The gate must not be a one-way door - waking the device has to make the
+    same call go through, which is what the LED-turns-green step achieves."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    entry.runtime_data.bridge._set_online(5, False)
+    async_setup_services(hass)
+
+    entry.runtime_data.bridge._set_online(5, True)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_MOTION_SENSOR_SETTINGS,
+        {"device_id": device.id, "sensor_type": "motion", "enabled": True},
+        blocking=True,
+    )
+
+    node = entry.runtime_data.ncync_server.node_devices[5]
+    node.set_motion_sensor_settings.assert_awaited_once()
+    async_unload_services(hass)

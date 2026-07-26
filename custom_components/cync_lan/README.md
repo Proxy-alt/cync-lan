@@ -219,6 +219,23 @@ Motion-sensor settings tuning also has a guided options-flow wizard
 ("Configure" -> "Edit motion sensor settings") that walks through waking
 the physical sensor first, rather than requiring the raw service alone.
 
+#### Sleeping sensors are refused, not silently dropped
+
+Battery devices sleep, and a write aimed at a sleeping one never arrives.
+Every path that writes motion-sensor settings or schedules - both
+`experimental_*` actions and both wizards - checks the device is awake
+first, and refuses with an error telling you to hold its off button for
+five seconds until the LED turns green.
+
+That check is the device's ordinary online status, which is exactly what
+the real Cync app uses: its wake-up screen watches the same availability
+signal every device type reports, and there is no separate "discoverable"
+state to detect. The app, however, *sends anyway* when the target is
+asleep and reports success without transmitting. Refusing is the one
+place this integration deliberately behaves better than the app rather
+than matching it - a silent no-op here is indistinguishable from a wrong
+opcode, and would send you debugging the wrong thing.
+
 Not yet supported in this integration (present in some form in the
 underlying package, not yet exposed as HA entities here): motion/ambient
 sensor sensitivity and timing tuning as an entity (service + guided wizard

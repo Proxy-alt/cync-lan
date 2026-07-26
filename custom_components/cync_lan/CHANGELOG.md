@@ -9,6 +9,29 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.5.0
+
+**Writes to a sleeping motion sensor are now refused instead of vanishing.**
+
+Battery devices - motion sensors, and the wireless switches and remotes that
+share their behaviour - only join the mesh while awake. A settings or schedule
+write aimed at a sleeping one never reaches it. Previously the two
+`experimental_set_motion_sensor_*` actions and the "Experimental commands"
+schedule form sent regardless, so the command disappeared and nothing said why.
+
+All of them now check the device is awake first and refuse with an error asking
+you to hold its off button for five seconds until the LED turns green. The
+guided "Edit motion sensor settings" wizard already did this; the other three
+paths did not, and now share the same check.
+
+The check is the device's ordinary online status, which is what the real Cync
+app uses too - its wake-up screen watches the same availability signal every
+device type reports, and no separate "discoverable" state exists to detect.
+Where this deliberately differs from the app: the app sends anyway and reports
+success without transmitting. A silent no-op there is indistinguishable from a
+wrong opcode, and would send you debugging the protocol instead of pressing a
+button.
+
 ### 2.4.2
 
 **Corrects the installation instructions.** Earlier versions told you HACS
