@@ -9,6 +9,21 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.5.3
+
+Documentation only - no code change.
+
+The comparison table on the repository's front page still said this integration
+"is not on the default branch yet, which makes HACS installation more manual for
+now". That stopped being true when `feature/ha-custom-component` became the
+default branch; HACS installs work like any other custom repository. The
+integration's own README and `RELEASING.md` were corrected at the time and this
+line was missed.
+
+Released rather than left to sit on the branch because HACS installs the latest
+release, so until now the copy users actually got was the one still telling them
+the install path was awkward.
+
 ### 2.5.2
 
 **Fixes every bridge button showing up as "Cync LAN Bridge"** - the same fault
