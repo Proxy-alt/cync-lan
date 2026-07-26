@@ -57,19 +57,22 @@ below.
    anymore) and confirm it passes before pushing.
 6. Commit and push to `feature/ha-custom-component`.
 
-### The non-default-branch caveat
+### Which branch HACS tracks
 
-This integration currently lives on `feature/ha-custom-component`, not the
-repository's default branch (`python`). HACS 2.0 does not support pointing
-a custom repository at a non-default branch - it always tracks whatever
-branch GitHub reports as default. Until this integration is merged into
-`python` (or promoted to the new default branch), a tagged GitHub Release
-here does not make HACS offer an update to existing custom-repository
-installs; see `custom_components/cync_lan/README.md`'s "Installing the
-integration" section for the current manual-install workaround. Tagging
-releases now is still worthwhile - it gives the integration real version
-history and release notes ahead of that merge, and `gh release list` / the
-GitHub Releases page becomes a real changelog in the meantime.
+`feature/ha-custom-component` is the repository's **default branch**, so HACS
+tracks it. A custom-repository install picks the integration up normally, and
+a tagged GitHub Release here is offered to existing installs as an update.
+
+This used to be the other way round: the default was `python`, HACS 2.0 has
+never supported pointing a custom repository at a non-default branch, and the
+integration was effectively manual-install only. Making this branch the
+default is what fixed it - so if the default is ever moved back, HACS installs
+break silently and that has to be handled first.
+
+Only the integration's releases are marked **Latest** (see the `--latest` flags
+in the workflows). That matters more than it looks: three artifacts share this
+repository's release list, and HACS resolves whichever release is Latest, so
+Latest has to stay on the integration.
 
 ## Automated releases + PyPI publishing
 
