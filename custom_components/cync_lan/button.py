@@ -102,6 +102,14 @@ class _CyncLanBridgeButton(ButtonEntity):
     device rather than any single light."""
 
     _attr_should_poll = False
+    # Every subclass names itself with a translation_key, and Home Assistant
+    # only applies those when has_entity_name is set. Without it Entity.name
+    # stays None and each button inherits the device's name instead - so all
+    # six kinds, including one Delete button per scene/schedule/automation/
+    # group, rendered identically as "Cync LAN Bridge". Reported from a real
+    # install. It belongs here rather than on each subclass precisely because
+    # every one of them needs it.
+    _attr_has_entity_name = True
 
     def __init__(self, entry_id: str, unique_id_suffix: str) -> None:
         self._entry_id = entry_id

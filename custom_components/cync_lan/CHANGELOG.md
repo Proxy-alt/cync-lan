@@ -9,6 +9,26 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.5.2
+
+**Fixes every bridge button showing up as "Cync LAN Bridge"** - the same fault
+2.5.1 fixed for group power switches, which turned out to be more widespread
+than that release assumed.
+
+All six home-wide button types were affected: Query mesh credentials, Sync hub
+clock, and the Delete buttons for scenes, schedules, automation bindings and
+groups. Since there is one Delete button per scene, schedule and group, a
+populated account produced a long list of buttons with the same name and no
+way to tell which was which.
+
+They all inherit from one base class that was missing `has_entity_name`, so
+this is a one-line fix covering all six rather than six separate ones.
+
+Also adds a test that scans the source for the general mistake - an entity
+declaring a translated name without the flag that makes it apply - rather than
+checking the eight classes known to have hit it. The same bug reaching a
+release twice is what prompted it.
+
 ### 2.5.1
 
 **Fixes group power switches all showing up as "Cync LAN Bridge".** Every one

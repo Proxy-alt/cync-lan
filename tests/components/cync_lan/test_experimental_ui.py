@@ -577,3 +577,65 @@ async def test_group_power_switches_are_named_per_group(hass):
     # The distinguishing part has to differ per group, or they render alike.
     placeholders = [sw._attr_translation_placeholders["group_name"] for sw in switches]
     assert sorted(placeholders) == ["Hallway", "Kitchen"]
+
+
+def test_no_entity_declares_a_translated_name_it_cannot_use():
+    """Guards the whole class of bug, not the six that hit it.
+
+    Home Assistant only applies `translation_key` naming when
+    `has_entity_name` is set. An entity with a translation_key and neither
+    that flag nor an explicit `_attr_name` silently falls back to its
+    *device* name - so every instance renders identically. That shipped
+    twice: group power switches, then all six bridge button types, where a
+    Delete button per scene/schedule/automation/group all read "Cync LAN
+    Bridge".
+
+    Written as a source scan rather than per-class assertions so a new
+    entity added later is covered without anyone remembering to.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3] / "custom_components" / "cync_lan"
+    offenders = []
+    for path in sorted(root.glob("*.py")):
+        classes = {
+            m.group(1): (m.group(2), m.group(3))
+            for m in re.finditer(
+                r"class (\w+)\(([^)]*)\):(.*?)(?=\nclass |\Z)", path.read_text(), re.S
+            )
+        }
+
+        def names_itself(cls: str, seen: tuple = ()) -> bool:
+            if cls in seen:
+                return False
+            bases, body = classes.get(cls, ("", ""))
+            if "_attr_has_entity_name" in body or "_attr_name" in body:
+                return True
+            if "CyncLanEntity" in bases or "CyncLanIndicatorLed" in bases:
+                return True
+            return any(
+                names_itself(b.strip(), seen + (cls,))
+                for b in bases.split(",")
+                if b.strip() in classes
+            )
+
+        for name, (bases, body) in classes.items():
+            if not re.search(r'_attr_translation_key = "', body):
+                continue
+            inherits = any(
+                names_itself(b.strip()) for b in bases.split(",") if b.strip() in classes
+            )
+            if not (
+                "_attr_has_entity_name" in body
+                or "_attr_name" in body
+                or "CyncLanEntity" in bases
+                or "CyncLanIndicatorLed" in bases
+                or inherits
+            ):
+                offenders.append(f"{path.name}::{name}")
+
+    assert not offenders, (
+        "these declare a translated name Home Assistant will never apply, so "
+        "each falls back to the device name: " + ", ".join(offenders)
+    )
