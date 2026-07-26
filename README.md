@@ -123,10 +123,10 @@ everything else.
 | Devices appear as | Native HA entities | MQTT-discovered entities | MQTT-discovered entities |
 | Token encryption key | Automatic | You set `secret_key` | You set `CYNC_SECRET_KEY` |
 
-This integration is the newest and least Docker-dependent option, but it is
-not on the default branch yet, which makes HACS installation more manual for
-now. The App is the least fiddly version of the well-established Docker/MQTT
-path. Plain Docker Compose gives the most direct control.
+This integration is the newest and least Docker-dependent option, and it
+installs through HACS like any other custom repository. The App is the least
+fiddly version of the well-established Docker/MQTT path. Plain Docker Compose
+gives the most direct control.
 
 The three are versioned independently. [RELEASING.md](./RELEASING.md) covers
 the details, including the rule that decides releases from prereleases: a
