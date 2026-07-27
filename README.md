@@ -1,5 +1,5 @@
 >[!IMPORTANT]
-> [DNS redirection REQUIRED](./docs/DNS.md) - this integration controls your
+> [DNS redirection REQUIRED](https://github.com/Proxy-alt/cync-lan/wiki/DNS) - this integration controls your
 > devices by impersonating the cloud server they phone home to. Without
 > redirecting those hostnames at your router, nothing connects.
 
@@ -41,7 +41,7 @@ accessories are the exception, both exposed as `occupancy` binary sensors.
 
 ## Prerequisites
 
-1. **[DNS redirection](./docs/DNS.md)** of the `xlink.cn`-family hostnames
+1. **[DNS redirection](https://github.com/Proxy-alt/cync-lan/wiki/DNS)** of the `xlink.cn`-family hostnames
    to your Home Assistant host, at your router or a local DNS server
    (Pi-hole, AdGuard Home, dnsmasq). Devices already talking to the real
    cloud need a **power cycle** to pick up the change.
@@ -112,7 +112,7 @@ repository, each on its own branch. **You are on
 
 ### Which one do you want?
 
-All three need the same [DNS redirection](./docs/DNS.md); they differ in
+All three need the same [DNS redirection](https://github.com/Proxy-alt/cync-lan/wiki/DNS); they differ in
 everything else.
 
 | | This integration (HACS) | Home Assistant App ([hass-addons](https://github.com/Proxy-alt/hass-addons)) | Docker Compose ([`python`](https://github.com/Proxy-alt/cync-lan/tree/python)) |
@@ -171,9 +171,20 @@ project's.
 
 ## Documentation
 
-- [`docs/DNS.md`](docs/DNS.md) - DNS redirection, the one hard requirement.
-- [`docs/troubleshooting.md`](docs/troubleshooting.md) - start here when
-  something is wrong.
+**Setup guides live in the [wiki](https://github.com/Proxy-alt/cync-lan/wiki)** -
+[DNS redirection](https://github.com/Proxy-alt/cync-lan/wiki/DNS) (the one hard
+requirement), [installation](https://github.com/Proxy-alt/cync-lan/wiki/install),
+[troubleshooting](https://github.com/Proxy-alt/cync-lan/wiki/troubleshooting),
+[tips](https://github.com/Proxy-alt/cync-lan/wiki/tips),
+[debugging setup](https://github.com/Proxy-alt/cync-lan/wiki/debugging_setup) and
+[firmware versions](https://github.com/Proxy-alt/cync-lan/wiki/firmware_version).
+They are there rather than here so you can fix them yourself - router UIs change
+and nobody owns every model.
+
+Protocol research stays in the repository, because it is cited from source
+comments, mirrored across all three branches by CI, and its claims carry
+confidence markers worth reviewing in a pull request:
+
 - [`docs/known_devices.md`](docs/known_devices.md) - device types and
   support status.
 - [`docs/packet_structure.md`](docs/packet_structure.md) - the wire format.
