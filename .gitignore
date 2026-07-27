@@ -1,0 +1,7 @@
+# Regenerated decompile output - never commit the tree itself
+/decompiled/
+/out/
+# cyncdec caches, rebuilt on demand
+/tools/.cache/
+__pycache__/
+.DS_Store
