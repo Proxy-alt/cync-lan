@@ -334,7 +334,7 @@ caveats. They appear only when the option above is enabled.
 
 | Service | Purpose |
 |---|---|
-| `set_indicator_led` | Set a device's indicator LED mode, color, and brightness. |
+| `set_indicator_led` | Set a device's indicator LED mode, color, and brightness. **Not experimental** - confirmed working on real hardware, so it is available without the opt-in and is not `experimental_`-prefixed. The old `experimental_set_indicator_led` name still works. |
 | `set_motion_sensor_settings` | Tune a motion/ambient-light sensor's sensitivity and timing. |
 | `execute_scene` | Activate a saved Cync scene. |
 | `set_group_power` | Turn a Cync device group on or off as one command. |

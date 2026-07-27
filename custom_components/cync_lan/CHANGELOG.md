@@ -9,6 +9,28 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.6.0
+
+**The indicator LED is no longer experimental.** It has been confirmed working
+on real hardware, so it is out from behind the opt-in.
+
+The Select, Number and Switch entities for indicator-LED mode, colour,
+brightness and blink-on-disconnect already appeared by default - that part was
+already right. What changed is the action: it is now `cync_lan.set_indicator_led`
+rather than `cync_lan.experimental_set_indicator_led`, and it is registered
+whether or not experimental commands are enabled.
+
+**The old name still works.** It was the only name for several releases, so it
+is in people's automations, and renaming without an alias would break them
+silently - the symptom being a light that does not respond, which nobody traces
+back to a service rename. Calling the old name logs a warning asking you to
+update, and otherwise behaves identically.
+
+Everything else stays behind the opt-in. Of the 27 experimental commands this
+integration implements, this is the only one confirmed against real hardware;
+the other 26 still send a `cmd_code` predicted from a length formula, which is
+exactly what the gate is there to protect people from.
+
 ### 2.5.3
 
 Documentation only - no code change.

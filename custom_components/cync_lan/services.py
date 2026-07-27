@@ -46,7 +46,11 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-SERVICE_SET_INDICATOR_LED = "experimental_set_indicator_led"
+# Confirmed against real hardware, so it is not gated or prefixed like the
+# rest. The old name stays registered as an alias so existing automations
+# keep working - see _LEGACY_ALIASES.
+SERVICE_SET_INDICATOR_LED = "set_indicator_led"
+SERVICE_SET_INDICATOR_LED_LEGACY = "experimental_set_indicator_led"
 SERVICE_SET_MOTION_SENSOR_SETTINGS = "experimental_set_motion_sensor_settings"
 SERVICE_EXECUTE_SCENE = "experimental_execute_scene"
 SERVICE_SET_GROUP_POWER = "experimental_set_group_power"
@@ -842,6 +846,16 @@ _RESPONSE_SERVICES = {
 }
 
 
+# Services that are confirmed working on real hardware. These register
+# unconditionally: the experimental gate exists to keep unproven mesh
+# writes out of Developer Tools, and this is neither unproven nor unsafe.
+_CONFIRMED_SERVICES = frozenset({SERVICE_SET_INDICATOR_LED})
+
+# Old name -> current name. Registered alongside the real one so upgrading
+# does not break an automation someone already wrote.
+_LEGACY_ALIASES = {SERVICE_SET_INDICATOR_LED_LEGACY: SERVICE_SET_INDICATOR_LED}
+
+
 def experimental_enabled(hass: HomeAssistant) -> bool:
     """Whether any loaded Cync LAN entry has opted in to experimental
     commands, via the hub's Configure screen."""
@@ -867,11 +881,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
     have changed (entry setup, and the options flow), and it removes the
     services again if the user turns the option back off.
     """
-    if not experimental_enabled(hass):
-        _async_remove_services(hass)
-        return
+    allowed = (
+        set(_SERVICE_SCHEMAS)
+        if experimental_enabled(hass)
+        else set(_CONFIRMED_SERVICES)
+    )
+    _async_remove_services(hass, keep=allowed)
 
     for service, schema in _SERVICE_SCHEMAS.items():
+        if service not in allowed:
+            continue
         if hass.services.has_service(DOMAIN, service):
             continue
         handler = _HANDLERS[service]
@@ -897,9 +916,50 @@ def async_setup_services(hass: HomeAssistant) -> None:
             ),
         )
 
+    # Keep the old `experimental_` name working. It was the only name for a
+    # while, so it is in people's automations; renaming without this would
+    # break them silently at the worst moment, when a light did not come on.
+    for legacy, current in _LEGACY_ALIASES.items():
+        if current not in allowed or hass.services.has_service(DOMAIN, legacy):
+            continue
+        handler = _HANDLERS[current]
 
-def _async_remove_services(hass: HomeAssistant) -> None:
-    for service in _SERVICE_SCHEMAS:
+        async def _legacy_call(
+            call: ServiceCall,
+            _handler: Callable[
+                [HomeAssistant, ServiceCall], Coroutine[Any, Any, ServiceResponse]
+            ] = handler,
+            _legacy: str = legacy,
+            _current: str = current,
+        ) -> ServiceResponse:
+            _LOGGER.warning(
+                "cync_lan.%s has been renamed to cync_lan.%s - it is confirmed "
+                "working on real hardware and is no longer experimental. The old "
+                "name still works; please update your automations.",
+                _legacy,
+                _current,
+            )
+            return await _handler(hass, call)
+
+        hass.services.async_register(
+            DOMAIN,
+            legacy,
+            _legacy_call,
+            schema=_SERVICE_SCHEMAS[current],
+            supports_response=_RESPONSE_SERVICES.get(current, SupportsResponse.NONE),
+        )
+
+
+def _async_remove_services(hass: HomeAssistant, keep: set[str] | None = None) -> None:
+    """Remove registered services, except any named in `keep`.
+
+    Called on every options change, so turning the experimental toggle off has
+    to withdraw those services without also withdrawing the confirmed ones.
+    """
+    keep = keep or set()
+    for service in list(_SERVICE_SCHEMAS) + list(_LEGACY_ALIASES):
+        if service in keep:
+            continue
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
 

@@ -1,4 +1,4 @@
-experimental_set_indicator_led:
+set_indicator_led: &id001
   fields:
     device_id:
       required: true
@@ -10,19 +10,19 @@ experimental_set_indicator_led:
       selector:
         select:
           options:
-            - always_on
-            - always_off
-            - normal
+          - always_on
+          - always_off
+          - normal
           translation_key: indicator_led_mode
     color:
       required: true
       selector:
         select:
           options:
-            - white
-            - red
-            - green
-            - blue
+          - white
+          - red
+          - green
+          - blue
           translation_key: indicator_led_color
     brightness:
       required: true
@@ -33,8 +33,7 @@ experimental_set_indicator_led:
           mode: slider
     wifi_disconnect_blink:
       selector:
-        boolean:
-
+        boolean: null
 experimental_set_motion_sensor_settings:
   fields:
     device_id:
@@ -47,19 +46,19 @@ experimental_set_motion_sensor_settings:
       selector:
         select:
           options:
-            - motion
-            - ambient_light
+          - motion
+          - ambient_light
           translation_key: motion_sensor_type
     enabled:
       selector:
-        boolean:
+        boolean: null
     sensitivity:
       selector:
         select:
           options:
-            - high
-            - medium
-            - low
+          - high
+          - medium
+          - low
           translation_key: motion_sensor_sensitivity
     delay_seconds:
       selector:
@@ -73,7 +72,6 @@ experimental_set_motion_sensor_settings:
           min: 0
           max: 3600
           unit_of_measurement: seconds
-
 experimental_execute_scene:
   fields:
     device_id:
@@ -87,7 +85,6 @@ experimental_execute_scene:
         number:
           min: 0
           max: 255
-
 experimental_set_group_power:
   fields:
     device_id:
@@ -104,8 +101,7 @@ experimental_set_group_power:
     state:
       required: true
       selector:
-        boolean:
-
+        boolean: null
 experimental_set_motion_sensor_schedule:
   fields:
     device_id:
@@ -118,20 +114,20 @@ experimental_set_motion_sensor_schedule:
       selector:
         select:
           options:
-            - morning
-            - daytime
-            - evening
-            - sleep
+          - morning
+          - daytime
+          - evening
+          - sleep
           translation_key: motion_schedule_slot
     mode:
       required: true
       selector:
         select:
           options:
-            - disabled
-            - occupancy
-            - vacancy
-            - simple
+          - disabled
+          - occupancy
+          - vacancy
+          - simple
           translation_key: motion_schedule_mode
     start_hour:
       required: true
@@ -171,8 +167,7 @@ experimental_set_motion_sensor_schedule:
           max: 100
     rgb:
       selector:
-        color_rgb:
-
+        color_rgb: null
 experimental_delete_scene:
   fields:
     device_id:
@@ -186,7 +181,6 @@ experimental_delete_scene:
         number:
           min: 0
           max: 65535
-
 experimental_delete_schedule:
   fields:
     device_id:
@@ -200,7 +194,6 @@ experimental_delete_schedule:
         number:
           min: 0
           max: 65535
-
 experimental_toggle_automation:
   fields:
     device_id:
@@ -223,8 +216,7 @@ experimental_toggle_automation:
     enabled:
       required: true
       selector:
-        boolean:
-
+        boolean: null
 experimental_set_group_membership:
   fields:
     device_id:
@@ -241,15 +233,14 @@ experimental_set_group_membership:
     member:
       required: true
       selector:
-        boolean:
+        boolean: null
     reach_flag:
       selector:
         select:
           options:
-            - normal
-            - receive_only
+          - normal
+          - receive_only
           translation_key: group_reach_flag
-
 experimental_push_automation_to_hardware:
   fields:
     automation_entity_id:
@@ -257,7 +248,6 @@ experimental_push_automation_to_hardware:
       selector:
         entity:
           domain: automation
-
 experimental_add_device_to_scene:
   fields:
     device_id:
@@ -278,21 +268,20 @@ experimental_add_device_to_scene:
           max: 100
     rgb:
       selector:
-        color_rgb:
+        color_rgb: null
     fade:
       selector:
         select:
           options:
-            - no_fade
-            - 10_seconds
-            - 30_seconds
-            - 1_minute
-            - 5_minutes
-            - 10_minutes
-            - 20_minutes
-            - 30_minutes
+          - no_fade
+          - 10_seconds
+          - 30_seconds
+          - 1_minute
+          - 5_minutes
+          - 10_minutes
+          - 20_minutes
+          - 30_minutes
           translation_key: scene_fade
-
 experimental_remove_device_from_scene:
   fields:
     device_id:
@@ -306,7 +295,6 @@ experimental_remove_device_from_scene:
         number:
           min: 0
           max: 255
-
 experimental_set_multicolor_gradient_mode:
   fields:
     device_id:
@@ -317,8 +305,7 @@ experimental_set_multicolor_gradient_mode:
     enabled:
       required: true
       selector:
-        boolean:
-
+        boolean: null
 experimental_set_multicolor_segment_count:
   fields:
     device_id:
@@ -332,7 +319,6 @@ experimental_set_multicolor_segment_count:
         number:
           min: 0
           max: 255
-
 experimental_set_multicolor_segments:
   fields:
     device_id:
@@ -347,7 +333,7 @@ experimental_set_multicolor_segments:
           max: 120
     segment_1_rgb:
       selector:
-        color_rgb:
+        color_rgb: null
     segment_2_position:
       selector:
         number:
@@ -355,13 +341,13 @@ experimental_set_multicolor_segments:
           max: 120
     segment_2_rgb:
       selector:
-        color_rgb:
-
+        color_rgb: null
 experimental_query_mesh_credentials:
-  target:
+  target: null
   fields:
     device_id:
       required: true
       selector:
         device:
           integration: cync_lan
+experimental_set_indicator_led: *id001

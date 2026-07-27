@@ -380,32 +380,6 @@
     }
   },
   "services": {
-    "experimental_set_indicator_led": {
-      "name": "Set indicator LED (experimental)",
-      "description": "Confirmed working on real hardware (see docs/mesh_opcodes.md). Kept under the experimental_ service name since it's still a recently-corrected command. Sets a device's small status/indicator LED mode, color, and brightness.",
-      "fields": {
-        "device_id": {
-          "name": "Device",
-          "description": "The Cync device whose indicator LED to set."
-        },
-        "mode": {
-          "name": "Mode",
-          "description": "Always on, always off, or normal operation."
-        },
-        "color": {
-          "name": "Color",
-          "description": "The indicator LED only supports these 4 colors, not full RGB."
-        },
-        "brightness": {
-          "name": "Brightness",
-          "description": "1-100."
-        },
-        "wifi_disconnect_blink": {
-          "name": "Blink on WiFi disconnect",
-          "description": "Blink the indicator LED when the device loses its WiFi connection."
-        }
-      }
-    },
     "experimental_set_motion_sensor_settings": {
       "name": "Set motion/ambient sensor settings (experimental)",
       "description": "Experimental — the outer command byte is predicted, not confirmed against a real packet capture. Tunes a motion or ambient-light sensor's enabled state, sensitivity, and timing. Please report success or failure with your device model, see docs/mesh_opcodes.md. Note: the real Cync app requires physically waking the sensor first (press and hold its off button for 5 seconds - the LED turns green when it's discoverable, and your phone should be within 40 feet) before it accepts settings edits. This isn't a special radio mode - it's the device's ordinary online status, confirmed via decompiled-source research. If this call appears to silently do nothing, the sensor is very likely still asleep - the real app itself silently no-ops this exact command family when its target is offline, rather than erroring.",
@@ -697,6 +671,58 @@
         "device_id": {
           "name": "Bridge device",
           "description": "The 'Cync LAN Bridge' device, not an individual light."
+        }
+      }
+    },
+    "set_indicator_led": {
+      "name": "Set indicator LED",
+      "description": "Confirmed working on real hardware (see docs/mesh_opcodes.md). Kept under the experimental_ service name since it's still a recently-corrected command. Sets a device's small status/indicator LED mode, color, and brightness.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Cync device whose indicator LED to set."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Always on, always off, or normal operation."
+        },
+        "color": {
+          "name": "Color",
+          "description": "The indicator LED only supports these 4 colors, not full RGB."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "1-100."
+        },
+        "wifi_disconnect_blink": {
+          "name": "Blink on WiFi disconnect",
+          "description": "Blink the indicator LED when the device loses its WiFi connection."
+        }
+      }
+    },
+    "experimental_set_indicator_led": {
+      "name": "Set indicator LED (deprecated name)",
+      "description": "Renamed to cync_lan.set_indicator_led. This alias still works; please update your automations.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Cync device whose indicator LED to set."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Always on, always off, or normal operation."
+        },
+        "color": {
+          "name": "Color",
+          "description": "The indicator LED only supports these 4 colors, not full RGB."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "1-100."
+        },
+        "wifi_disconnect_blink": {
+          "name": "Blink on WiFi disconnect",
+          "description": "Blink the indicator LED when the device loses its WiFi connection."
         }
       }
     }

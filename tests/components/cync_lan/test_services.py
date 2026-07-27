@@ -1612,18 +1612,46 @@ def _loaded_entry(hass, *, experimental: bool):
 
 
 @pytest.mark.no_experimental_optin
-async def test_experimental_gate_registers_nothing_by_default(hass):
-    """Off by default: every one of these sends a mesh command whose
-    cmd_code is predicted rather than confirmed, so they must not appear in
-    the action picker until the user asks for them."""
+async def test_experimental_gate_registers_nothing_unproven_by_default(hass):
+    """Off by default: these send mesh commands whose cmd_code is predicted
+    rather than confirmed, so they must not appear in the action picker until
+    the user asks for them.
+
+    set_indicator_led is deliberately exempt - it is confirmed working on real
+    hardware, so the gate has nothing to protect anyone from."""
     with _loaded_entry(hass, experimental=False):
         async_setup_services(hass)
 
-        assert not hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
         assert not hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
         assert not hass.services.has_service(
             DOMAIN, SERVICE_PUSH_AUTOMATION_TO_HARDWARE
         )
+        # ...but the confirmed one is available without opting in.
+        assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
+
+
+@pytest.mark.no_experimental_optin
+async def test_indicator_led_legacy_name_still_works(hass):
+    """The service was called experimental_set_indicator_led for several
+    releases, so it is in people's automations. Renaming without an alias
+    would break them silently - the failure being a light that does not come
+    on, which nobody traces back to a service rename."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    assert hass.services.has_service(DOMAIN, "experimental_set_indicator_led")
+
+    await hass.services.async_call(
+        DOMAIN,
+        "experimental_set_indicator_led",
+        {"device_id": device.id, "mode": "always_on", "color": "green",
+         "brightness": 50},
+        blocking=True,
+    )
+    cached = entry.runtime_data.bridge.get_indicator_led(5)
+    assert cached.color == "green"
+    async_unload_services(hass)
 
 
 @pytest.mark.no_experimental_optin
