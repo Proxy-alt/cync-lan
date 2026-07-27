@@ -26,7 +26,14 @@ def find_root(start: Path | None = None) -> Path:
             return p
         raise SystemExit(f"CYNCDEC_ROOT={p} has no sources/ dir")
 
-    for base in filter(None, [start, Path(__file__).resolve(), Path.cwd().resolve()]):
+    # $PWD is the shell's *logical* cwd, which preserves symlinks; os.getcwd()
+    # resolves them. That matters when tools/ is a symlink into a checkout of
+    # the research branch: the resolved path sits outside the decompile tree,
+    # so only the logical one can find sources/.
+    logical = os.environ.get("PWD")
+    candidates = [start, Path(logical) if logical else None,
+                  Path(__file__).resolve(), Path.cwd().resolve()]
+    for base in filter(None, candidates):
         for cand in [base, *base.parents]:
             if (cand / "sources").is_dir():
                 return cand
