@@ -2968,7 +2968,7 @@ class CyncDevice:
         wifi_disconnect_blink: bool = False,
         sub_id: Optional[int] = None,
     ) -> None:
-        """EXPERIMENTAL: sets the device's small status/indicator LED
+        """Sets the device's small status/indicator LED
         (mode/color/brightness) via sub-command 0x06
         (SetStatusIndicatorSettingsCommand, confirmed payload shape) -
         distinct from the device's main light output.

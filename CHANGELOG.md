@@ -7,6 +7,16 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.5.2
+
+Docstring only - no behaviour change.
+
+`set_indicator_led`'s docstring opened with "EXPERIMENTAL:" while its own body
+said "CONFIRMED WORKING on real hardware with the corrected op/payload" and
+explained that it is deliberately not flagged by `_warn_experimental_cmd_code`,
+because both its op_code and cmd_code are confirmed. The first word contradicted
+the rest and was the one people read.
+
 ### 0.5.1
 
 Packaging metadata only - no code change.
