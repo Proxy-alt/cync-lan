@@ -39,6 +39,14 @@ class Index:
         for fqn in self.by_name.get(simple, []):
             if fqn.endswith(q) or fqn == q:
                 hits.append(fqn)
+
+        # A class jadx generated a name for (`C2184d`) may be cited either way,
+        # and the counter half is not stable between decompiles - so accept the
+        # stable name too. `cyncdec read d` finds `C2184d`.
+        if not hits:
+            for name, fqns in self.by_name.items():
+                if paths.stable_name(name) == simple and name != simple:
+                    hits.extend(fqns)
         if not hits:  # last resort: substring over all FQNs
             hits = [f for f in self.by_fqn if q.lower() in f.lower()]
         if app_only:

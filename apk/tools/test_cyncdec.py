@@ -278,8 +278,30 @@ def test_tree() -> None:
     check_true("tree renders", "SetBrightnessCommand" in rendered, "missing root")
 
 
+def test_stable_names() -> None:
+    """jadx's generated names carry a counter that is not stable between
+    decompiles - the same APK and flags give C2551Ok one run and C3120Ok the
+    next. Anything that ends up in a citation has to use the suffix instead."""
+    from cyncdec.paths import stable_name, is_generated
+
+    check("strip field counter", stable_name("f31596n"), "n")
+    check("strip class counter", stable_name("C2551Ok"), "Ok")
+    check("strip method counter", stable_name("m28775d1"), "d1")
+    check("real names untouched", stable_name("SetBrightnessCommand"), "SetBrightnessCommand")
+    # Without anchoring the suffix to an identifier start, \d{3,} backtracks
+    # and turns a plain numeric-suffixed name into nonsense.
+    check("numeric suffix is not a rename", stable_name("f1234"), "f1234")
+    check_true("f1234 not flagged generated", not is_generated("f1234"))
+    check_true("f31596n flagged generated", is_generated("f31596n"))
+
+    # Both spellings must resolve, since docs cite either.
+    idx = index.build()
+    hits = idx.resolve("C2184d")
+    check_true("generated name resolves", bool(hits), "C2184d did not resolve")
+
+
 def main() -> int:
-    for t in (test_hexify, test_kmeta, test_enums, test_paths, test_render, test_tree):
+    for t in (test_hexify, test_kmeta, test_enums, test_paths, test_render, test_tree, test_stable_names):
         t()
     print()
     if FAILED:

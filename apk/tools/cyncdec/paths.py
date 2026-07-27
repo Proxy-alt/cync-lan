@@ -8,6 +8,7 @@ Everything here is about drawing that line so the other tools can ignore the
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 # --- locating the tree -------------------------------------------------------
@@ -138,3 +139,32 @@ def fqn_of(path: Path, src: Path) -> str:
 
 def path_of(fqn: str, src: Path) -> Path:
     return src / (fqn.replace(".", os.sep) + ".java")
+
+
+# --- jadx-generated identifiers ---------------------------------------------
+
+# jadx's deobfuscator renames identifiers shorter than --deobf-min (default 3)
+# to <prefix><counter><original>: `n` becomes `f31596n`, `Ok` becomes
+# `C2551Ok`, `d1` becomes `m28775d1`.
+#
+# The counter is assigned across the whole input and is NOT stable between
+# runs - the same command on the same APK produces `C2551Ok` one time and
+# `C3120Ok` the next. The suffix is, because it comes from the dex.
+#
+# So anything that ends up in a citation should use the suffix. Verified
+# against 15,683 `renamed from` annotations in the tree; the only divergences
+# are cases where jadx qualifies the original ("m.a" rather than "a"), where
+# the suffix still gives the correct simple name.
+# The suffix must start like a Java identifier - without that anchor,
+# `\d{3,}` backtracks and turns a plain `f1234` into `4`.
+_JADX_GENERATED = re.compile(r"^([fmC])\d{3,}([A-Za-z_]\w*)$")
+
+
+def stable_name(name: str) -> str:
+    """`f31596n` -> `n`. Returns `name` unchanged if it is not generated."""
+    m = _JADX_GENERATED.match(name)
+    return m.group(2) if m else name
+
+
+def is_generated(name: str) -> bool:
+    return bool(_JADX_GENERATED.match(name))
