@@ -1,5 +1,5 @@
 >[!IMPORTANT]
-> [DNS redirection REQUIRED](./docs/DNS.md) - this library controls Cync
+> [DNS redirection REQUIRED](https://github.com/Proxy-alt/cync-lan/wiki/DNS) - this library controls Cync
 > devices by impersonating the cloud server they phone home to. Without
 > redirecting those hostnames at your DNS, nothing connects.
 
