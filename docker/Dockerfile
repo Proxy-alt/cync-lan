@@ -1,7 +1,7 @@
 # The export UI is a Vite app. Building it here keeps node out of the final
 # image and keeps built assets out of the repository - nothing under web/dist
 # is committed, so there is no generated output to drift from its source.
-FROM node:24-slim AS web
+FROM node:26-slim AS web
 
 WORKDIR /web
 # package files first: this layer only rebuilds when dependencies change.
