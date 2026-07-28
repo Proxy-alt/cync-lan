@@ -24,10 +24,41 @@ name: Docker - publish multi-arch packages
 #     actually existing, so a missing Docker Hub credential can no longer take
 #     the GitHub Packages publish down with it.
 
+# Three triggers, because none of them is sufficient alone.
+#
+#   release       - a release published by hand.
+#   workflow_run  - a release published by the add-on's own release workflow.
+#                   GitHub deliberately does not raise events for anything
+#                   created with GITHUB_TOKEN, to stop workflows triggering
+#                   themselves, so an automated release fires no `release`
+#                   event at all. That is why ghcr sat on a stale image while
+#                   PyPI moved: the publish simply never ran. workflow_run is
+#                   raised by the run finishing, not by the token, so it fires.
+#   workflow_dispatch - manual rebuild.
 on:
   release:
     types: [ published ]
+  workflow_run:
+    # Both spellings deliberately. workflow_run matches on the workflow's
+    # name, and a mismatch fails silently - which is the same class of bug
+    # this trigger exists to fix, so it is not worth being clever about.
+    # The file on `python` reads "Release + PyPI publish ...", but GitHub's
+    # workflow registry still reports "Prerelease + PyPI publish ..." for it;
+    # the registered name goes stale for workflows that do not live on the
+    # default branch. Listing both matches whichever one GitHub uses, and
+    # keeps working after the registry catches up.
+    workflows:
+      - "Release + PyPI publish - cync-lan-mqtt add-on"
+      - "Prerelease + PyPI publish - cync-lan-mqtt add-on"
+    types: [ completed ]
+    branches: [ python ]
   workflow_dispatch:
+
+# Publishing the same tags twice from two runs would race. Serialised rather
+# than cancelled: a half-finished multi-arch push is worse than a slow one.
+concurrency:
+  group: container-publish
+  cancel-in-progress: false
 
 env:
   # Lowercase and explicit. Named for the artifact rather than the repo:
@@ -59,7 +90,14 @@ jobs:
     # add-on specifically, so only its own cync-lan-mqtt-vX.Y.Z tags should
     # trigger a build. workflow_dispatch runs are unaffected (no release
     # event to check tag_name against).
-    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'cync-lan-mqtt-v')
+    #
+    # workflow_run fires whatever the outcome, including a failed or cancelled
+    # release, so the conclusion has to be checked explicitly - otherwise a
+    # release that failed its tests would still publish an image.
+    if: >-
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'cync-lan-mqtt-v'))
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      || github.event_name == 'workflow_dispatch'
 
     runs-on: ubuntu-latest
     permissions:
@@ -72,8 +110,16 @@ jobs:
       DOCKER_HUB_KEY: ${{ secrets.DOCKER_HUB_KEY }}
 
     steps:
+      # The ref matters here and is easy to get wrong. `release` checks out the
+      # tag, which points at a `python` commit - correct. But a `workflow_run`
+      # job runs in the context of the DEFAULT branch, which is
+      # feature/ha-custom-component and has no docker/Dockerfile and none of
+      # the add-on source. Checking out the triggering run's own commit is what
+      # makes the image get built from the branch that was actually released.
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       # The release tag is cync-lan-mqtt-vX.Y.Z, which docker/metadata-action
       # cannot parse as semver on its own - left to its defaults it would tag
