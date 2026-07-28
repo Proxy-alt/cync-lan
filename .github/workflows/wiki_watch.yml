@@ -1,0 +1,82 @@
+name: Wiki watch
+
+# The wiki is open for anyone to edit, which is deliberate - router UIs change,
+# nobody owns every device model, and the person hitting a wrong step is the
+# one best placed to fix it. The cost is an edit surface with no review: wiki
+# changes are live the moment they are made, and there is no pull request.
+#
+# This workflow does not gate anything, because it cannot. `gollum` fires
+# *after* the edit is published. It exists so an edit from outside reaches you
+# instead of sitting unnoticed for months, with the diff and a revert command
+# already prepared.
+on:
+  gollum
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: wiki-watch
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    # Maintainer edits are ordinary maintenance and are not worth a
+    # notification. A collaborator check would be more precise, but this
+    # project has a single maintainer and comparing against the owner needs no
+    # additional token permission. Revisit if that changes.
+    if: github.event.sender.login != github.repository_owner
+
+    steps:
+      # Wiki content is attacker-controlled text. It is never interpolated into
+      # a shell command, an unquoted heredoc, or GITHUB_OUTPUT - it moves
+      # between steps as a file, and reaches the issue body through
+      # `printf '%s'`, which does not interpret its argument. A workflow that
+      # watches for abuse must not itself be a way to run code on the runner.
+      - name: Fetch the wiki and capture the edit
+        run: |
+          git clone --quiet "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+          git -C wiki show --stat --patch HEAD | head -c 30000 > diff.txt
+          git -C wiki rev-parse HEAD > sha.txt
+
+      - name: Open an issue with the diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES: ${{ join(github.event.pages.*.title, ', ') }}
+          SENDER: ${{ github.event.sender.login }}
+        run: |
+          sha=$(cat sha.txt)
+
+          # Backlink spam is the usual motive for editing a low-traffic wiki,
+          # so the number of *added* external links is the one figure worth
+          # putting in front of a human. Context for a judgement call, not a
+          # verdict - a genuine edit citing three vendor docs scores the same
+          # as three casino links.
+          links=$(grep -c '^+.*http' diff.txt || true)
+
+          {
+            printf '**@%s** edited: **%s**\n\n' "$SENDER" "$PAGES"
+            printf '| | |\n|---|---|\n'
+            printf '| Commit | `%s` |\n' "${sha:0:8}"
+            printf '| External links added | %s |\n\n' "$links"
+            printf 'Automatic notice, not an accusation - the wiki is open on\n'
+            printf 'purpose, and most edits will be someone correcting a step\n'
+            printf 'that was wrong for their hardware. Close this if it looks\n'
+            printf 'fine, and thank them.\n\n'
+            printf '<details><summary>Diff</summary>\n\n```diff\n'
+            printf '%s' "$(cat diff.txt)"
+            printf '\n```\n\n</details>\n\n'
+            printf 'To revert:\n\n```bash\n'
+            printf 'git clone https://github.com/%s.wiki.git\n' "$GITHUB_REPOSITORY"
+            printf 'cd cync-lan.wiki && git revert %s && git push\n' "$sha"
+            printf '```\n'
+          } > body.md
+
+          gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Wiki edit: ${PAGES} (by @${SENDER})" \
+            --body-file body.md \
+            --label wiki
