@@ -35,6 +35,7 @@ on:
 
 permissions:
   contents: write
+  discussions: write
 
 # Serialised, never cancelled. Two publishes racing can both pass the
 # "does this tag exist" check and then both try to upload; cancelling one
@@ -78,9 +79,11 @@ jobs:
             # newest by date.
             echo "flags=--latest=false" >> "$GITHUB_OUTPUT"
             echo "kind=release" >> "$GITHUB_OUTPUT"
+            echo "discussion=--discussion-category Announcements" >> "$GITHUB_OUTPUT"
           elif [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+b[0-9]+$ ]]; then
             echo "flags=--prerelease" >> "$GITHUB_OUTPUT"
             echo "kind=prerelease" >> "$GITHUB_OUTPUT"
+            echo "discussion=" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Version '$version' is neither X.Y.Z (release) nor X.Y.ZbN (prerelease). PyPI requires PEP 440, so a beta must be bN with digits - a commit sha is not a valid version here."
             exit 1
@@ -130,6 +133,7 @@ jobs:
             --title "cync-lan-mqtt ${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/release-notes.md \
             ${{ steps.classify.outputs.flags }} \
+            ${{ steps.classify.outputs.discussion }} \
             --target "${{ github.sha }}"
 
   check_pypi:
