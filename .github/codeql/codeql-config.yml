@@ -1,0 +1,15 @@
+name: cync-lan CodeQL config
+
+# Scan the integration itself. Everything else in this tree is either tests,
+# which produce findings about deliberately-invalid input, or generated.
+paths:
+  - custom_components/cync_lan
+
+paths-ignore:
+  - tests
+  - "**/brand"
+  - .github
+
+# No query filters. The temptation is to silence a noisy rule and move on, but
+# on a codebase this size the whole security-and-quality set is manageable, and
+# a filter added now would outlive the reason for it.

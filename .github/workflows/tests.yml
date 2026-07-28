@@ -8,6 +8,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One run per ref. Pushing twice in quick succession otherwise runs both
+# to completion, and only the newer result is meaningful.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     name: pytest + mypy
