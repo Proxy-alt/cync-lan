@@ -1,3 +1,18 @@
+<p align="center">
+  <picture>
+    <!-- Black on transparent, so it is close to invisible on GitHub's dark
+         theme without this. Absolute URLs because the brand assets live on
+         the feature/ha-custom-component branch, not this one. -->
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="https://raw.githubusercontent.com/Proxy-alt/cync-lan/feature/ha-custom-component/custom_components/cync_lan/brand/dark_logo@2x.png">
+    <img
+      src="https://raw.githubusercontent.com/Proxy-alt/cync-lan/feature/ha-custom-component/custom_components/cync_lan/brand/logo@2x.png"
+      alt="Cync LAN"
+      width="420">
+  </picture>
+</p>
+
 >[!IMPORTANT]
 > [DNS redirection REQUIRED](https://github.com/Proxy-alt/cync-lan/wiki/DNS)
 
@@ -9,19 +24,7 @@
 > package/import names split (`cync_lan_mqtt` for this add-on's own
 > `main.py`/`mqtt_client.py`/`exporter.py`, `cync_lan` for everything else).
 
-# THERE IS NOW A HASS *App* FOR THIS PROJECT!
-
-Huge thanks to [@CodeNeedsCoffee](https://github.com/CodeNeedsCoffee) for the initial work on the App!
-
-[![Open your Home Assistant instance and show the add App repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FProxy-alt%2Fhass-addons)
-
-The existing `python` branch will remain for users who prefer a non HASS App setup. However, docker is required and 
-manual installation is no longer officially supported. The HASS app uses the `python` branch to build its image.
-
->[!WARNING]
-> **DO NOT** contact GE / Savant for troubleshooting while using this project. Open an issue
-> [here](https://github.com/Proxy-alt/cync-lan/issues) - this is a fork, so please don't send
-> its bugs upstream to @baudneo.
+# cync-lan-mqtt
 
 Async HTTP/MQTT LAN controller for Cync/C by GE devices. **Local** only control
 of **most** Cync devices via MQTT JSON payloads following the Home Assistant MQTT JSON schema. 
@@ -37,6 +40,22 @@ Forked from [cync-lan](https://github.com/iburistu/cync-lan) and
 [cync2mqtt](https://github.com/juanboro/cync2mqtt) - All credit to 
 [iburistu](https://github.com/iburistu) and 
 [juanboro](https://github.com/juanboro)
+
+## There is a Home Assistant App for this project
+
+Huge thanks to [@CodeNeedsCoffee](https://github.com/CodeNeedsCoffee) for the initial work on the App!
+
+[![Open your Home Assistant instance and show the add App repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FProxy-alt%2Fhass-addons)
+
+The existing `python` branch will remain for users who prefer a non HASS App setup. However, docker is required and 
+manual installation is no longer officially supported. The HASS app uses the `python` branch to build its image.
+
+>[!WARNING]
+> **DO NOT** contact GE / Savant for troubleshooting while using this project. Open an issue
+> [here](https://github.com/Proxy-alt/cync-lan/issues) - this is a fork, so please don't send
+> its bugs upstream to @baudneo.
+
+
 
 >[!WARNING]
 > It is **HIGHLY** recommended that you do **NOT** do any firmware upgrades to Cync devices after running cync-lan. 
@@ -128,11 +147,9 @@ Assistant through this project now, all requiring the same
 | Install method | `docker compose up` | Add the [hass-addons](https://github.com/Proxy-alt/hass-addons) repository, install the "CyncLAN Bridge" App | Add this repository to HACS as a custom repository (see below) |
 
 If you're not sure which one you want: the HACS `custom_component` is the
-newest and least Docker-dependent option, but it's not on this
-repository's default branch yet, which makes HACS installation slightly
-more manual for now - see that integration's own README for the current
-workaround. If you'd rather stick with the well-established Docker/MQTT
-path, the "App" is the least manual-setup version of that (no
+newest and least Docker-dependent option, and it installs through HACS like
+any other custom repository. If you'd rather stick with the well-established
+Docker/MQTT path, the "App" is the least manual-setup version of that (no
 docker-compose.yaml to write yourself), while this README's plain Docker
 Compose instructions give you the most direct control.
 
@@ -349,7 +366,7 @@ In `dump.txt` you will see the back-and-forth communication between the device a
   - allows for only redirecting the device and mobile app to different machines hosting `socat`; see what the mobile app sends and then what the cloud sends to the device
   - the goal is to only have 1 device talking to 1 `socat` instance, so you can easily correlate the logs to the device and not have to sift through a ton of noise from other devices
 
-# Firewall
+## Firewall
 Once the devices are local, they must be able to initiate a connection to 
 the `cync-lan` server. If you block them from the internet, don't forget to 
 allow them to connect to the `cync-lan` server (VLANs?).
@@ -358,13 +375,13 @@ allow them to connect to the `cync-lan` server (VLANs?).
 Please see the [example](https://github.com/Proxy-alt/cync-lan/wiki/troubleshooting#opnsense-firewall-example)
 in the troubleshooting docs.
 
-# Power cycle devices after DNS re-route
+## Power cycle devices after DNS re-route
 Devices make a DNS query on first startup (or after a network loss,
 like AP reboot) - you need to power cycle all devices that are currently 
 connected to the Cync cloud servers before they request a new DNS record 
 and will connect to the local `cync-lan` server.
 
-# Experimental: BLE provisioning of brand-new devices
+## Experimental: BLE provisioning of brand-new devices
 `cync-lan-ble-provision` (install with `pip install cync_lan[ble]`) is an **EXPERIMENTAL, untested
 against real hardware** command-line tool for pairing a brand-new/factory-reset Cync device onto a
 mesh over BLE directly - unrelated to the TCP relay server above, and a different transport
@@ -379,11 +396,11 @@ cync-lan-ble-provision provision <ble-address> <mesh-name> <mesh-password>
 Please report success or failure (with the exact error/traceback either way) if you try this
 against real hardware.
 
-# Troubleshooting
+## Troubleshooting
 If you are having issues, please see the 
 [Troubleshooting docs](https://github.com/Proxy-alt/cync-lan/wiki/troubleshooting) for more information.
 
-# Credits
+## Credits
 
 This project is the current link in a chain of earlier work, and none of it
 would exist without the people below.
@@ -408,6 +425,6 @@ would exist without the people below.
 Full license texts for all of the above are reproduced in
 [LICENSE-3RD-PARTY](./LICENSE-3RD-PARTY).
 
-# License
+## License
 
 MIT, same as the original - see [LICENSE](./LICENSE).
