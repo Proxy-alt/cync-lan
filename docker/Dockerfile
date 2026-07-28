@@ -11,7 +11,16 @@ COPY web/ ./
 RUN npm run build
 
 
-FROM python:3.14-slim-bookworm
+# Trixie (Debian 13), not bookworm (Debian 12). A Docker Scout scan of the
+# published image found 48 vulnerabilities, every one of them in a base-image
+# package and every one reported as "not fixed" - bookworm is oldstable, so
+# those fixes are not coming. No amount of `apt-get upgrade` in this file
+# changes that; the base itself is the only lever.
+#
+# `python:3.14-slim` currently resolves to exactly this image, but the distro
+# is named explicitly so a future Debian release cannot silently change the
+# runtime underneath a rebuild, and so Dependabot has a concrete tag to bump.
+FROM python:3.14-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

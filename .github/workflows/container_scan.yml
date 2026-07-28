@@ -1,0 +1,80 @@
+name: Container scan
+
+# Scans the *published* image rather than a freshly built one, because the
+# failure mode this catches is not "we shipped something known-bad" - it is
+# "what we shipped became known-bad afterwards". A CVE disclosed the week
+# after a release does not show up in any build-time gate; only re-scanning
+# what is already on the registry finds it.
+#
+# Results go to the Security tab as SARIF, alongside CodeQL, so container
+# findings live in the same place as code findings instead of in whatever
+# terminal last ran a manual scan.
+on:
+  schedule:
+    # Mondays, a couple of hours before the add-on subtree sync in
+    # Proxy-alt/hass-addons, so a base-image problem is visible before the
+    # week's changes get proposed downstream.
+    - cron: "0 4 * * 1"
+  # The publish workflow only runs on `release: published`, so without this a
+  # change to the Dockerfile is not built by anything until release day. These
+  # triggers make a broken base image or a missing package fail here instead,
+  # while the change is still in front of whoever made it.
+  push:
+    branches: [python]
+    paths:
+      - "docker/**"
+      - "web/**"
+      - ".github/workflows/container_scan.yml"
+  pull_request:
+    paths:
+      - "docker/**"
+      - "web/**"
+      - ".github/workflows/container_scan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+
+concurrency:
+  group: container-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # For a code change the published image does not yet contain it, so build
+      # the Dockerfile as written. Single architecture is deliberate:
+      # base-image package CVEs are identical across arches, and a multi-arch
+      # build would spend minutes to reach the same answer.
+      #
+      # The context is the repo root, not docker/ - the Dockerfile does
+      # `COPY ./ .` for the python source and `COPY web/` for the Vite stage.
+      - name: Build the image under review
+        if: github.event_name != 'schedule'
+        run: docker build -f docker/Dockerfile -t cync-lan-mqtt:local .
+
+      - name: Scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ github.event_name != 'schedule' && 'cync-lan-mqtt:local' || 'ghcr.io/proxy-alt/cync-lan-mqtt:latest' }}
+          format: sarif
+          output: trivy.sarif
+          # Deliberately NOT ignore-unfixed. Every finding in the scan that
+          # prompted this workflow was unfixed, so suppressing those would
+          # have reported a clean image while the actual remedy - changing the
+          # base - sat undone. Unfixed does not mean unactionable.
+          severity: CRITICAL,HIGH,MEDIUM
+          # Report, never block. A newly disclosed CVE with no fix available
+          # must not be able to wedge an unrelated pull request.
+          exit-code: "0"
+
+      - name: Upload to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: container
