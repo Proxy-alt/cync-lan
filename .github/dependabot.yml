@@ -1,0 +1,76 @@
+# Dependabot reads this from the default branch only, so every branch that
+# needs updates is reached with an explicit `target-branch`. Without those,
+# core and python would silently never be checked.
+#
+# Monthly rather than weekly, and capped: this is a one-maintainer project and
+# a queue of dependency PRs nobody triages is worse than none. Security updates
+# are separate and are not throttled by this file.
+version: 2
+
+updates:
+  # --- Home Assistant integration (default branch) ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+
+  # --- Protocol library ---
+  - package-ecosystem: pip
+    directory: /
+    target-branch: core
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: core
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+
+  # --- Docker/MQTT add-on ---
+  - package-ecosystem: pip
+    directory: /
+    target-branch: python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  # The export UI. Its lockfile is what the Docker build's node stage installs
+  # from, so a stale one here means a stale bundle in the published image.
+  - package-ecosystem: npm
+    directory: /web
+    target-branch: python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(web)"
+
+  - package-ecosystem: docker
+    directory: /docker
+    target-branch: python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(docker)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
