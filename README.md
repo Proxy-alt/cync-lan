@@ -170,7 +170,7 @@ Compose instructions give you the most direct control.
 
 ## Installation
 
-See the [installation](https://github.com/Proxy-alt/cync-lan/wiki/install) docs for more information.
+See the [installation](https://github.com/Proxy-alt/cync-lan/wiki/Installation) docs for more information.
 
 Multi-arch images (`linux/amd64`, `linux/arm64`) are published to GitHub
 Packages on every release:
@@ -181,7 +181,7 @@ docker pull ghcr.io/proxy-alt/cync-lan-mqtt:latest
 
 `latest` only ever moves to a full release, never to a `bN` beta - pin a
 version (`:0.2.1`) to upgrade deliberately. 32-bit ARM (`linux/arm/v7`) is
-not published; see [docs/install.md](https://github.com/Proxy-alt/cync-lan/wiki/install) for why.
+not published; see [docs/install.md](https://github.com/Proxy-alt/cync-lan/wiki/Installation) for why.
 
 >[!IMPORTANT]
 > After configuring and running the container (but before enabling DNS redirection), you must visit http://localhost:23778 in order to export your Cync 
@@ -258,7 +258,7 @@ The log files are rotated at local midnight and are not deleted by the app at an
 ---
 
 ## Tips
-See [Tips](https://github.com/Proxy-alt/cync-lan/wiki/tips) for more information on how to get the most out of this project.
+See [Tips](https://github.com/Proxy-alt/cync-lan/wiki/Tips) for more information on how to get the most out of this project.
 
 ## Cync Group/Room support
 Currently, the only way to interact with cync groups is to target a physical mains powered light switch that is a part of the Cync group/room with the on/off, kelvin or RGB command.
@@ -372,7 +372,7 @@ the `cync-lan` server. If you block them from the internet, don't forget to
 allow them to connect to the `cync-lan` server (VLANs?).
 
 ## OPNsense Example
-Please see the [example](https://github.com/Proxy-alt/cync-lan/wiki/troubleshooting#opnsense-firewall-example)
+Please see the [example](https://github.com/Proxy-alt/cync-lan/wiki/Troubleshooting#opnsense-firewall-example)
 in the troubleshooting docs.
 
 ## Power cycle devices after DNS re-route
@@ -398,7 +398,7 @@ against real hardware.
 
 ## Troubleshooting
 If you are having issues, please see the 
-[Troubleshooting docs](https://github.com/Proxy-alt/cync-lan/wiki/troubleshooting) for more information.
+[Troubleshooting docs](https://github.com/Proxy-alt/cync-lan/wiki/Troubleshooting) for more information.
 
 ## Credits
 
