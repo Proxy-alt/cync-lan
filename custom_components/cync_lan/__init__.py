@@ -13,6 +13,7 @@ HTTP server entirely.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from dataclasses import dataclass
@@ -415,10 +416,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ir.async_delete_issue(hass, DOMAIN, _no_devices_issue_id(entry.entry_id))
     await runtime_data.ncync_server.stop()
     runtime_data.server_task.cancel()
-    try:
+    # We just cancelled it, so CancelledError here is the expected outcome
+    # rather than a failure - awaiting is only to let the task finish unwinding
+    # before the platforms are torn down. suppress() rather than a bare
+    # `except: pass` because the latter reads as a swallowed error, which is
+    # what CodeQL's py/empty-except flags and what a reader would assume.
+    with contextlib.suppress(asyncio.CancelledError):
         await runtime_data.server_task
-    except asyncio.CancelledError:
-        pass
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     async_unload_services(hass)
     return unloaded
