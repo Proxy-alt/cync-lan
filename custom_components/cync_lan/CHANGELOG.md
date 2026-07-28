@@ -9,6 +9,13 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.6.2
+
+Reworks the `logo` variants added in 2.6.1. The LAN badge is now a smaller pill
+tucked into the bottom-right, overlapping the tail of the wordmark, rather than
+a full-size pill sitting beside it. Same idea as the icon's corner badge, so the
+two read as one family.
+
 ### 2.6.1
 
 Adds the wide `logo` brand variants, light and dark, alongside the square icons
