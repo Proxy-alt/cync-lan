@@ -187,11 +187,11 @@ project's.
 
 **Setup guides live in the [wiki](https://github.com/Proxy-alt/cync-lan/wiki)** -
 [DNS redirection](https://github.com/Proxy-alt/cync-lan/wiki/DNS) (the one hard
-requirement), [installation](https://github.com/Proxy-alt/cync-lan/wiki/install),
-[troubleshooting](https://github.com/Proxy-alt/cync-lan/wiki/troubleshooting),
-[tips](https://github.com/Proxy-alt/cync-lan/wiki/tips),
-[debugging setup](https://github.com/Proxy-alt/cync-lan/wiki/debugging_setup) and
-[firmware versions](https://github.com/Proxy-alt/cync-lan/wiki/firmware_version).
+requirement), [installation](https://github.com/Proxy-alt/cync-lan/wiki/Installation),
+[Troubleshooting](https://github.com/Proxy-alt/cync-lan/wiki/Troubleshooting),
+[Tips](https://github.com/Proxy-alt/cync-lan/wiki/Tips),
+[debugging setup](https://github.com/Proxy-alt/cync-lan/wiki/Debugging-Setup) and
+[firmware versions](https://github.com/Proxy-alt/cync-lan/wiki/Firmware-Versions).
 They are there rather than here so you can fix them yourself - router UIs change
 and nobody owns every model.
 
