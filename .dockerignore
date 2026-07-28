@@ -6,6 +6,16 @@ web/dist/
 **/__pycache__/
 **/*.pyc
 .git/
-.venv/
+# `.venv/` alone missed a sibling `.venv312/`, which `COPY ./ .` then baked in
+# as a 43 MB layer - and because a later `rm -rf` cannot reclaim space from an
+# earlier layer, it stayed in the image. CI builds from a clean checkout so
+# published images were never affected, but anyone building locally shipped
+# their own virtualenv. Glob the suffixed variants too.
+.venv*/
+venv*/
+env/
 certs/
 config/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
