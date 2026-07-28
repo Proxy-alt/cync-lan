@@ -1,3 +1,49 @@
+### 0.2.3
+
+**Security: the published Docker image no longer contains a shared private
+key.** The Dockerfile generated the TLS certificate at *build* time, so every
+install that pulled `ghcr.io/proxy-alt/cync-lan-mqtt` used the same private
+key - and anyone can extract it from the published image layers.
+
+The step was redundant as well as harmful: `cync-lan` already generates the
+pair at startup when either file is missing, with identical parameters, and
+pre-creating the files in the image is exactly what stopped that from ever
+running. Removing it means each container mints its own key on first start.
+
+Practical impact was limited, because Cync devices do not validate the
+certificate - that is why impersonating the cloud server works at all. It was
+still not something to leave in place. **No action needed on your side:** pull
+the new image and a fresh key is generated for you.
+
+**Requires `cync-lan` 0.5.3**, which fixes the version this stack reports about
+itself. The startup line, `cync-lan -V` and the `sw_version` on every Home
+Assistant device page were all reporting `0.1.2`, a version never released. If
+you have filed a bug report before, the version you gave was wrong. This
+package's own `__version__` had drifted the same way and is now read from
+package metadata too.
+
+**The image now builds on Debian 13 (trixie) instead of 12 (bookworm).** A scan
+of the published image found 48 vulnerabilities, every one in a base-image
+package and every one marked "not fixed" - bookworm is oldstable, so those
+fixes were never coming, and nothing in this Dockerfile could address them
+since it installs no apt packages at all. Measured with one scanner across
+both: 6 critical to 4, 63 medium to 54, 80 low to 66.
+
+Also:
+
+- The pinned dependency list in the Dockerfile had drifted from
+  `pyproject.toml` - it still asked for `aiomqtt==2.3.0` and an exact
+  `pyyaml==6.0.2`, so the layer meant to pre-cache dependencies installed the
+  wrong ones and `pip install .` then replaced them. The two lists now match.
+- `.dockerignore` excluded `.venv/` but not a sibling `.venv312/`, so a local
+  build could bake a 43 MB virtualenv into the image. Published images were
+  never affected - CI builds from a clean checkout - but anyone building
+  locally was shipping their own.
+- The published image is now re-scanned weekly, with results going to the
+  repository's Security tab. The failure mode this catches is not shipping
+  something known-bad, but having what was already shipped become known-bad
+  later, which no build-time gate can see.
+
 ### 0.2.2
 
 Packaging metadata only - no code change.

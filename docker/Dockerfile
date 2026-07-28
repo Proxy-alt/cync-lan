@@ -50,10 +50,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # layer as well.
 RUN set -x \
     && pip install --no-cache-dir \
-        "cync-lan>=0.1.0" \
-        "pyyaml==6.0.2" \
+        "cync-lan>=0.5.3" \
+        "pyyaml>=6.0.2" \
         "uvloop>=0.21.0" \
-        "aiomqtt==2.3.0" \
+        "aiomqtt==2.5.1" \
         "paho-mqtt" \
         "aiohttp>=3.10.8" \
         "fastapi>=0.115.12" \
