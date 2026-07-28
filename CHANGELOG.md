@@ -7,6 +7,35 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.5.3
+
+**Fixed: the version this library reports was wrong, and had been for a
+while.** `__version__` was a hand-maintained string that nothing in the release
+process touched, so it still read `0.1.2` at release 0.5.2 - a version that was
+never published at all.
+
+That number is not decorative. `CYNC_VERSION` is built from it and reaches
+users in three places:
+
+- the startup line (`CyncLAN (version: ...) stack initializing`), which is
+  exactly what the bug report template asks people to paste;
+- the output of `cync-lan -V`;
+- the `sw_version` shown on every device page in Home Assistant.
+
+All three have been reporting a fiction, which quietly undermines any bug
+report that depends on knowing what someone is actually running. **If you have
+reported an issue before, the version you gave was almost certainly wrong** -
+not your fault.
+
+`__version__` now comes from the installed package metadata, so
+`pyproject.toml` is the only place a version is declared and this cannot drift
+again. A source tree that was never installed reports `0.0.0+unknown` rather
+than inventing a plausible-looking number.
+
+Also stops tracking `build/lib/`, fifteen files of stale setuptools output that
+had diverged from `src/` - it still carried the old hand-written version. No
+effect on the published package.
+
 ### 0.5.2
 
 Docstring only - no behaviour change.
