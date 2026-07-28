@@ -1,0 +1,60 @@
+# Path and branch rules for actions/labeler, applied to pull requests.
+#
+# Two signals are in play, and the branch one is the stronger. This repository
+# ships three separately-versioned artifacts from three branches, so the base
+# branch of a pull request identifies the artifact exactly, with no guessing.
+# Paths refine that, and catch PRs touching docs or protocol notes regardless
+# of which branch they target.
+#
+# Note the `any:` wrappers. Top-level match objects are AND-ed together, so a
+# label with a bare `base-branch` entry *and* a bare `changed-files` entry
+# would need both to match. Everything meant as "either of these" is wrapped.
+#
+# Paths that do not exist on a given branch simply never match, which is why
+# one config serves all three branches unchanged.
+
+"component: core":
+  - base-branch: "^core$"
+
+"component: mqtt":
+  - any:
+      - base-branch: "^python$"
+      - changed-files:
+          - any-glob-to-any-file:
+              - "web/**"
+              - "docker/**"
+
+"component: integration":
+  - any:
+      - base-branch: "^feature/ha-custom-component$"
+      - changed-files:
+          - any-glob-to-any-file:
+              - "custom_components/**"
+
+"component: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+          - "*.md"
+
+# Protocol claims carry confidence markers and are cited from source comments,
+# so a PR touching them deserves a closer read than its diff size suggests.
+protocol:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/mesh_opcodes.md"
+          - "docs/packet_structure.md"
+          - "docs/ble_provisioning_protocol.md"
+          - "docs/hardware_verification.md"
+
+device-support:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/known_devices.md"
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
+          - ".github/*.yml"
