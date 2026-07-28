@@ -36,6 +36,14 @@ on:
 permissions:
   contents: write
 
+# Serialised, never cancelled. Two publishes racing can both pass the
+# "does this tag exist" check and then both try to upload; cancelling one
+# mid-flight is worse still, since the tag and GitHub release are created
+# before the PyPI upload and would be left behind without it.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   prerelease:
     runs-on: ubuntu-latest

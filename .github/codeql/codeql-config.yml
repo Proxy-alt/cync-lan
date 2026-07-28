@@ -1,0 +1,14 @@
+name: cync-lan-mqtt CodeQL config
+
+# Two languages here: the add-on itself, and the Vite export UI. The UI is
+# worth scanning despite its size - it takes a YAML config from an HTTP
+# endpoint and renders it, which is exactly where an injection would live.
+paths:
+  - src
+  - web/src
+
+paths-ignore:
+  - tests
+  - web/node_modules
+  - web/dist
+  - .github

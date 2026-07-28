@@ -1,0 +1,55 @@
+name: CodeQL
+
+# Advanced setup rather than GitHub's default, for two reasons: this repository
+# publishes three separately-released artifacts from three branches, so each
+# needs its own configuration, and the paths worth scanning here are narrow -
+# default setup would also analyse test fixtures and vendored code.
+on:
+  push:
+    branches: [python]
+  pull_request:
+    branches: [python]
+  schedule:
+    # Weekly. CodeQL's query packs are updated independently of this code, so a
+    # scheduled run catches newly-published queries against unchanged source -
+    # which is most of the value once the code settles.
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to upload results to the Security tab.
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-and-quality over the default: this is a protocol
+          # implementation where a mishandled buffer or a silently swallowed
+          # exception matters more than it would in a typical integration.
+          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
