@@ -27,11 +27,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     DEBIAN_FRONTEND=noninteractive
 
-RUN set -x \
-    && mkdir -p /root/cync-lan/certs \
-    && openssl req -x509 -newkey rsa:4096 \
-        -keyout '/root/cync-lan/certs/key.pem' -out '/root/cync-lan/certs/cert.pem' \
-        -subj '/CN=*.xlink.cn' -sha256 -days 3650 -nodes
+# NO build-time certificate generation here, deliberately.
+#
+# This used to run `openssl req -x509 ...`, which baked one key pair into the
+# published image - so every install that pulled it shared a single private
+# key, publicly extractable from the image layers. A Trivy scan flags it as
+# an exposed asymmetric private key, correctly.
+#
+# It was also redundant. cync_lan.server._ensure_self_signed_cert already
+# generates the pair at startup when either file is missing, using identical
+# parameters (RSA 4096, CN=*.xlink.cn, self-signed, 3650 days) - it exists
+# because a HACS install has no build step at all. Pre-creating the files here
+# is precisely what stopped it running: it only generates when they are
+# absent. Removing this step means each container mints its own key on first
+# start, and drops the image's need for an openssl binary entirely.
 
 
 # Install dependencies first, lessens cache hit on rebuilds. cync-lan (the
