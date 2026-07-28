@@ -59,7 +59,7 @@ jobs:
         run: docker build -f docker/Dockerfile -t cync-lan-mqtt:local .
 
       - name: Scan
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ github.event_name != 'schedule' && 'cync-lan-mqtt:local' || 'ghcr.io/proxy-alt/cync-lan-mqtt:latest' }}
           format: sarif
