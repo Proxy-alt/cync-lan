@@ -14,3 +14,10 @@ __pycache__/
 .coverage
 .pytest_cache/
 .DS_Store
+
+# setuptools build output. build/lib/ was committed at some point and then
+# quietly diverged from src/ - it still carried the old hand-written
+# __version__ after src/ stopped using one - so it was 15 files of duplicate
+# source that only ever misled a grep.
+build/
+dist/
