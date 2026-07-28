@@ -9,6 +9,17 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.6.1
+
+Adds the wide `logo` brand variants, light and dark, alongside the square icons
+that shipped in 2.4.x. Home Assistant uses the logo where a horizontal lockup
+fits better than a square tile.
+
+The icon takes its LAN badge as a corner overlay, which works because the mark
+fills the tile. The same treatment on the wordmark lands on top of the final
+"c" — it reads "Cyn" plus a sticker — so here the badge sits beside the
+wordmark instead, which reads as "Cync LAN", the integration's actual name.
+
 ### 2.6.0
 
 **The indicator LED is no longer experimental.** It has been confirmed working
