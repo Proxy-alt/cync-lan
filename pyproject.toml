@@ -29,7 +29,7 @@ dependencies = [
     "cync-lan>=0.2.1",
     "pyyaml>=6.0.2",
     "uvloop>=0.21.0",
-    "aiomqtt==2.3.0",
+    "aiomqtt==2.5.1",
     "paho-mqtt",
     "aiohttp>=3.10.8",
     "fastapi>=0.115.12",
