@@ -1,3 +1,12 @@
+<p align="center">
+  <picture>
+    <!-- The mark is black on transparent, so it is close to invisible on
+         GitHub's dark theme without this. -->
+    <source media="(prefers-color-scheme: dark)" srcset="brand/dark_logo@2x.png">
+    <img src="brand/logo@2x.png" alt="Cync LAN" width="420">
+  </picture>
+</p>
+
 # Cync LAN (Home Assistant custom_component)
 
 ## What this is
