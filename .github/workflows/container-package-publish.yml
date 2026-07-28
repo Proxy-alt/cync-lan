@@ -11,7 +11,8 @@ name: Docker - publish multi-arch packages
 # because it passed `context: .` and no `file:`, so buildx looked for
 # ./Dockerfile at the repo root while the actual one lives in docker/. The
 # context genuinely does need to be the repo root (the Dockerfile does
-# `COPY ./ .` and `COPY static/`), so only `file:` was wrong.
+# `COPY ./ .` for the python source and `COPY web/` for the Vite build stage),
+# so only `file:` was wrong.
 #
 # Two other things were broken behind it and would have surfaced next:
 #

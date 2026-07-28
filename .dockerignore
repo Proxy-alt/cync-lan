@@ -1,0 +1,11 @@
+# Never send these to the build context. node_modules in particular is tens of
+# thousands of files that the python stage's `COPY ./ .` would otherwise pull
+# in, for no reason - the web stage installs its own from the lockfile.
+web/node_modules/
+web/dist/
+**/__pycache__/
+**/*.pyc
+.git/
+.venv/
+certs/
+config/

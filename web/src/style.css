@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@import "prismjs/themes/prism-tomorrow.css";
+
+/* The old build pulled in all of animate.css (71 kB) for exactly two
+   animations. These are those two. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shakeX {
+  from, to        { transform: translate3d(0, 0, 0); }
+  10%, 30%, 50%, 70%, 90% { transform: translate3d(-10px, 0, 0); }
+  20%, 40%, 60%, 80%      { transform: translate3d(10px, 0, 0); }
+}
+
+@layer components {
+  .animate__animated {
+    animation-duration: 1s;
+    animation-fill-mode: both;
+  }
+  .animate__fadeIn { animation-name: fadeIn; }
+  .animate__shakeX { animation-name: shakeX; }
+
+  .toast {
+    @apply fixed top-4 right-4 z-50 bg-gray-800 text-white px-5 py-3
+           rounded-lg shadow-xl border border-gray-700;
+  }
+
+  #yamlPreview {
+    @apply max-h-[300px] overflow-y-auto;
+  }
+}
+
+/* Respect the OS setting - the old animate.css shipped this and dropping it
+   would regress accessibility for anyone with reduced motion enabled. */
+@media (prefers-reduced-motion: reduce) {
+  .animate__animated {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

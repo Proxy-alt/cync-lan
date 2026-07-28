@@ -1,3 +1,16 @@
+# The export UI is a Vite app. Building it here keeps node out of the final
+# image and keeps built assets out of the repository - nothing under web/dist
+# is committed, so there is no generated output to drift from its source.
+FROM node:24-slim AS web
+
+WORKDIR /web
+# package files first: this layer only rebuilds when dependencies change.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+
 FROM python:3.14-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -35,8 +48,12 @@ RUN set -x \
     && pip install . \
     && rm -rf /tmp/cync-src
 
-# Web App
-COPY static/ /root/cync-lan/www/
+# Web App. The exporter mounts StaticFiles at the URL "/static" pointing at
+# this directory, so "/static/app.js" must resolve to "www/app.js" - hence the
+# hashed assets are flattened out of dist/static/ into www/ rather than copied
+# as a nested folder.
+COPY --from=web /web/dist/index.html /root/cync-lan/www/index.html
+COPY --from=web /web/dist/static/ /root/cync-lan/www/
 
 VOLUME /root/cync-lan/config
 EXPOSE 23779 23778

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CyncLAN - Device Export</title>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 min-h-screen flex items-center justify-center">
+  <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-2xl animate__animated animate__fadeIn">
+    <h1 class="text-3xl font-bold text-center text-gray-800 dark:text-gray-100 mb-6">CyncLAN - Device Export</h1>
+
+    <div class="space-y-4">
+      <button id="startButton" class="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 flex items-center justify-center">
+        <span id="startText">Start Export</span>
+        <span class="ml-2 relative group focus:outline-none">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke-width="2"></circle>
+            <path stroke-width="2" d="M12 16v-4m0-4h.01"></path>
+          </svg>
+          <span class="absolute left-1/2 -translate-x-1/2 mt-2 w-64 p-2 rounded bg-gray-800 text-white text-xs opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
+            Uses cached tokens if available, otherwise prompts for OTP.
+          </span>
+        </span>
+        <svg id="spinner" class="hidden animate-spin h-5 w-5 ml-2 text-white" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </button>
+
+      <div id="otpSection" class="space-y-2">
+        <label for="otpInput" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Enter OTP:</label>
+        <input type="text" id="otpInput" placeholder="123456" class="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-100" />
+        <button id="submitOtpButton" class="w-full bg-green-600 text-white p-2 rounded-md hover:bg-green-700 flex items-center justify-center">
+          <span>Submit OTP</span>
+        </button>
+        <div id="restartDivider" class="hidden border-t border-gray-300 my-4"></div>
+        <button id="restartButton" class="hidden w-full bg-red-600 text-white p-2 rounded-md hover:bg-red-700 flex items-center justify-center">
+          <span id="restartText">Restart Server</span>
+        </button>
+      </div>
+
+      <div id="successSection" class="hidden animate__animated animate__fadeIn space-y-4">
+        <p class="text-green-500 text-lg font-semibold">Export Successful!</p>
+        <a id="downloadLink" href="#" download="cync_mesh.yaml" class="block bg-indigo-600 text-white text-center py-2 rounded hover:bg-indigo-700">Download Config File</a>
+        <div class="relative">
+          <pre id="yamlPreview" class="rounded bg-gray-900 text-white p-4 text-sm"><code class="language-yaml"></code></pre>
+          <button id="copyButton" class="absolute top-2 right-2 bg-gray-700 text-white p-2 rounded-md hover:bg-gray-600 flex items-center">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <div id="error" class="hidden text-red-600 font-medium text-center animate__animated animate__shakeX"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
