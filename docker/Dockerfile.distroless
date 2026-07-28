@@ -1,0 +1,94 @@
+# EXPERIMENTAL distroless variant - see docker/DISTROLESS.md for the numbers.
+# Not what the release workflow builds; docker/Dockerfile is still the real one.
+#
+# The point of this variant is the base package surface. On trixie the runtime
+# image carries ~37 vulnerable packages, and all four remaining CRITICALs come
+# from perl-base - which nothing in this project ever invokes. Distroless has
+# no perl, no shell, and no package manager, so that surface simply is not
+# there to be counted.
+
+# Unchanged from the main Dockerfile: build the export UI, keep node out of the
+# runtime image.
+FROM node:26-slim AS web
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+
+# The builder's Python minor version MUST match the distroless runtime's, which
+# is 3.13 (gcr.io/distroless/python3-debian13 ships Debian trixie's python3,
+# 3.13.5 at time of writing). Wheels are cp313-tagged and the interpreter will
+# not load a cp314 extension module.
+#
+# This is the real maintenance cost of distroless: the main Dockerfile pins
+# python:3.14 and moves when the project chooses to, whereas here the version is
+# dictated by whatever Debian ships, and a distroless base bump can retire the
+# interpreter under you.
+FROM python:3.13-slim-trixie AS builder
+
+ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# `--target` rather than a virtualenv: a venv bakes absolute paths and a
+# shebang pointing at the builder's interpreter, neither of which survives the
+# move to an image whose python lives somewhere else. A plain directory on
+# PYTHONPATH has no such assumptions.
+WORKDIR /src
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+
+RUN pip install --no-cache-dir --target=/deps \
+        "cync-lan>=0.1.0" \
+        "pyyaml==6.0.2" \
+        "uvloop>=0.21.0" \
+        "aiomqtt==2.3.0" \
+        "paho-mqtt" \
+        "aiohttp>=3.10.8" \
+        "fastapi>=0.115.12" \
+        "uvicorn>=0.34.3" \
+ && pip install --no-cache-dir --target=/deps --no-deps .
+
+# PRE-COMPILE, do not strip.
+#
+# The first version of this file deleted __pycache__ to save space, which cost
+# ~228 ms of every startup: with PYTHONDONTWRITEBYTECODE=1 in the runtime and a
+# read-only-ish filesystem, nothing ever regenerates the cache, so the whole
+# dependency tree was being re-parsed from source on each boot. Measured import
+# of the app stack went 438 ms (slim, same Python) to 667 ms.
+#
+# Compiling ahead of time here gets the cache into the image once, where it is
+# reused on every start. `|| true` because compileall exits non-zero on any
+# file that will not compile, and a stray py2-era sample inside some dependency
+# should not fail the build.
+RUN python -m compileall -q /deps > /dev/null 2>&1 || true
+
+
+FROM gcr.io/distroless/python3-debian13:nonroot
+
+# No cert generation here either - cync_lan.server._ensure_self_signed_cert
+# creates the pair at startup when it is missing, which is also why this image
+# needs no openssl binary. That property is what makes distroless viable at
+# all: there is no shell here to run one from.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/deps \
+    CYNC_BASE_DIR=/home/nonroot/cync-lan
+
+COPY --from=builder /deps /deps
+COPY --from=web /web/dist/index.html /home/nonroot/cync-lan/www/index.html
+COPY --from=web /web/dist/static/ /home/nonroot/cync-lan/www/
+
+VOLUME /home/nonroot/cync-lan/config
+EXPOSE 23779 23778
+
+LABEL org.opencontainers.image.source="https://github.com/Proxy-alt/cync-lan"
+LABEL org.opencontainers.image.description="Local async MQTT controller for Cync/C by GE Wi-Fi devices (distroless experiment)"
+LABEL org.opencontainers.image.licenses="MIT"
+
+# The base image's ENTRYPOINT is already /usr/bin/python3, so CMD supplies its
+# arguments. The console script cannot be used as an entrypoint the usual way:
+# there is no shell to resolve it on PATH.
+CMD ["-c", "from cync_lan_mqtt.main import main; main()"]
