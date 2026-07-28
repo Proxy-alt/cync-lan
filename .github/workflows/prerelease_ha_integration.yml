@@ -54,7 +54,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           # 3.14, not 3.13: requirements_test.txt pins
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
