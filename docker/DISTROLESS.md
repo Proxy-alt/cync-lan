@@ -19,12 +19,46 @@ Three images, so the base and the interpreter version can be told apart:
 `distroless2` vs `slim313` isolates the **base**. `slim` vs `slim313` isolates
 the **interpreter**.
 
-## Size
+## Footprint
 
-| image | size | delta |
+Docker Desktop here uses the containerd image store, where the two size
+figures mean different things and are easy to quote wrongly:
+`docker image inspect .Size` is the sum of **compressed** layer blobs — what a
+user downloads — while `docker images` reports the **unpacked on-disk** size.
+Both appear below. A `docker save | gzip | wc -c` agreed with the compressed
+figures to within 1%.
+
+| | pull (compressed) | on-disk | RSS, app loaded |
+|---|---|---|---|
+| `slim` | 68.1 MB | 301 MB | 73.9 MiB |
+| `distroless2` | **42.1 MB** | **191 MB** | **67.0 MiB** |
+| delta | **-38%** | **-37%** | **-9%** |
+
+Resident memory, median of 5 runs, read from `/proc/self/status`:
+
+| image | interpreter only | after importing the app stack |
 |---|---|---|
-| `slim` | 355 MB | — |
-| `distroless2` | **191 MB** | **-46%** |
+| `slim` | 9.0 MiB | 73.9 MiB |
+| `distroless2` | 8.2 MiB | 67.0 MiB |
+
+The ~7 MiB saving is worth roughly nothing on a machine running Home
+Assistant, which will be spending hundreds of MiB on HA itself. It is not a
+reason to switch.
+
+Layer counts differ sharply — 10 for slim against 51 for distroless, whose
+base is assembled from many small bazel-built layers — but this has no
+practical effect beyond slightly more metadata.
+
+> **An earlier version of this file claimed -46% / -47%.** That was wrong, and
+> wrong in distroless's favour. `.dockerignore` excluded `.venv/` but not a
+> sibling `.venv312/`, so `COPY ./ .` baked 43 MB of local virtualenv into the
+> slim image and nothing reclaimed it, since deleting in a later layer does not
+> free space in an earlier one. The distroless build copies only
+> `pyproject.toml`, `README.md` and `src/`, so it never picked the directory up
+> and the comparison was not like-for-like. CI builds from a clean checkout, so
+> published images were never affected — this was purely an artifact of
+> measuring on a working tree. Fixed in `.dockerignore`; the numbers above are
+> post-fix.
 
 ## Vulnerabilities
 
@@ -138,8 +172,9 @@ making this mistake.
 
 ## Recommendation
 
-Worth adopting for size and for eliminating the perl CRITICALs, **not** for
-performance — there is no performance case.
+Worth adopting for pull size and for eliminating the perl CRITICALs, **not**
+for performance and not for memory — 38% off the download and 4 CRITICALs to
+zero is the whole case, and ~7 MiB of RSS is not part of it.
 
 Before it could replace `docker/Dockerfile` it needs a real device session, an
 amd64/armv7 build, and a decision about how users are expected to debug without
