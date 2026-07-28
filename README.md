@@ -1,3 +1,17 @@
+<p align="center">
+  <picture>
+    <!-- The mark is black on transparent, so it is close to invisible on
+         GitHub's dark theme without this. -->
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="custom_components/cync_lan/brand/dark_logo@2x.png">
+    <img
+      src="custom_components/cync_lan/brand/logo@2x.png"
+      alt="Cync LAN"
+      width="420">
+  </picture>
+</p>
+
 >[!IMPORTANT]
 > [DNS redirection REQUIRED](https://github.com/Proxy-alt/cync-lan/wiki/DNS) - this integration controls your
 > devices by impersonating the cloud server they phone home to. Without
