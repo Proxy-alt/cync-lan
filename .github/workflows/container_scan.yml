@@ -31,6 +31,20 @@ on:
       - "web/**"
       - ".github/workflows/container_scan.yml"
   workflow_dispatch:
+    inputs:
+      target:
+        description: What to scan
+        type: choice
+        default: source
+        options:
+          # Comparing a Docker Scout report against a Trivy one proves very
+          # little - the two disagree on severity and Trivy also scans the
+          # installed Python packages, which Scout's OS-package summary does
+          # not list. Being able to point this workflow at the currently
+          # published image makes a before/after with one scanner possible,
+          # which is the only kind worth quoting.
+          - source
+          - published
 
 permissions:
   contents: read
@@ -55,13 +69,13 @@ jobs:
       # The context is the repo root, not docker/ - the Dockerfile does
       # `COPY ./ .` for the python source and `COPY web/` for the Vite stage.
       - name: Build the image under review
-        if: github.event_name != 'schedule'
+        if: github.event_name != 'schedule' && inputs.target != 'published'
         run: docker build -f docker/Dockerfile -t cync-lan-mqtt:local .
 
       - name: Scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ github.event_name != 'schedule' && 'cync-lan-mqtt:local' || 'ghcr.io/proxy-alt/cync-lan-mqtt:latest' }}
+          image-ref: ${{ (github.event_name != 'schedule' && inputs.target != 'published') && 'cync-lan-mqtt:local' || 'ghcr.io/proxy-alt/cync-lan-mqtt:latest' }}
           format: sarif
           output: trivy.sarif
           # Deliberately NOT ignore-unfixed. Every finding in the scan that
@@ -77,4 +91,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy.sarif
-          category: container
+          # The category must describe *what was scanned*, or a run against the
+          # published image would overwrite the results for the source tree and
+          # the Security tab would silently show findings for the wrong thing.
+          category: ${{ (github.event_name != 'schedule' && inputs.target != 'published') && 'container' || 'container-published' }}
