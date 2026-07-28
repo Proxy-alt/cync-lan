@@ -1,0 +1,23 @@
+# Blank issues are disabled so every issue arrives through a form. That is what
+# makes the labels dependable: the type label comes from the template itself and
+# the component label from the dropdown, with nothing inferred after the fact.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Setup, DNS redirection and troubleshooting
+    url: https://github.com/Proxy-alt/cync-lan/wiki
+    about: >-
+      Most setup problems are DNS redirection. Start here before opening an
+      issue — and the pages are editable if a step turns out to be wrong for
+      your hardware.
+
+  - name: Report what your hardware actually does
+    url: https://github.com/Proxy-alt/cync-lan/discussions/20
+    about: >-
+      Confirming a device works, or that a documented opcode does nothing, is
+      one of the most useful things you can contribute. It belongs here rather
+      than in an issue.
+
+  - name: Questions and general discussion
+    url: https://github.com/Proxy-alt/cync-lan/discussions
+    about: For anything that is not a defect or a specific feature request.

@@ -1,0 +1,128 @@
+# Source of truth for this repository's labels.
+#
+# Applied by .github/workflows/labels_sync.yml, which creates and updates but
+# never deletes - a label removed from this file stays on GitHub and keeps
+# working on the issues already carrying it. Delete those by hand, once you
+# have checked what is still using them.
+#
+# Colours group by family rather than by mood: every `component:` label shares
+# one colour so the artifact an issue belongs to is readable at a glance in a
+# list of thirty.
+
+# --- Type -------------------------------------------------------------------
+# What kind of work this is. Roughly one per issue.
+
+- name: bug
+  color: "d73a4a"
+  description: Something is behaving incorrectly
+
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or improvement to an existing one
+
+- name: documentation
+  color: "0075ca"
+  description: READMEs, docs/, or the wiki
+
+- name: question
+  color: "d876e3"
+  description: A usage question rather than a defect
+
+# --- Component --------------------------------------------------------------
+# Which of the three separately-released artifacts is affected. This repo keeps
+# each on its own branch, so a single issue number can mean three different
+# codebases without one of these.
+
+- name: "component: integration"
+  color: "006b75"
+  description: Home Assistant custom component (feature/ha-custom-component)
+
+- name: "component: core"
+  color: "006b75"
+  description: cync-lan protocol library (core)
+
+- name: "component: mqtt"
+  color: "006b75"
+  description: cync-lan-mqtt Docker/MQTT daemon (python)
+
+- name: "component: docs"
+  color: "006b75"
+  description: Documentation shared across all three branches
+
+# --- Protocol and hardware --------------------------------------------------
+# The labels that matter most here. Almost everything this project knows about
+# the wire protocol was derived from a decompiled Android app, so "does this
+# actually work on a device" is a distinct axis from "is this code correct".
+
+- name: protocol
+  color: "fbca04"
+  description: Packet format, mesh opcodes, or the wire protocol
+
+- name: needs-hardware
+  color: "e99695"
+  description: Blocked until someone tests this on a real device
+
+- name: device-support
+  color: "c5def5"
+  description: A device type that is unrecognised or misclassified
+
+# --- Triage -----------------------------------------------------------------
+
+- name: needs-triage
+  color: "ededed"
+  description: Not yet looked at
+
+- name: needs-info
+  color: "fef2c0"
+  description: Waiting on more detail from the reporter
+
+- name: stale
+  color: "cfd3d7"
+  description: Applied automatically after 90 days without activity
+
+# --- Meta -------------------------------------------------------------------
+
+- name: good first issue
+  color: "7057ff"
+  description: A reasonable place to start contributing
+
+- name: help wanted
+  color: "008672"
+  description: Maintainer would welcome someone else picking this up
+
+- name: wiki
+  color: "5319e7"
+  description: Wiki content and edits
+
+- name: duplicate
+  color: "cfd3d7"
+  description: Already reported elsewhere
+
+- name: wontfix
+  color: "ffffff"
+  description: Deliberately not being worked on
+
+# --- Dependabot ---------------------------------------------------------------
+# Dependabot applies these itself, using the ecosystem name. They are listed
+# here so the sync job keeps their descriptions accurate rather than leaving
+# them as GitHub's bare auto-created defaults.
+
+- name: dependencies
+  color: "0366d6"
+  description: Dependency updates
+
+- name: python
+  color: "2b67c6"
+  description: "Dependabot: Python ecosystem"
+
+- name: javascript
+  color: "168700"
+  description: "Dependabot: npm ecosystem"
+
+- name: docker
+  color: "1d63ed"
+  description: "Dependabot: Docker base images"
+
+- name: github_actions
+  color: "000000"
+  description: "Dependabot: GitHub Actions"

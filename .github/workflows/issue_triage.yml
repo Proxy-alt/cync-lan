@@ -1,0 +1,73 @@
+name: Triage issues
+
+# The type label (`bug`, `enhancement`) and `needs-triage` come from the issue
+# templates directly and need no workflow. This adds the one label a template
+# cannot: which of the three artifacts the report is about, taken from the
+# form's dropdown.
+#
+# The mapping is a lookup against fixed option strings, not an inference. If
+# the answer is "Not sure", nothing is applied and the issue keeps
+# `needs-triage` for a human to resolve - which is the honest outcome, and
+# better than a confident guess that sends a report to the wrong codebase.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  component:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const body = context.payload.issue.body || "";
+
+            // Issue forms render as "### <field label>" followed by the answer.
+            // Splitting into sections beats matching one big regex: it does not
+            // care how many blank lines GitHub emits, and the answer is read
+            // only from inside its own section, so a user quoting an option in
+            // their prose elsewhere cannot flip the label.
+            const sections = {};
+            let current = null;
+            for (const line of body.split(/\r?\n/)) {
+              const heading = line.match(/^###\s+(.*?)\s*$/);
+              if (heading) {
+                current = heading[1];
+                sections[current] = [];
+              } else if (current) {
+                sections[current].push(line);
+              }
+            }
+
+            const answer = (sections["Which part of the project?"] || [])
+              .map((line) => line.trim())
+              .find(Boolean);
+
+            if (!answer) {
+              core.info("No component dropdown found; leaving for manual triage.");
+              return;
+            }
+            const table = [
+              ["Home Assistant integration", "component: integration"],
+              ["Docker / MQTT daemon",       "component: mqtt"],
+              ["cync-lan core library",      "component: core"],
+              ["Documentation or wiki",      "component: docs"],
+            ];
+
+            const hit = table.find(([option]) => answer.startsWith(option));
+            if (!hit) {
+              core.info(`No label for "${answer}"; leaving for manual triage.`);
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: [hit[1]],
+            });
+            core.info(`Applied "${hit[1]}".`);

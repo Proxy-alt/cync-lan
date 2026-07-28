@@ -1,26 +1,59 @@
-name: Docker - Close Stale Issues
+name: Close stale issues
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
+# Rewritten from the inherited version, which ran at 30 days to stale and 7 to
+# close with no exemptions at all. That is actively wrong for this project: an
+# issue labelled `needs-hardware` is waiting for someone who owns a particular
+# device to turn up, which routinely takes longer than a month and is not a
+# sign the issue is dead. The old settings would have closed precisely the
+# reports most worth keeping open.
+#
+# Hence the long windows and the exempt list below. Anything a maintainer has
+# deliberately marked as blocked, wanted, or protocol work is never staled -
+# only untriaged and unanswered reports age out.
 on:
   schedule:
-    - cron: '30 1 * * *'
+    - cron: "30 1 * * *"
+  workflow_dispatch:
 
+# `contents: write` was in the inherited version and is not needed - this job
+# only touches issues and pull requests.
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   stale:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-
     steps:
-        - name: Close Stale Issues
-          uses: actions/stale@v9.0.0
-          with:
-              days-before-stale: 30
-              days-before-close: 7
+      - uses: actions/stale@v11
+        with:
+          days-before-stale: 90
+          days-before-close: 30
+
+          stale-issue-label: stale
+          stale-pr-label: stale
+
+          # `needs-hardware` is the load-bearing one - see the note above.
+          # `help wanted` and `good first issue` are invitations, and closing an
+          # invitation nobody has taken up yet defeats the point of posting it.
+          exempt-issue-labels: >-
+            needs-hardware,
+            help wanted,
+            good first issue,
+            protocol,
+            device-support,
+            enhancement
+          exempt-pr-labels: >-
+            needs-hardware,
+            help wanted,
+            protocol
+
+          stale-issue-message: >-
+            No activity on this for 90 days, so it will close in 30 days unless
+            something moves. If it is waiting on someone with particular
+            hardware to try it, say so and it will be labelled `needs-hardware`,
+            which is exempt from this entirely.
+          stale-pr-message: >-
+            No activity on this for 90 days, so it will close in 30 days unless
+            something moves. Reopening later is always fine.

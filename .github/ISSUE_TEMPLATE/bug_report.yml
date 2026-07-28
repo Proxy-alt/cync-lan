@@ -1,0 +1,101 @@
+name: Bug report
+description: Something is behaving incorrectly
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, two things resolve most reports on their own:
+
+        - **DNS redirection.** Nothing works without it, and a device that was
+          already talking to the real cloud needs a power cycle to pick the
+          change up. See the [DNS page](https://github.com/Proxy-alt/cync-lan/wiki/DNS).
+        - **Debug logs.** A report without them usually cannot be acted on.
+
+        ⚠️ **Redact before pasting.** Logs contain your Cync account email,
+        device MAC addresses, and sometimes the BTLE mesh password. Replace
+        them rather than trusting that nobody will read them.
+
+        ⚠️ Please **do not contact GE or Savant** about problems with this
+        project, and **do not firmware-upgrade** Cync devices after running it.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part of the project?
+      description: This repository ships three separately-released artifacts.
+      options:
+        - Home Assistant integration (HACS)
+        - Docker / MQTT daemon (cync-lan-mqtt)
+        - cync-lan core library (PyPI)
+        - Documentation or wiki
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        The integration's version from HACS, or the version logged at startup
+        by the daemon.
+      placeholder: "2.5.2"
+    validations:
+      required: true
+
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      description: Leave blank if you are not running Home Assistant.
+      placeholder: "2025.7.0"
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have redirected the `xlink.cn` hostnames at my router or local DNS
+          required: true
+        - label: I have power-cycled the affected devices since setting that up
+          required: true
+        - label: I have at least one mains-powered Wi-Fi Cync device to act as the bridge
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: devices
+    attributes:
+      label: Affected devices
+      description: >-
+        Model names as the Cync app shows them, and the device type number from
+        the logs if you have it. Helpful even when the bug is not device-specific.
+      placeholder: |
+        Full Color A19 bulb (type 137)
+        Wire-free switch (type 66)
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug logs
+      description: >-
+        Enable debug logging first — for the integration, via the "Enable debug
+        logging" button on its page in Settings → Devices & Services; for the
+        daemon, `CYNC_DEBUG=yes`. Redact your email, MACs, and any mesh password.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, network setup, or anything unusual about the install.

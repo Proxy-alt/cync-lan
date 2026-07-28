@@ -1,0 +1,67 @@
+name: Sync labels
+
+# Applies .github/labels.yml to the repository, so the label set is reviewable
+# in version control rather than existing only as clicks in a settings page.
+#
+# Creates and updates; never deletes. Removing a label from the manifest leaves
+# it in place on GitHub, still attached to whatever issues already carry it.
+# Deleting a label silently drops it from every issue using it and cannot be
+# undone, so that stays a deliberate manual act.
+on:
+  push:
+    branches: [feature/ha-custom-component]
+    paths: [".github/labels.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: labels-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/labels.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Apply the manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m pip install --quiet pyyaml
+
+          # Emit one tab-delimited record per label rather than generating
+          # shell commands in Python, so a description containing a quote or a
+          # dollar sign stays data instead of becoming syntax.
+          #
+          # Tab, not NUL: bash strings cannot hold a NUL byte, so `IFS=$'\0'`
+          # silently evaluates to an empty IFS and every field after the first
+          # comes back blank. Label text never legitimately contains a tab, and
+          # the generator rejects one rather than producing a skewed record.
+          python3 - <<'PY' > labels.tsv
+          import sys, yaml
+
+          for entry in yaml.safe_load(open(".github/labels.yml")):
+              row = [entry["name"], entry["color"], entry.get("description", "")]
+              bad = [f for f in row if "\t" in f or "\n" in f]
+              if bad:
+                  sys.exit(f"label field contains a tab or newline: {bad!r}")
+              print("\t".join(row))
+          PY
+
+          while IFS=$'\t' read -r name color desc; do
+            [ -n "$name" ] || continue
+            # --force makes create an upsert, so this is idempotent and a
+            # colour or description edited in the manifest lands on re-run.
+            gh label create "$name" \
+              --color "$color" \
+              --description "$desc" \
+              --force >/dev/null
+            printf '  %s\n' "$name"
+          done < labels.tsv

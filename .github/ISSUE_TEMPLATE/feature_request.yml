@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If you are asking for a device capability the Cync app has but this
+        project does not, say so plainly — that is useful, and it is a
+        different kind of request from a Home Assistant convenience feature.
+        Most of what this project knows about the protocol came from decompiling
+        the Android app, so "the app can do it" is real evidence that it is
+        possible.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part of the project?
+      options:
+        - Home Assistant integration (HACS)
+        - Docker / MQTT daemon (cync-lan-mqtt)
+        - cync-lan core library (PyPI)
+        - Documentation or wiki
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you are actually stuck in.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+
+  - type: input
+    id: app-support
+    attributes:
+      label: Does the official Cync app do this?
+      description: >-
+        If yes, roughly where in the app — it gives the search for the
+        underlying command somewhere concrete to start.
+      placeholder: "Yes — under the bulb's settings, 'Light indicator'"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
