@@ -145,6 +145,42 @@ Debug logging already prints outgoing packet hex
 (`custom_components.cync_lan` and `cync_lan` at debug), so the bytes above can
 be compared against what actually goes out before anything is concluded.
 
+### Result: neither envelope produces a reply — tested 2026-07-27
+
+Run against real hardware. The **Hub clock sensor reports `unknown` under both
+candidates**, which is the "neither" branch above: the request envelope is not
+the discriminator, or at least not the only thing wrong.
+
+`unknown` is the specific signal here, not `unavailable`. The sensor polls,
+builds the command, sends it, and `query_device_time()` returns `None` when its
+10-second wait for a notification expires — so the code path ran and nothing
+came back. The distinction matters: `unavailable` would mean the entity was
+never reached.
+
+**What this rules out.** The 7-byte routing prefix is not the sole cause. If it
+had been, exactly one of the two shapes should have produced a reply.
+
+**What it does not rule out**, in rough order of likelihood:
+
+- The reply arrives but is not recognised — parsed under the wrong notification
+  type, or not correlated back to the request. Nothing in this repository has
+  ever observed a hub-query *response* on real hardware, so the receive side is
+  as unproven as the send side.
+- The op_code or payload is wrong in some way the envelope work would not have
+  caught. Both candidates were built from the same decompiled op table.
+- The bridge in this particular installation does not implement hub queries at
+  all. The op codes come from the phone app talking to *a* hub; nothing
+  establishes that every WiFi device answers them.
+
+**Next discriminator** is `hardware_verification.md`'s **Step 3** — a hub-family
+*write* with a visible physical outcome. A write that visibly works proves the
+request side is fine and moves all suspicion to the reply channel. A write that
+does nothing keeps both halves in play, and at that point a packet capture stops
+being optional.
+
+Until then the six shipped hub commands stay experimental, and
+`_warn_experimental_cmd_code` stays accurate for them.
+
 ### If B turns out to be right
 
 The change is not just the `8 +` constant. `build_control_packet()` always
