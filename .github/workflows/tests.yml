@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           # 3.14, not 3.13: requirements_test.txt pins
           # pytest-homeassistant-custom-component >=0.13.346, and that
