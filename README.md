@@ -1,3 +1,18 @@
+<p align="center">
+  <picture>
+    <!-- Black on transparent, so it is close to invisible on GitHub's dark
+         theme without this. Absolute URLs because the brand assets live on
+         the feature/ha-custom-component branch, not this one. -->
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="https://raw.githubusercontent.com/Proxy-alt/cync-lan/feature/ha-custom-component/custom_components/cync_lan/brand/dark_logo@2x.png">
+    <img
+      src="https://raw.githubusercontent.com/Proxy-alt/cync-lan/feature/ha-custom-component/custom_components/cync_lan/brand/logo@2x.png"
+      alt="Cync LAN"
+      width="420">
+  </picture>
+</p>
+
 >[!IMPORTANT]
 > [DNS redirection REQUIRED](https://github.com/Proxy-alt/cync-lan/wiki/DNS) - this library controls Cync
 > devices by impersonating the cloud server they phone home to. Without
