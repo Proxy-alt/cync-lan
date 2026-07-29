@@ -7,6 +7,66 @@ Assistant `cync_lan` custom_component's own version scheme - all three are
 versioned and released separately. See the root `README.md`/`RELEASING.md`
 on `feature/ha-custom-component` for how the three artifacts relate.
 
+### 0.6.0
+
+**New: a BLE mesh transport, confirmed on real hardware.** `cync_lan.ble_mesh`
+controls already-provisioned devices over Bluetooth instead of over the TCP
+relay. It is the sibling of `ble_provision`, which gets a factory-default device
+*onto* a mesh — same Telink protocol, same opcode table, different framing.
+
+This matters beyond adding a second way to send a command. **The BLE path needs
+neither DNS redirection nor the hub command family.** Those are the two things
+that constrain the TCP path: DNS redirection is the setup requirement behind most
+support traffic, and hub commands currently get no reply at all (see
+`docs/hub_envelope_ab_test.md`). Neither is on the critical path here.
+
+What was verified against a wired Cync switch, not reasoned about:
+
+- the session handshake, with `verify_pairing_response` reporting mutual auth
+  **verified** — the device proved it derived the same key material;
+- `set_power` (`0xD0`) **changed the switch's state**, with cync-lan reporting
+  that change over its own TCP connection. Command out over one transport,
+  confirmation back over an independent one, so the result cannot be a false
+  positive;
+- brightness, in both the `0xF0` and `0xD2` forms;
+- **mesh relay** — a command addressed to one device and sent over a connection
+  to a *different* device is relayed and acted on. One session therefore reaches
+  the whole mesh, which is what makes this usable at forty-odd nodes rather than
+  needing a link per device;
+- the mesh credentials come from the cloud export this library already writes:
+  the home's `mac` is the Telink mesh name and its `access_key` is the mesh
+  password. `mesh_credentials_from_home()` pulls both out. Nothing about BLE
+  needs the hub, despite what the `query_mesh_credentials` button implies.
+
+Not confirmed, and marked as such in the code: colour temperature and RGB. They
+ride the same `0xF0` family whose brightness member works, so they are better
+founded than a guess, but nobody has moved either over this transport. Status
+notifications are worse than unconfirmed — at least one firmware declares
+`notify` on its characteristic, rejects the subscription with GATT `Unlikely
+Error`, and drops the connection. `subscribe()` reports that rather than raising,
+and sending never depends on it.
+
+`ble_mesh` deliberately never imports `bleak`. It takes a `GattClient`
+(a `typing.Protocol`) rather than constructing one, so a Home Assistant
+integration can hand in a connection from HA's own Bluetooth stack — which is
+what makes ESPHome Bluetooth proxies work. Building a client internally would
+have limited the transport to devices in radio range of the host and quietly
+ruled proxies out.
+
+Two smaller things:
+
+- **The `0x11, 0x02` prefix on every documented payload is identified**: it is
+  the Telink vendor ID `0x0211`, little-endian. The TCP transport embeds it at
+  the head of the payload; BLE gives it a field of its own. That is why the
+  opcode table is shared between the two rather than duplicated, and it is now
+  confirmed on hardware for two separate opcode families.
+- **Device type 54 added**, as `supported=False` and marked plausible rather
+  than confirmed. It was a gap in an otherwise dense run, and
+  juanboro/cync2mqtt lists it beside 37 and 49 in the built-in-occupancy switch
+  family. That is agreement between two reverse-engineering efforts, not
+  hardware truth — and this project's own capture-confirmed third member of that
+  family is type 56, which keeps its supported status.
+
 ### 0.5.3
 
 **Fixed: the version this library reports was wrong, and had been for a
