@@ -191,10 +191,35 @@ families as interchangeable on the strength of one observation.
 
 Scope, precisely: `0xD0` and both brightness forms are confirmed over BLE. Colour
 temperature and RGB are not — they ride the same `0xF0` family whose brightness member
-works, so they are better founded than a guess, but nobody has moved either. This
-firmware also refuses notification subscriptions outright: it declares `notify` on
-characteristic `...1911`, rejects the CCCD write with `Unlikely Error`, and then drops
-the connection.
+works, so they are better founded than a guess, but nobody has moved either.
+
+### Notifications work — an earlier note here said they did not
+
+That earlier claim was wrong, and it is worth saying why: it came from testing one
+sequence and generalising. What fails is **BlueZ's `StartNotify`**, which answers with
+GATT `Unlikely Error` — and the device does expose a `0x2902` CCCD, at handle 19, so it
+is refusing a legitimate subscribe.
+
+But the CCCD is not how this protocol turns reporting on. Writing `0x01` to
+characteristic `...1911`'s **value** is. `google/python-dimond` — the origin of this
+implementation lineage — does exactly that and never writes a CCCD at all; bluepy
+delivers notifications regardless. With the enable-write first, **16 status packets
+arrived and decrypted correctly** on a connection whose `StartNotify` had just been
+rejected.
+
+The inbound `0xDC` slot layout is `[id, presence, brightness, extra]`, two slots per
+packet — and the presence rule appears **inverted** relative to acync, which skips a
+slot whose second byte is zero. Across those 17 captured packets:
+
+| `byte[1]` | slots | contents |
+|---|---|---|
+| `== 0` | 9 | brightness `100`, extra `255` — plausible device state |
+| `!= 0` | 25 | uniformly `brightness=0, extra=0`, with `byte[1]` varying like noise |
+
+So a zero presence byte is treated here as *data-bearing*. **Plausible, not
+confirmed** — one capture, one mesh, and it contradicts an implementation known to work
+elsewhere. The `byte[1] != 0` records are unexplained and may be a different record type
+sharing the `0xDC` opcode.
 
 **The mesh credentials do not come from the hub.** They are in the cloud export that
 `cloud_api.py:_parse_raw_export` already writes: the home's `mac` is the Telink mesh
