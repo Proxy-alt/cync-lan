@@ -352,32 +352,78 @@ async def probe(args) -> int:
                         NOTIFICATION_CHAR, CONTROL_CHAR, PAIRING_CHAR
                     ) else ""
                     print(f"      {ch.uuid}  {','.join(ch.properties)}{star}")
+                    # BlueZ's StartNotify writes the CCCD (0x2902). If this
+                    # firmware has none, that write cannot succeed and the
+                    # 'Unlikely Error' is fully explained.
+                    for desc in ch.descriptors:
+                        flag = " <-- CCCD" if "2902" in desc.uuid else ""
+                        print(
+                            f"        descriptor {desc.uuid} "
+                            f"handle={desc.handle}{flag}"
+                        )
 
-        # Enabling notifications is not required to SEND a command - it only
-        # buys inbound status. Some Telink builds reject the CCCD write with
-        # 'Unlikely Error' while still accepting control writes perfectly, so
-        # a failure here must not abort the run.
+        # How to turn inbound status on is genuinely unsettled, so it is
+        # selectable rather than guessed. See --notify-mode.
+        #
+        # The evidence: google/python-dimond - the origin of this protocol
+        # lineage, and a demonstrably working implementation - pairs, registers
+        # a callback, then writes 0x01 to the notify characteristic's VALUE and
+        # simply waits. It never writes the CCCD at all. bluepy delivers
+        # notifications anyway, because that 0x01 write is the vendor's own
+        # "start reporting" command rather than a standard subscription.
+        #
+        # BlueZ differs: StartNotify writes the CCCD (0x2902), and this firmware
+        # answers with 'Unlikely Error' and then drops the link. This probe used
+        # to subscribe first and write 0x01 afterwards - the exact inverse of the
+        # working order - and its retry never got a fair test, because the
+        # connection was already dead by the time it ran.
         notify_ok = False
+        mode = args.notify_mode
+
+        async def _enable_write() -> None:
+            """The vendor's start-reporting command: 0x01 to the char value."""
+            await client.write_gatt_char(
+                NOTIFICATION_CHAR, bytes([0x01]), response=True
+            )
+
+        async def _cccd_write() -> bool:
+            """Write the CCCD by hand, bypassing bleak's StartNotify wrapper."""
+            ch = client.services.get_characteristic(NOTIFICATION_CHAR)
+            cccd = next((d for d in ch.descriptors if "2902" in d.uuid), None)
+            if cccd is None:
+                print("    no 0x2902 descriptor on this characteristic at all,")
+                print("    which would explain why BlueZ cannot subscribe.")
+                return False
+            await client.write_gatt_descriptor(cccd.handle, bytes([0x01, 0x00]))
+            return True
+
         if args.no_notify:
-            # Telink firmware here rejects the CCCD write and then drops the
-            # connection outright, so a run that only needs to SEND is better
-            # off never asking. Confirmed on hardware: the control write that
-            # followed a rejected subscribe failed with 'Not connected'.
             print("  skipping notifications (--no-notify)")
         else:
             try:
-                await client.start_notify(NOTIFICATION_CHAR, on_notify)
-                notify_ok = True
+                if mode == "subscribe-first":
+                    await client.start_notify(NOTIFICATION_CHAR, on_notify)
+                    await asyncio.sleep(0.3)
+                    await _enable_write()
+                    notify_ok = True
+                elif mode == "enable-first":
+                    await _enable_write()
+                    await asyncio.sleep(0.3)
+                    await client.start_notify(NOTIFICATION_CHAR, on_notify)
+                    notify_ok = True
+                elif mode == "enable-only":
+                    await _enable_write()
+                    notify_ok = True
+                elif mode == "cccd-direct":
+                    if await _cccd_write():
+                        await asyncio.sleep(0.3)
+                        await _enable_write()
+                        notify_ok = True
+                if notify_ok:
+                    print(f"  notify setup ({mode}): accepted")
             except Exception as exc:
-                print(f"  start_notify failed: {type(exc).__name__}: {exc}")
-                print("    Retry skipped - on this firmware the rejected CCCD write")
-                print("    also drops the connection, so a retry just fails again.")
-                print("    Use --no-notify to send without ever asking.")
-            ch = client.services.get_characteristic(NOTIFICATION_CHAR)
-            if ch is not None:
-                print(f"    notify char properties: {','.join(ch.properties)}")
-            else:
-                print("    notify characteristic not present on this device at all")
+                print(f"  notify setup ({mode}) failed: {type(exc).__name__}: {exc}")
+                print("    Sending is unaffected - control writes go to ...1912.")
         await asyncio.sleep(0.3)
         # Writing 0x01 to the notification characteristic asks the mesh to
         # report status. It is a request for data, not a control command -
@@ -465,7 +511,19 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true", help="validate crypto, no hardware needed")
     p.add_argument("--scan", action="store_true", help="list nearby BLE devices")
-    p.add_argument("--gatt", action="store_true", help="dump the GATT table after connecting")
+    p.add_argument(
+        "--gatt", action="store_true", help="dump the GATT table and descriptors"
+    )
+    p.add_argument(
+        "--notify-mode",
+        default="subscribe-first",
+        choices=["subscribe-first", "enable-first", "enable-only", "cccd-direct"],
+        help=(
+            "how to turn on inbound status. subscribe-first is what failed; "
+            "enable-first matches python-dimond's working order; enable-only is "
+            "exactly what dimond does; cccd-direct writes the descriptor by hand"
+        ),
+    )
     p.add_argument(
         "--no-notify",
         action="store_true",
