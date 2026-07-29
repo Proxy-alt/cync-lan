@@ -363,7 +363,22 @@ async def probe(args) -> int:
             notify_ok = True
         except Exception as exc:
             print(f"  start_notify failed: {type(exc).__name__}: {exc}")
-            print("    Continuing without inbound status - sending still works.")
+            # Telink firmware often declares `notify` on this characteristic
+            # without implementing a usable 0x2902 descriptor, so BlueZ's CCCD
+            # write comes back 'Unlikely Error'. Writing the enable byte to the
+            # characteristic itself first sometimes wakes the reporting path up
+            # enough for the subscribe to be accepted on a second attempt.
+            try:
+                await client.write_gatt_char(NOTIFICATION_CHAR, bytes([0x01]), response=True)
+                await asyncio.sleep(0.3)
+                await client.start_notify(NOTIFICATION_CHAR, on_notify)
+                notify_ok = True
+                print("    retry after writing the enable byte first: worked")
+            except Exception as exc2:
+                print(f"    retry also failed: {type(exc2).__name__}: {exc2}")
+            if not notify_ok:
+                print("    Continuing without inbound status - sending still works,")
+                print("    because control writes go to a different characteristic.")
             ch = client.services.get_characteristic(NOTIFICATION_CHAR)
             if ch is not None:
                 print(f"    notify char properties: {','.join(ch.properties)}")
