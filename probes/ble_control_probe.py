@@ -421,7 +421,26 @@ async def probe(args) -> int:
                 return
             await client.write_gatt_char(CONTROL_CHAR, bytes(enc), response=False)
 
-        if args.toggle:
+        if args.op is not None:
+            # Raw mode: send any opcode with any payload. The point is to test
+            # commands whose BLE form is predicted by the transport mapping in
+            # docs/mesh_opcodes.md but not yet confirmed - strip the leading
+            # 0x11, 0x02 (the vendor ID) from a documented TCP payload and pass
+            # what remains here.
+            try:
+                opcode = int(args.op, 0)
+            except ValueError:
+                print(f"  --op must be a number, e.g. 0xF0 (got {args.op!r})")
+                return 1
+            raw = (args.data or "").replace(",", " ").split()
+            try:
+                payload = bytes(int(b, 16) for b in raw)
+            except ValueError:
+                print(f"  --data must be hex bytes, e.g. 01,32,FF (got {args.data!r})")
+                return 1
+            await send(opcode, payload, f"raw op=0x{opcode:02X}")
+            await asyncio.sleep(args.dwell)
+        elif args.toggle:
             await send(OP_SET_POWER, bytes([0]), "power OFF")
             await asyncio.sleep(args.dwell)
             await send(OP_SET_POWER, bytes([1]), "power ON")
@@ -464,7 +483,15 @@ def main() -> int:
     )
     p.add_argument("--toggle", action="store_true", help="off, then on (ends ON)")
     p.add_argument("--on", action="store_true", help="turn on")
-    p.add_argument("--brightness", type=int, help="set brightness 0-100")
+    p.add_argument("--brightness", type=int, help="set brightness 0-100 via 0xD2 (sol-lamp variant)")
+    p.add_argument(
+        "--op",
+        help="raw opcode to send, e.g. 0xF0 - for testing an unconfirmed command",
+    )
+    p.add_argument(
+        "--data",
+        help="payload for --op as hex bytes, e.g. 01,32,FF,FF,FF,FF (no vendor prefix)",
+    )
     p.add_argument("--dwell", type=float, default=1.5, help="seconds between commands")
     p.add_argument("--timeout", type=float, default=20.0)
     args = p.parse_args()
