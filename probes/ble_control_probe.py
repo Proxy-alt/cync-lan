@@ -474,6 +474,16 @@ def main() -> int:
     p.add_argument("--mac", help="MAC of any provisioned mesh node")
     p.add_argument("--mesh-name", help="mesh name from your cloud export")
     p.add_argument("--mesh-password", help="mesh password from your cloud export")
+    p.add_argument(
+        "--from-config",
+        metavar="PATH",
+        help=(
+            "read credentials from cync_mesh.yaml instead of the command line, so "
+            "the mesh password never appears in a shell command, shell history, or "
+            "anything you copy out of a terminal. On Home Assistant: "
+            "/config/.storage/cync-lan/config/cync_mesh.yaml"
+        ),
+    )
     p.add_argument("--target", type=int, default=1, help="mesh device id (0 broadcasts)")
     p.add_argument(
         "--listen",
@@ -500,8 +510,60 @@ def main() -> int:
         return self_test()
     if args.scan:
         return asyncio.run(scan(args.timeout)) or 0
+    if args.from_config:
+        # Deliberately reads the value in-process and never prints it. The whole
+        # point is that the mesh password stays on the machine that owns it - a
+        # credential pasted into a terminal ends up in shell history, in scroll
+        # buffers, and in whatever you copy out to ask someone for help.
+        try:
+            import yaml
+        except ImportError:
+            p.error("--from-config needs pyyaml: pip install pyyaml")
+        try:
+            with open(args.from_config) as fh:
+                cfg = yaml.safe_load(fh) or {}
+        except OSError as exc:
+            p.error(f"cannot read {args.from_config}: {exc}")
+
+        homes = [v for v in cfg.values() if isinstance(v, dict) and "access_key" in v]
+        if not homes:
+            p.error(
+                f"no home with an 'access_key' found in {args.from_config} - expected "
+                "the structure cloud_api._parse_raw_export writes"
+            )
+        if len(homes) > 1 and not args.mesh_name:
+            names = ", ".join(str(h.get("mac", "?")) for h in homes)
+            p.error(f"several homes present; pass --mesh-name to pick one of: {names}")
+
+        home = homes[0]
+        if args.mesh_name:
+            match = [h for h in homes if str(h.get("mac")) == args.mesh_name]
+            if not match:
+                p.error(f"no home with mac {args.mesh_name!r} in {args.from_config}")
+            home = match[0]
+
+        args.mesh_name = str(home["mac"])
+        args.mesh_password = str(home["access_key"])
+        print(f"  credentials loaded for mesh {args.mesh_name} (password not shown)")
+
+        if not args.mac:
+            # Any node will do - commands relay - so offer the ones on file.
+            devices = home.get("devices") or {}
+            macs = [
+                (str(k), d.get("mac"))
+                for k, d in devices.items()
+                if isinstance(d, dict) and d.get("mac")
+            ]
+            if macs:
+                print("  --mac not given; devices in this home (id -> mac):")
+                for dev_id, dev_mac in macs[:12]:
+                    print(f"      {dev_id:>4}  {dev_mac}")
+
     if not (args.mac and args.mesh_name and args.mesh_password):
-        p.error("--mac, --mesh-name and --mesh-password are required (or use --self-test/--scan)")
+        p.error(
+            "need --mac plus credentials: either --mesh-name/--mesh-password, or "
+            "--from-config (or use --self-test/--scan)"
+        )
     return asyncio.run(probe(args))
 
 
