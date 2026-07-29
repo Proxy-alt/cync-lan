@@ -98,6 +98,7 @@ spellings, so `read C2184d` and `read d` both work.
 | `patches/` | The annotation patch — 58 files, ~1,450 added lines. |
 | `findings/` | Standalone analysis: native libraries, the Matter/CHIP dead-weight finding, the camera subsystem, XlinkDTSL, the extracted command catalogue, the ge-sdk package map, and every inline annotation as prose. |
 | `tools/` | `cyncdec` — hex-annotates byte literals, recovers Kotlin and enum names, extracts the command catalogue, walks the reference graph. 98 tests. |
+| `probes/` | Scripts that ask real hardware a question static analysis cannot answer. Currently one: whether a provisioned device can be controlled over BLE. |
 
 `tools/` is worth having whether or not you ever regenerate the tree; it
 resolves all 105 command opcodes on its own.
