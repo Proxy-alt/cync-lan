@@ -120,6 +120,41 @@ Note the `cmd_code = 0x10` overlap across brightness/temperature/rgb despite thr
 `op_code`s — explained by the length-field formula in "TCP relay envelope research" above
 (all three share the same 8-byte payload length), not a semantic coincidence.
 
+### The leading `0x11, 0x02` is the Telink vendor ID — **confirmed**
+
+Every payload above opens with `0x11, 0x02`, and it is not a per-command constant to be
+copied around: it is the **Telink mesh vendor ID `0x0211`, little-endian**.
+
+Confirmed against [`juanboro/cync2mqtt`](https://github.com/juanboro/cync2mqtt)'s `acync`
+(Apache-2.0), an independently working BLE implementation descended from
+`google/python-dimond` and `python-tikteck`. It drives the same devices over Bluetooth
+instead of TCP, and constructs its packets like this:
+
+```python
+packet[7] = command          # the op_code below
+packet[8] = vendor & 0xff    # 0x11
+packet[9] = (vendor >> 8)    # 0x02   -> vendor = 0x0211
+packet[10:] = data           # arguments only, no 0x11 0x02 prefix
+```
+
+So the two transports carry the *same* mesh command with different framing: BLE gives the
+vendor its own field, while this project's TCP path embeds it at the head of the payload.
+That is why `acync`'s command bytes line up with the table above:
+
+| `acync` (BLE) | this table (TCP) |
+|---|---|
+| `0xD0` + `[power]` | `set_power` `0xD0`, `[0x11,0x02,state,0,0]` |
+| `0xD2` + `[brightness]` | `set_brightness` sol-lamp variant `0xD2` |
+| `0xE2` + `[0x05, temp]` | `set_temperature` sol-lamp variant `0xE2` |
+| `0xE2` + `[0x04, r, g, b]` | (RGB, via the same `0xE2` family) |
+| `0xDC` inbound | status notifications |
+
+Two things follow. The sol-lamp `0xD2`/`0xE2` variants are corroborated by an
+implementation that demonstrably controls real hardware — independent of this project's
+own decompilation, and from a different source lineage. And the opcode table is
+transport-independent: anything documented here should port to a BLE transport by moving
+`0x11, 0x02` out of the payload and into the vendor field, rather than by re-deriving it.
+
 ## Provenance of already-confirmed cmd_code values
 
 Mystery solved for all five: every `cmd_code` in the table above traces to a **real socat-MITM

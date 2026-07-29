@@ -516,6 +516,32 @@ device_type_map = {
             "protocol for this type ID and are unaffected by the name correction.",
         ],
     ),
+    54: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Dimmer Switch with Motion and Ambient Light (unconfirmed variant)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(dimmable=True, motion_sensor=True),
+        supported=False,
+        notes=[
+            "PLAUSIBLE, not confirmed - no capture, no owner report, and this type "
+            "was a gap in an otherwise dense run (48, 49, 51, 52, 53, 55, 56, 57...).",
+            "Sourced from juanboro/cync2mqtt's acync, which lists 54 alongside 37 and "
+            "49 in both its MOTION and AMBIENT_LIGHT capability sets - the same "
+            "built-in-occupancy switch family this project already supports two "
+            "members of. acync is another reverse-engineering effort (its tables come "
+            "from nikshriv/cync_lights), so this is corroboration between two RE "
+            "projects, NOT hardware truth.",
+            "Note the disagreement worth settling: this project's own capture-confirmed "
+            "third member of that family is type 56 ('Dimmable Motion Light Switch'), "
+            "while acync names 54 and does not list 56. Either both exist as separate "
+            "variants, or one of the two efforts transcribed a type ID wrong. 56 is the "
+            "better-evidenced of the pair (real capture, owner-confirmed), which is why "
+            "it is marked supported and this is not.",
+            "supported=False deliberately: it will be classified and logged rather than "
+            "silently treated as a working motion switch. If you own one, a debug "
+            "capture would resolve this - see docs/hardware_verification.md.",
+        ],
+    ),
     55: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
         model_name="Dimmer Switch - No Neutral",
