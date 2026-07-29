@@ -172,10 +172,29 @@ That last point is the load-bearing one. The command left over Bluetooth and the
 confirmation arrived over TCP, so the two transports corroborate each other and the
 result cannot be a false positive.
 
-Scope, precisely: only `0xD0` has been exercised over BLE. Brightness, temperature and
-RGB are still untested on that transport, and this firmware refuses notification
-subscriptions outright — it declares `notify` on characteristic `...1911`, rejects the
-CCCD write with `Unlikely Error`, and then drops the connection.
+Brightness has since been confirmed over BLE too, and it produced a result the table
+above does not predict. **Both** forms changed the brightness of the same wired dimmer:
+
+- `0xF0` with `[0x01, bri, 0xFF, 0xFF, 0xFF, 0xFF]` — the non-sol form, which is what
+  `devices.py` sends to this device class over TCP;
+- `0xD2` with `[bri, 0x00, 0x00]` — the **sol-lamp** form, which by the table should not
+  have applied to a wired dimmer at all.
+
+So the sol-lamp split is real on the TCP side but is not, on this firmware, a hard
+gate over BLE. That does **not** make the two equivalent, and the distinction is
+deliberately kept in `ble_mesh.py`. The verification channel was cync-lan's own
+reporting, which surfaces the brightness level and little else — it would not reveal a
+difference in fade behaviour, in what the device persists across a power cycle, or in
+sub-percent precision. `set_fine_brightness` extends the `0xE2` family precisely because
+the basic form cannot express that last one, which is reason enough not to treat the two
+families as interchangeable on the strength of one observation.
+
+Scope, precisely: `0xD0` and both brightness forms are confirmed over BLE. Colour
+temperature and RGB are not — they ride the same `0xF0` family whose brightness member
+works, so they are better founded than a guess, but nobody has moved either. This
+firmware also refuses notification subscriptions outright: it declares `notify` on
+characteristic `...1911`, rejects the CCCD write with `Unlikely Error`, and then drops
+the connection.
 
 **The mesh credentials do not come from the hub.** They are in the cloud export that
 `cloud_api.py:_parse_raw_export` already writes: the home's `mac` is the Telink mesh
