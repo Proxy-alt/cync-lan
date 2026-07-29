@@ -362,6 +362,32 @@ async def probe(args) -> int:
                             f"handle={desc.handle}{flag}"
                         )
 
+        # --send-before-notify exists because of a genuine catch-22 found on
+        # hardware: BlueZ will not deliver notifications without StartNotify,
+        # and StartNotify is refused in a way that drops the link. So a reply
+        # can only be caught in the window between subscribing and dying.
+        #
+        # Sending first, then subscribing, is the one ordering that might see a
+        # hub command's answer: the command goes out on a healthy link, and the
+        # subscribe that follows harvests whatever is queued before the
+        # connection goes down.
+        if args.send_before_notify and args.op is not None:
+            try:
+                opcode_early = int(args.op, 0)
+            except ValueError:
+                print(f"  --op must be a number, e.g. 0x4B (got {args.op!r})")
+                return 1
+            raw_early = (args.data or "").replace(",", " ").split()
+            payload_early = bytes(int(b, 16) for b in raw_early)
+            packet = build_command(1, args.target, opcode_early, payload_early)
+            enc = encrypt_packet(sk, address, packet)
+            print(
+                f"  -> sent BEFORE notify: op=0x{opcode_early:02X} "
+                f"target={args.target} {bytes(enc).hex()}"
+            )
+            await client.write_gatt_char(CONTROL_CHAR, bytes(enc), response=False)
+            await asyncio.sleep(0.5)
+
         # How to turn inbound status on is genuinely unsettled, so it is
         # selectable rather than guessed. See --notify-mode.
         #
@@ -467,7 +493,7 @@ async def probe(args) -> int:
                 return
             await client.write_gatt_char(CONTROL_CHAR, bytes(enc), response=False)
 
-        if args.op is not None:
+        if args.op is not None and not args.send_before_notify:
             # Raw mode: send any opcode with any payload. The point is to test
             # commands whose BLE form is predicted by the transport mapping in
             # docs/mesh_opcodes.md but not yet confirmed - strip the leading
@@ -555,6 +581,14 @@ def main() -> int:
     p.add_argument(
         "--op",
         help="raw opcode to send, e.g. 0xF0 - for testing an unconfirmed command",
+    )
+    p.add_argument(
+        "--send-before-notify",
+        action="store_true",
+        help=(
+            "send --op on a healthy link and only then subscribe, to catch a "
+            "reply in the window before a refused StartNotify drops the link"
+        ),
     )
     p.add_argument(
         "--data",

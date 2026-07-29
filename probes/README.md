@@ -122,6 +122,35 @@ temperature and RGB are unconfirmed over this transport.
 Worth knowing for anyone building on this: none of it needed DNS redirection,
 and none of it needed the hub command family that currently gets no reply.
 
+### The notification catch-22 (BlueZ only)
+
+Settled by testing, after three wrong guesses. On BlueZ you can **send or
+receive on one connection, not both**:
+
+| | result |
+|---|---|
+| never subscribe (`--no-notify`) | sending works; no inbound status |
+| `--notify-mode enable-only` | enable-write accepted, **no notifications at all** in 15s |
+| any mode that calls `StartNotify` | ~20 packets arrive, then the CCCD rejection **drops the link** |
+
+BlueZ will not route notifications without `StartNotify`, and this firmware
+refuses the CCCD write that `StartNotify` performs — fatally. The packets that do
+arrive come from BlueZ's local subscription, in the moment before the connection
+dies, which is what made an earlier reading of this look survivable.
+
+`google/python-dimond` avoids the whole problem because bluepy never goes through
+BlueZ's GATT API — it registers a delegate and waits, with no CCCD write. That
+route is not open to a Home Assistant integration.
+
+`--send-before-notify` exists for this: it sends `--op` on a healthy link and
+only then subscribes, so a reply can be harvested from the window before the link
+goes down. It is the only way found so far to see an answer to a hub query.
+
+**Untested, and the most interesting remaining option: an ESPHome Bluetooth
+proxy.** It implements its own GATT client rather than using BlueZ, so it may not
+trip this at all. That turns the proxy question from a range nicety into the
+thing that decides whether push state is available.
+
 ### Credentials
 
 See the table above for which field is which. They come from `cync_mesh.yaml`,
