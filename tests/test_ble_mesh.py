@@ -18,6 +18,8 @@ import pytest
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from cync_lan.ble_mesh import (
+    OP_SET_BRIGHTNESS_SOL,
+    OP_SET_LEVEL,
     OP_SET_POWER,
     VENDOR_ID,
     BleMeshError,
@@ -358,3 +360,106 @@ async def test_subscribe_failure_is_not_fatal():
     assert await session.subscribe(lambda statuses: None) is False
     assert session.notifications_active is False
     await session.set_power(37, True)  # must still work
+
+
+# --------------------------------------------------------------------------
+# The brightness opcode split - both forms confirmed on hardware.
+# --------------------------------------------------------------------------
+
+
+async def _authed(client=None):
+    r_app = bytes(range(8))
+    client = client or FakeClient(_valid_pairing_response(r_app))
+    session = BleMeshSession(client, MAC, MESH_NAME, MESH_PASSWORD)
+    await session.authenticate(r_app=r_app)
+    return session, client
+
+
+def _sent_plaintext(client, session) -> bytes:
+    """Recover the plaintext of the last command written.
+
+    encrypt_packet is not reversible by decrypt_packet - different IVs - so the
+    payload is checked by rebuilding the expected packet instead of unwrapping
+    the sent one.
+    """
+    return client.writes[-1][1]
+
+
+@pytest.mark.asyncio
+async def test_set_brightness_defaults_to_the_0xF0_form():
+    """0xF0 with [0x01, bri, FF, FF, FF, FF] - what devices.py sends over TCP
+    for non-sol devices, and confirmed on a real wired dimmer."""
+    session, client = await _authed()
+    await session.set_brightness(37, 50)
+
+    expected = encrypt_packet(
+        session._session_key,
+        mac_to_address(MAC),
+        build_command(1, 37, OP_SET_LEVEL, bytes([0x01, 50, 0xFF, 0xFF, 0xFF, 0xFF])),
+    )
+    assert _sent_plaintext(client, session) == bytes(expected)
+
+
+@pytest.mark.asyncio
+async def test_set_brightness_sol_lamp_uses_0xD2():
+    """0xD2 with [bri, 0, 0]. Also confirmed to change a wired dimmer, which the
+    sol-lamp framing does not predict - the branch is kept because accepted is
+    not the same as equivalent, not because 0xD2 is inert."""
+    session, client = await _authed()
+    await session.set_brightness(37, 50, is_sol_lamp=True)
+
+    expected = encrypt_packet(
+        session._session_key,
+        mac_to_address(MAC),
+        build_command(1, 37, OP_SET_BRIGHTNESS_SOL, bytes([50, 0x00, 0x00])),
+    )
+    assert _sent_plaintext(client, session) == bytes(expected)
+
+
+@pytest.mark.asyncio
+async def test_the_two_brightness_forms_are_different_on_the_wire():
+    """Guards the split itself: a refactor collapsing the branch would break
+    this even though both opcodes happen to work on some hardware."""
+    s1, c1 = await _authed()
+    await s1.set_brightness(37, 50)
+    s2, c2 = await _authed()
+    await s2.set_brightness(37, 50, is_sol_lamp=True)
+    assert c1.writes[-1][1] != c2.writes[-1][1]
+
+
+@pytest.mark.asyncio
+async def test_brightness_is_clamped_to_0_100():
+    session, client = await _authed()
+    await session.set_brightness(37, 500)
+    expected = encrypt_packet(
+        session._session_key,
+        mac_to_address(MAC),
+        build_command(1, 37, OP_SET_LEVEL, bytes([0x01, 100, 0xFF, 0xFF, 0xFF, 0xFF])),
+    )
+    assert client.writes[-1][1] == bytes(expected)
+
+
+@pytest.mark.asyncio
+async def test_colour_temp_and_rgb_match_devices_py_payloads():
+    """Not confirmed over BLE, so pinned against devices.py's byte sequences -
+    the only claim being made is that the two transports agree."""
+    session, client = await _authed()
+
+    await session.set_colour_temp(37, 200)
+    assert client.writes[-1][1] == bytes(
+        encrypt_packet(
+            session._session_key,
+            mac_to_address(MAC),
+            build_command(1, 37, OP_SET_LEVEL, bytes([0x01, 0xFF, 200, 0, 0, 0])),
+        )
+    )
+
+    session2, client2 = await _authed()
+    await session2.set_rgb(37, 10, 20, 30)
+    assert client2.writes[-1][1] == bytes(
+        encrypt_packet(
+            session2._session_key,
+            mac_to_address(MAC),
+            build_command(1, 37, OP_SET_LEVEL, bytes([0x01, 0xFF, 0xFE, 10, 20, 30])),
+        )
+    )

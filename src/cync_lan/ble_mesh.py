@@ -27,10 +27,26 @@ device, which at ~40 nodes would be unworkable.
 
 WHAT IS NOT CONFIRMED
 ---------------------
-Only `set_power` (`0xD0`) has been exercised over this transport. Brightness,
-temperature and RGB are carried here because the opcode table is shared with
-the TCP path (see `docs/mesh_opcodes.md`), but they have not been tested over
-BLE and should be treated as plausible rather than confirmed.
+`set_power` (`0xD0`) and `set_brightness` (both the `0xF0` and `0xD2` forms) are
+confirmed. Colour temperature and RGB are not - they ride the same `0xF0`
+family whose brightness member works, so they are better founded than a guess,
+but nobody has moved either over this transport.
+
+A surprise came out of testing brightness, and it is recorded rather than
+tidied away. **Both** forms changed the brightness of the same wired dimmer:
+`0xF0` with the six-byte payload, and `0xD2` with a bare brightness byte -
+even though `docs/mesh_opcodes.md` treats `0xD2` as the sol-lamp variant and
+`devices.py` only ever sends it to sol lamps over TCP.
+
+Accepted is not the same as equivalent, so the `is_sol_lamp` branch stays and
+the default remains whichever form `devices.py` sends for that device class.
+The verification channel here is cync-lan's own reporting, which surfaces the
+brightness level and little else - it would not reveal a difference in fade
+behaviour, in what the device persists across a power cycle, or in sub-percent
+handling (`set_fine_brightness` extends the `0xE2` family precisely because the
+basic form cannot express it). Sending a device the command its own class is
+documented to use costs nothing and forecloses a whole category of side effect
+nobody has looked for.
 
 Notification subscription fails outright on at least one firmware: it declares
 `notify` on the notify characteristic, rejects the CCCD write with GATT
@@ -78,6 +94,7 @@ __all__ = [
     "BleMeshSession",
     "DeviceStatus",
     "GattClient",
+    "OP_SET_LEVEL",
     "build_command",
     "decrypt_packet",
     "encrypt_packet",
@@ -99,9 +116,23 @@ PAIRING_CHAR = "00010203-0405-0607-0809-0a0b0c0d1914"
 VENDOR_ID = 0x0211
 
 OP_SET_POWER = 0xD0
-OP_SET_BRIGHTNESS = 0xD2
-OP_SET_TEMP_RGB = 0xE2
+# 0xF0 carries brightness, temperature and RGB for ordinary devices; 0xD2/0xE2
+# are the sol-lamp variants of the first two. Mirrors devices.py's own
+# `op = 0xD2 if self.is_sol_lamp else 0xF0` rather than reimplementing the rule.
+OP_SET_LEVEL = 0xF0
+OP_SET_BRIGHTNESS_SOL = 0xD2
+OP_SET_TEMP_SOL = 0xE2
 OP_STATUS_NOTIFY = 0xDC
+
+# Aliases kept because acync names these as *the* brightness and temperature
+# opcodes, and this module followed it at first. They are the sol-lamp forms.
+#
+# Do not assume they are inert on other hardware: 0xD2 was tested on a wired
+# dimmer and DID change its brightness, which docs/mesh_opcodes.md's sol-lamp
+# framing does not predict. See set_brightness for why the branch is kept
+# anyway.
+OP_SET_BRIGHTNESS = OP_SET_BRIGHTNESS_SOL
+OP_SET_TEMP_RGB = OP_SET_TEMP_SOL
 
 _PAIRING_OPCODE = 0x0C
 _PACKET_LEN = 20
@@ -450,20 +481,59 @@ class BleMeshSession:
         """Confirmed working on hardware."""
         await self.send(target, OP_SET_POWER, bytes([1 if on else 0]))
 
-    async def set_brightness(self, target: int, brightness: int) -> None:
-        """NOT confirmed over BLE - opcode shared with the TCP path only."""
-        await self.send(
-            target, OP_SET_BRIGHTNESS, bytes([max(0, min(100, brightness))])
-        )
+    async def set_brightness(
+        self, target: int, brightness: int, *, is_sol_lamp: bool = False
+    ) -> None:
+        """Confirmed on hardware, in both forms - which was not expected.
 
-    async def set_colour_temp(self, target: int, colour_temp: int) -> None:
-        """NOT confirmed over BLE - opcode shared with the TCP path only."""
-        await self.send(target, OP_SET_TEMP_RGB, bytes([0x05, colour_temp & 0xFF]))
+        0xF0 with the six-byte payload changed a real wired dimmer's brightness,
+        verified through cync-lan's own reporting over TCP. So did 0xD2 with a
+        bare brightness byte, on the same device, even though that is documented
+        as the sol-lamp variant and devices.py only sends it to sol lamps.
+
+        The branch is kept regardless. Both being accepted does not make them
+        equivalent, and the verification channel would not have shown the
+        difference if there is one: cync-lan reports the brightness level, not
+        fade behaviour, not what survives a power cycle, not sub-percent
+        precision. Sending each device class the form it is documented to use
+        costs nothing and avoids a category of side effect nobody has examined.
+
+        `is_sol_lamp` mirrors devices.py's own discriminator; pass the device's
+        existing flag rather than guessing at it here.
+        """
+        bri = max(0, min(100, brightness))
+        if is_sol_lamp:
+            await self.send(target, OP_SET_BRIGHTNESS_SOL, bytes([bri, 0x00, 0x00]))
+        else:
+            await self.send(
+                target, OP_SET_LEVEL, bytes([0x01, bri, 0xFF, 0xFF, 0xFF, 0xFF])
+            )
+
+    async def set_colour_temp(
+        self, target: int, colour_temp: int, *, is_sol_lamp: bool = False
+    ) -> None:
+        """NOT confirmed over BLE, though the payloads now match devices.py.
+
+        Brightness in this same 0xF0 family is confirmed, so this is better
+        founded than a guess - but nobody has moved a colour temperature over
+        this transport.
+        """
+        temp = colour_temp & 0xFF
+        if is_sol_lamp:
+            await self.send(target, OP_SET_TEMP_SOL, bytes([0x05, temp, 0x00]))
+        else:
+            await self.send(
+                target, OP_SET_LEVEL, bytes([0x01, 0xFF, temp, 0x00, 0x00, 0x00])
+            )
 
     async def set_rgb(self, target: int, red: int, green: int, blue: int) -> None:
-        """NOT confirmed over BLE - opcode shared with the TCP path only."""
+        """NOT confirmed over BLE.
+
+        No sol-lamp variant exists for this one - devices.py sends 0xF0
+        unconditionally.
+        """
         await self.send(
             target,
-            OP_SET_TEMP_RGB,
-            bytes([0x04, red & 0xFF, green & 0xFF, blue & 0xFF]),
+            OP_SET_LEVEL,
+            bytes([0x01, 0xFF, 0xFE, red & 0xFF, green & 0xFF, blue & 0xFF]),
         )
