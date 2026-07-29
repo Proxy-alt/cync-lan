@@ -155,6 +155,36 @@ own decompilation, and from a different source lineage. And the opcode table is
 transport-independent: anything documented here should port to a BLE transport by moving
 `0x11, 0x02` out of the payload and into the vendor field, rather than by re-deriving it.
 
+### The transport-independence claim is now **confirmed on hardware** (2026-07-28)
+
+The paragraph above was reasoning from two implementations agreeing. It has since been
+tested directly, with `research`'s `probes/ble_control_probe.py`:
+
+- The Telink session handshake completed against a wired Cync switch, with
+  `verify_pairing_response` reporting **mutual auth verified** — the device proved it
+  had derived the same key material, so the credentials and the whole handshake are right.
+- Inbound traffic decrypted into sensible plaintext: vendor `0x0211` sitting at bytes
+  `8:9` exactly as the framing above predicts, plus readable ASCII in the payload.
+- A `set_power` (`0xD0`) built by moving `0x11, 0x02` into the vendor field **changed the
+  switch's state**, and `cync-lan` reported that change over its own TCP connection.
+
+That last point is the load-bearing one. The command left over Bluetooth and the
+confirmation arrived over TCP, so the two transports corroborate each other and the
+result cannot be a false positive.
+
+Scope, precisely: only `0xD0` has been exercised over BLE. Brightness, temperature and
+RGB are still untested on that transport, and this firmware refuses notification
+subscriptions outright — it declares `notify` on characteristic `...1911`, rejects the
+CCCD write with `Unlikely Error`, and then drops the connection.
+
+**The mesh credentials do not come from the hub.** They are in the cloud export that
+`cloud_api.py:_parse_raw_export` already writes: the home's `mac` is the Telink mesh
+name and its `access_key` is the mesh password, both confirmed by the run above. Worth
+stating plainly because the `query_mesh_credentials` button suggests otherwise, and that
+button is a hub command — a family that currently gets no reply at all (see
+`hub_envelope_ab_test.md`). Nothing about BLE control depends on it, or on DNS
+redirection.
+
 ## Provenance of already-confirmed cmd_code values
 
 Mystery solved for all five: every `cmd_code` in the table above traces to a **real socat-MITM
