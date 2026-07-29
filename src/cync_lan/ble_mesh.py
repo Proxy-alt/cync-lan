@@ -48,20 +48,34 @@ basic form cannot express it). Sending a device the command its own class is
 documented to use costs nothing and forecloses a whole category of side effect
 nobody has looked for.
 
-**Notifications work, and an earlier version of this module said otherwise.**
-That claim was wrong and is worth recording as such: it came from testing one
-sequence and generalising from it.
+INBOUND STATUS: RECEIVABLE, BUT NOT YET COMPATIBLE WITH SENDING
+---------------------------------------------------------------
+This has now been wrong in both directions, so the current state is set out
+carefully.
 
-BlueZ's `StartNotify` is refused - the device answers the CCCD write with GATT
-`Unlikely Error`, even though it does expose a `0x2902` descriptor. But the
-CCCD is not how this protocol enables reporting. Writing `0x01` to the
-notification characteristic's *value* is, and `google/python-dimond` does
-exactly that and never touches the CCCD at all. With the enable-write first,
-16 status packets arrived and decrypted correctly on hardware whose
-`StartNotify` had just been rejected.
+Status packets *can* be received and decrypted - 20 of them, in one run, with
+`0xDC` and the vendor ID landing exactly where the framing predicts. So the
+claim that this firmware "refuses notifications" was wrong.
 
-`subscribe()` therefore performs the enable-write first and treats a refused
-subscribe as survivable rather than fatal.
+But BlueZ's `StartNotify` is refused (GATT `Unlikely Error`) **and the rejection
+takes the connection down with it** - confirmed, because the next control write
+fails with 'Not connected'. A revision of this module then wrongly called that
+survivable, misled by the notifications that arrive *before* the rejection:
+those come from BlueZ subscribing locally while the device is already reporting
+from the `0x01` enable-write, and they say nothing about the link lasting.
+
+So today there is a choice, not a solution:
+
+- **send reliably**: never call `subscribe()`. Confirmed working - power and
+  brightness both landed on runs that never attempted a subscription.
+- **receive**: call `subscribe()` and accept that the session ends.
+
+`google/python-dimond` has neither problem, because bluepy never writes a CCCD
+at all - it registers a delegate and waits. The open question is whether BlueZ
+can be made to deliver notifications without its own CCCD write. Two candidates
+are untested: writing the descriptor by hand, and relying on the enable-write
+alone. Until one of them works, a consumer needing both directions has to
+reconnect between them.
 
 WHY THIS MODULE NEVER IMPORTS BLEAK
 -----------------------------------
@@ -497,12 +511,27 @@ class BleMeshSession:
         try:
             await self._client.start_notify(NOTIFICATION_CHAR, _on_notify)
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "%s: StartNotify refused (%s). Reporting is enabled regardless - "
-                "this firmware rejects the CCCD write but still sends notifications.",
+            # A refused StartNotify is NOT survivable, and an earlier revision of
+            # this method wrongly said it was. Confirmed on hardware: the very
+            # next control write fails with 'Not connected'. The rejection does
+            # not merely fail - it takes the link down with it.
+            #
+            # The notifications that appear before the rejection are what misled
+            # the earlier version. They arrive because BlueZ subscribes locally
+            # and the device is already reporting from the 0x01 write; they say
+            # nothing about the connection surviving.
+            self._notify_active = False
+            logger.warning(
+                "%s: StartNotify was refused (%s) and this firmware drops the "
+                "connection when that happens. The session is no longer usable. "
+                "To send commands reliably, do not call subscribe() at all.",
                 self._mac,
                 exc,
             )
+            raise BleMeshError(
+                "StartNotify was refused and the link is now down; reconnect and "
+                "do not subscribe if you only need to send"
+            ) from exc
 
         self._notify_active = True
         return True

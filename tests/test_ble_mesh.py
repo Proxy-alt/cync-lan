@@ -377,26 +377,44 @@ async def test_counter_advances_so_packets_differ():
 
 
 @pytest.mark.asyncio
-async def test_refused_start_notify_still_leaves_reporting_enabled():
-    """A rejected CCCD write does NOT mean no notifications.
+async def test_refused_start_notify_raises_because_the_link_dies():
+    """A refused CCCD write is not survivable, and this has been wrong twice.
 
-    Confirmed on hardware: 16 status packets arrived and decrypted correctly on
-    a connection whose StartNotify had just been refused with GATT 'Unlikely
-    Error'. Reporting is switched on by writing 0x01 to the characteristic's
-    value - what python-dimond does, and it never writes a CCCD at all - so the
-    subscribe is a convenience for routing, not the thing that enables it.
+    First this module claimed notifications were impossible. Then, on seeing
+    packets arrive, it claimed a refused subscribe was survivable and returned
+    True. Both were wrong. Confirmed on hardware: the control write immediately
+    after a refused StartNotify fails with 'Not connected' - the rejection takes
+    the connection down.
 
-    An earlier version of this test asserted the opposite, from one failed
-    sequence.
+    The notifications that arrive before the rejection are the trap. They come
+    from BlueZ subscribing locally while the device is already reporting from the
+    0x01 enable-write, and they say nothing about the link lasting.
     """
     r_app = bytes(range(8))
     client = FakeClient(_valid_pairing_response(r_app), notify_raises=True)
     session = BleMeshSession(client, MAC, MESH_NAME, MESH_PASSWORD)
     await session.authenticate(r_app=r_app)
 
-    assert await session.subscribe(lambda statuses: None) is True
-    assert session.notifications_active is True
-    await session.set_power(37, True)  # and sending is unaffected
+    with pytest.raises(BleMeshError, match="link is now down"):
+        await session.subscribe(lambda statuses: None)
+    assert session.notifications_active is False
+
+
+@pytest.mark.asyncio
+async def test_sending_works_when_subscribe_is_never_called():
+    """The confirmed-working configuration: never subscribe, just send.
+
+    Power and brightness both landed on hardware in runs that made no
+    subscription attempt at all.
+    """
+    r_app = bytes(range(8))
+    client = FakeClient(_valid_pairing_response(r_app), notify_raises=True)
+    session = BleMeshSession(client, MAC, MESH_NAME, MESH_PASSWORD)
+    await session.authenticate(r_app=r_app)
+
+    await session.set_power(37, True)
+    await session.set_brightness(37, 50)
+    assert len(client.writes) >= 3  # pairing write plus the two commands
 
 
 @pytest.mark.asyncio
