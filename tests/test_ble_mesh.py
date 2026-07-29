@@ -18,6 +18,7 @@ import pytest
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from cync_lan.ble_mesh import (
+    NOTIFICATION_CHAR,
     OP_SET_BRIGHTNESS_SOL,
     OP_SET_LEVEL,
     OP_SET_POWER,
@@ -201,10 +202,11 @@ def test_mesh_credentials_error_names_the_missing_field():
 
 
 def test_parse_status_reads_both_slots():
+    """Presence byte is 0 for a data-bearing slot - see parse_status."""
     packet = bytearray(20)
     packet[7] = 0xDC
-    packet[10:14] = bytes([37, 1, 50, 200])
-    packet[14:18] = bytes([38, 1, 0, 100])
+    packet[10:14] = bytes([37, 0, 50, 200])
+    packet[14:18] = bytes([38, 0, 0, 100])
     statuses = parse_status(bytes(packet))
     assert statuses == [
         DeviceStatus(device_id=37, brightness=50, is_rgb=False, colour_temp=200),
@@ -212,19 +214,48 @@ def test_parse_status_reads_both_slots():
     ]
 
 
-def test_parse_status_skips_empty_slots():
-    """Second byte zero means 'no device here', not 'a device reporting 0'."""
+def test_parse_status_against_real_captured_packets():
+    """Real bytes off a real mesh, so the presence rule is pinned to evidence.
+
+    These are two of the seventeen packets captured over BLE. The nine slots
+    with a zero presence byte carried plausible state - brightness 100, extra
+    255 - while twenty-five with a non-zero one were entirely zero. acync's rule
+    would have discarded exactly the nine that mattered.
+    """
+    captured = bytes.fromhex("628db70000e9acdc1102f4006400d60064000000")
+    assert [(s.device_id, s.brightness) for s in parse_status(captured)] == [
+        (244, 100),
+        (214, 100),
+    ]
+
+    captured = bytes.fromhex("9bbfcb0000c015dc11020b0000ff2c0000ff0000")
+    assert [(s.device_id, s.colour_temp) for s in parse_status(captured)] == [
+        (11, 255),
+        (44, 255),
+    ]
+
+
+def test_parse_status_ignores_the_unexplained_record_shape():
+    """A non-zero presence byte with an all-zero body is the shape that made up
+    25 of 34 captured slots. Unexplained, and deliberately not reported as a
+    device sitting at brightness zero."""
+    captured = bytes.fromhex("52075b000066d7dc110216f300001a5f00000000")
+    assert parse_status(captured) == []
+
+
+def test_parse_status_skips_wholly_empty_slots():
+    """An all-zero slot is genuinely nothing, presence byte included."""
     packet = bytearray(20)
     packet[7] = 0xDC
-    packet[10:14] = bytes([37, 0, 50, 200])
-    packet[14:18] = bytes([38, 1, 25, 100])
+    packet[10:14] = bytes([0, 0, 0, 0])
+    packet[14:18] = bytes([38, 0, 25, 100])
     assert [s.device_id for s in parse_status(bytes(packet))] == [38]
 
 
 def test_parse_status_decodes_rgb_when_brightness_flags_it():
     packet = bytearray(20)
     packet[7] = 0xDC
-    packet[10:14] = bytes([37, 1, 128 + 60, 0xFF])
+    packet[10:14] = bytes([37, 0, 128 + 60, 0xFF])
     (status,) = parse_status(bytes(packet))
     assert status.is_rgb and status.brightness == 60
     assert (status.red, status.green, status.blue) == (255, 255, 255)
@@ -233,7 +264,7 @@ def test_parse_status_decodes_rgb_when_brightness_flags_it():
 def test_parse_status_ignores_other_opcodes():
     packet = bytearray(20)
     packet[7] = 0xEA  # seen in real captures alongside status
-    packet[10:14] = bytes([37, 1, 50, 200])
+    packet[10:14] = bytes([37, 0, 50, 200])
     assert parse_status(bytes(packet)) == []
 
 
@@ -346,20 +377,45 @@ async def test_counter_advances_so_packets_differ():
 
 
 @pytest.mark.asyncio
-async def test_subscribe_failure_is_not_fatal():
-    """Real firmware declares notify, refuses the CCCD write, drops the link.
+async def test_refused_start_notify_still_leaves_reporting_enabled():
+    """A rejected CCCD write does NOT mean no notifications.
 
-    Sending must survive that, because control writes go to a different
-    characteristic entirely.
+    Confirmed on hardware: 16 status packets arrived and decrypted correctly on
+    a connection whose StartNotify had just been refused with GATT 'Unlikely
+    Error'. Reporting is switched on by writing 0x01 to the characteristic's
+    value - what python-dimond does, and it never writes a CCCD at all - so the
+    subscribe is a convenience for routing, not the thing that enables it.
+
+    An earlier version of this test asserted the opposite, from one failed
+    sequence.
     """
     r_app = bytes(range(8))
     client = FakeClient(_valid_pairing_response(r_app), notify_raises=True)
     session = BleMeshSession(client, MAC, MESH_NAME, MESH_PASSWORD)
     await session.authenticate(r_app=r_app)
 
+    assert await session.subscribe(lambda statuses: None) is True
+    assert session.notifications_active is True
+    await session.set_power(37, True)  # and sending is unaffected
+
+
+@pytest.mark.asyncio
+async def test_subscribe_fails_only_if_the_enable_write_fails():
+    """The enable-write is the load-bearing one, so it is what gates the result."""
+
+    class NoEnable(FakeClient):
+        async def write_gatt_char(self, char_specifier, data, response=False, **kw):
+            if char_specifier == NOTIFICATION_CHAR:
+                raise RuntimeError("device refused the enable write")
+            await super().write_gatt_char(char_specifier, data, response, **kw)
+
+    r_app = bytes(range(8))
+    client = NoEnable(_valid_pairing_response(r_app))
+    session = BleMeshSession(client, MAC, MESH_NAME, MESH_PASSWORD)
+    await session.authenticate(r_app=r_app)
+
     assert await session.subscribe(lambda statuses: None) is False
     assert session.notifications_active is False
-    await session.set_power(37, True)  # must still work
 
 
 # --------------------------------------------------------------------------

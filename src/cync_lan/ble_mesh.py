@@ -48,10 +48,20 @@ basic form cannot express it). Sending a device the command its own class is
 documented to use costs nothing and forecloses a whole category of side effect
 nobody has looked for.
 
-Notification subscription fails outright on at least one firmware: it declares
-`notify` on the notify characteristic, rejects the CCCD write with GATT
-`Unlikely Error`, and then drops the connection. `subscribe()` is therefore
-optional and its failure is never fatal - sending does not depend on it.
+**Notifications work, and an earlier version of this module said otherwise.**
+That claim was wrong and is worth recording as such: it came from testing one
+sequence and generalising from it.
+
+BlueZ's `StartNotify` is refused - the device answers the CCCD write with GATT
+`Unlikely Error`, even though it does expose a `0x2902` descriptor. But the
+CCCD is not how this protocol enables reporting. Writing `0x01` to the
+notification characteristic's *value* is, and `google/python-dimond` does
+exactly that and never touches the CCCD at all. With the enable-write first,
+16 status packets arrived and decrypted correctly on hardware whose
+`StartNotify` had just been rejected.
+
+`subscribe()` therefore performs the enable-write first and treats a refused
+subscribe as survivable rather than fatal.
 
 WHY THIS MODULE NEVER IMPORTS BLEAK
 -----------------------------------
@@ -288,9 +298,25 @@ def build_command(counter: int, target: int, opcode: int, data: bytes) -> bytear
 def parse_status(plaintext: bytes) -> list[DeviceStatus]:
     """Decode the device reports carried in a decrypted `0xDC` notification.
 
-    Two four-byte slots per packet. A slot whose second byte is zero is empty
-    rather than a device reporting zero, so it is skipped. Brightness above
-    127 flags an RGB device and carries the colour packed into the next byte.
+    Two four-byte slots per packet, laid out `[id, presence, brightness, extra]`.
+
+    **The presence rule here is the opposite of acync's, on purpose.** acync
+    skips a slot whose second byte is zero, treating it as absent. On the
+    hardware this was captured from, that discards exactly the slots carrying
+    real state and keeps the empty ones: across 17 packets, all nine slots with
+    `byte[1] == 0` held plausible values (brightness 100, extra 255) while all
+    twenty-five with `byte[1] != 0` were `brightness=0, extra=0` with a
+    byte[1] that varied like noise.
+
+    So a zero second byte is treated as *data-bearing*. This is **plausible,
+    not confirmed** - it rests on one capture from one mesh, and it contradicts
+    an implementation known to work elsewhere, which is exactly the kind of
+    disagreement worth flagging rather than resolving by assertion. The
+    `byte[1] != 0` records remain unexplained; they may be a different record
+    type sharing the `0xDC` opcode.
+
+    Brightness above 127 flags an RGB device and carries the colour packed into
+    the next byte.
     """
     if len(plaintext) < 18 or plaintext[7] != OP_STATUS_NOTIFY:
         return []
@@ -298,7 +324,10 @@ def parse_status(plaintext: bytes) -> list[DeviceStatus]:
     out: list[DeviceStatus] = []
     for offset in (10, 14):
         slot = plaintext[offset : offset + 4]
-        if len(slot) < 4 or slot[1] == 0:
+        # See the docstring: a zero second byte marks the data-bearing case on
+        # the captured hardware, inverting acync's rule. An all-zero slot is
+        # genuinely nothing.
+        if len(slot) < 4 or slot[1] != 0 or slot == b"\x00\x00\x00\x00":
             continue
         brightness = slot[2]
         if brightness >= 128:
@@ -439,20 +468,41 @@ class BleMeshSession:
 
                     asyncio.get_running_loop().create_task(result)  # type: ignore[arg-type]
 
+        # Order matters, and it is the opposite of the obvious one.
+        #
+        # Writing 0x01 to the notification characteristic's VALUE is the
+        # vendor's own start-reporting command - google/python-dimond does
+        # exactly this and never writes a CCCD at all. Notifications then flow.
+        # BlueZ's StartNotify additionally writes the CCCD (0x2902, which this
+        # hardware does expose, at handle 19) and the device answers that with
+        # GATT 'Unlikely Error'.
+        #
+        # So the enable-write goes first and its failure is what matters. The
+        # subscribe is attempted afterwards because bleak needs it to route
+        # notifications to a callback, but a rejection there is survivable:
+        # confirmed on hardware, 16 status packets arrived and decrypted
+        # correctly on a connection whose StartNotify had been refused.
         try:
-            await self._client.start_notify(NOTIFICATION_CHAR, _on_notify)
             await self._client.write_gatt_char(
                 NOTIFICATION_CHAR, bytes([0x01]), response=True
             )
-        except Exception as exc:  # noqa: BLE001 - any GATT failure is non-fatal here
+        except Exception as exc:  # noqa: BLE001
             logger.info(
-                "%s: status notifications unavailable (%s). Sending is unaffected; "
-                "this firmware declares notify but refuses the subscription.",
+                "%s: could not enable status reporting (%s). Sending is unaffected.",
                 self._mac,
                 exc,
             )
-            self._notify_active = False
             return False
+
+        try:
+            await self._client.start_notify(NOTIFICATION_CHAR, _on_notify)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "%s: StartNotify refused (%s). Reporting is enabled regardless - "
+                "this firmware rejects the CCCD write but still sends notifications.",
+                self._mac,
+                exc,
+            )
 
         self._notify_active = True
         return True
