@@ -331,7 +331,33 @@ async def probe(args) -> int:
             nonlocal got_notification
             got_notification = True
             clear = decrypt_packet(sk, address, bytearray(data))
-            tag = "status" if len(clear) > 7 and clear[7] == OP_STATUS_NOTIFY else "other"
+            # Anything that is not 0xDC is the interesting case, so name it
+            # rather than lumping it under "other". The 0xEA family (BASE_EA in
+            # the app's own parser) sub-dispatches on byte 11, and the app's
+            # documented rule is response_subtype == request_selector | 0x80.
+            if len(clear) > 7 and clear[7] == OP_STATUS_NOTIFY:
+                tag = "status"
+            elif len(clear) > 11 and clear[7] == 0xEA:
+                sub = clear[11]
+                known = {
+                    0x81: "BASE_DEVICE_SETTINGS",
+                    0x82: "MOTION_SENSOR_SETTINGS",
+                    0x85: "FIRMWARE_VERSION",
+                    0x86: "OTA_UPDATE_STATUS",
+                    0x87: "WIFI_CONNECTION_STATUS",
+                    0x89: "QUERY_WIFI_RSSI_AND_IP",
+                    0xC0: "LIGHT_MUSIC_SHOW_SETTINGS",
+                    0xC5: "LAT_LNG",
+                    0xEE: "QUERY_SUNRISE_SUNSET_TIME",
+                    0xF4: "QUERY_HARDWARE_VERSION",
+                }
+                name = known.get(sub, "UNDOCUMENTED")
+                tag = (
+                    f"EA subtype=0x{sub:02X} {name} "
+                    f"(implies request selector 0x{sub & 0x7F:02X})"
+                )
+            else:
+                tag = f"opcode=0x{clear[7]:02X}" if len(clear) > 7 else "short"
             print(f"    notify [{tag}] {bytes(clear).hex()}")
             if tag == "status":
                 for off in (10, 14):
