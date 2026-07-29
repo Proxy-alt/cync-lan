@@ -84,6 +84,7 @@ try:
         derive_session_key,
         generate_sk,
         key_encrypt,
+        verify_pairing_response,
     )
 except ImportError:
     sys.exit(
@@ -305,6 +306,25 @@ async def probe(args) -> int:
         sk = derive_session_key(args.mesh_name, args.mesh_password, r_app, r_dev)
         print(f"  session key derived: {sk.hex()}")
 
+        # Deriving a session key proves nothing on its own - the maths always
+        # succeeds, whatever password you feed it. This is the check that
+        # actually says whether the DEVICE agreed: it echoes back a proof that
+        # it derived the same key material. ble_provision documents it as a
+        # client-side sanity check (python-dimond skips it entirely and still
+        # works), so a failure here is a strong signal that the credentials or
+        # the response format are wrong rather than a fatal error.
+        print(f"  pairing response ({len(response)}B): {bytes(response).hex()}")
+        if len(response) >= 17:
+            if verify_pairing_response(args.mesh_name, args.mesh_password, bytes(response)):
+                print("  mutual auth: VERIFIED - the device derived the same key")
+            else:
+                print("  mutual auth: FAILED - the proof does not match")
+                print("    Most likely the mesh name or password is wrong. The mesh name")
+                print("    is the home's `mac` from cync_mesh.yaml and the password its")
+                print("    `access_key`; try the exact string forms the file uses.")
+        else:
+            print(f"  mutual auth: no proof in response (needs 17B, got {len(response)})")
+
         got_notification = False
 
         def on_notify(_sender, data: bytearray) -> None:
@@ -323,12 +343,38 @@ async def probe(args) -> int:
                         else:
                             print(f"      id={resp[0]} brightness={bright} temp={resp[3]}")
 
-        await client.start_notify(NOTIFICATION_CHAR, on_notify)
+        if args.gatt:
+            print("  GATT table:")
+            for service in client.services:
+                print(f"    service {service.uuid}")
+                for ch in service.characteristics:
+                    star = " <-- Telink" if ch.uuid in (
+                        NOTIFICATION_CHAR, CONTROL_CHAR, PAIRING_CHAR
+                    ) else ""
+                    print(f"      {ch.uuid}  {','.join(ch.properties)}{star}")
+
+        # Enabling notifications is not required to SEND a command - it only
+        # buys inbound status. Some Telink builds reject the CCCD write with
+        # 'Unlikely Error' while still accepting control writes perfectly, so
+        # a failure here must not abort the run.
+        notify_ok = False
+        try:
+            await client.start_notify(NOTIFICATION_CHAR, on_notify)
+            notify_ok = True
+        except Exception as exc:
+            print(f"  start_notify failed: {type(exc).__name__}: {exc}")
+            print("    Continuing without inbound status - sending still works.")
+            ch = client.services.get_characteristic(NOTIFICATION_CHAR)
+            if ch is not None:
+                print(f"    notify char properties: {','.join(ch.properties)}")
+            else:
+                print("    notify characteristic not present on this device at all")
         await asyncio.sleep(0.3)
         # Writing 0x01 to the notification characteristic asks the mesh to
         # report status. It is a request for data, not a control command -
         # nothing changes state because of it.
-        await client.write_gatt_char(NOTIFICATION_CHAR, bytes([0x01]), response=True)
+        if notify_ok:
+            await client.write_gatt_char(NOTIFICATION_CHAR, bytes([0x01]), response=True)
         await asyncio.sleep(0.5)
 
         if args.listen:
@@ -339,9 +385,10 @@ async def probe(args) -> int:
             print(f"  listening {args.listen:.0f}s, sending no commands ...")
             for _ in range(int(args.listen)):
                 await asyncio.sleep(1.0)
-                await client.write_gatt_char(
-                    NOTIFICATION_CHAR, bytes([0x01]), response=True
-                )
+                if notify_ok:
+                    await client.write_gatt_char(
+                        NOTIFICATION_CHAR, bytes([0x01]), response=True
+                    )
             print()
             if got_notification:
                 print("  Status decoded. The session key and packet crypto are correct,")
@@ -386,6 +433,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true", help="validate crypto, no hardware needed")
     p.add_argument("--scan", action="store_true", help="list nearby BLE devices")
+    p.add_argument("--gatt", action="store_true", help="dump the GATT table after connecting")
     p.add_argument("--mac", help="MAC of any provisioned mesh node")
     p.add_argument("--mesh-name", help="mesh name from your cloud export")
     p.add_argument("--mesh-password", help="mesh password from your cloud export")
