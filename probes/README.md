@@ -82,20 +82,42 @@ independent implementation that demonstrably drives real hardware. It passes:
 identical. That is meaningful evidence about `ble_provision` itself, and it
 costs nothing to re-run.
 
-**Status: crypto verified, hardware path untested.** Nobody has yet pointed
-this at a device. A clean run that changes nothing visible is the interesting
-result, not a failure — it would mean the write was accepted and the command
-did nothing.
+**Status: CONFIRMED ON HARDWARE, 2026-07-28.**
+
+A `set_power` sent over BLE to a wired Cync switch changed its state, and
+cync-lan reported that change over its own TCP connection. The command went
+out over one transport and the confirmation came back over a completely
+independent one, so this is not a result that can be faked.
+
+| what the run established | |
+|---|---|
+| session handshake | mutual auth **VERIFIED** — the device proved it derived the same key |
+| credential mapping | the home's `mac` is the mesh name, its `access_key` the password |
+| `decrypt_packet` | inbound traffic decoded with vendor `0x0211` at bytes 8:9 and readable ASCII |
+| `encrypt_packet` | a `0xD0` command was accepted and acted on |
+| opcode `0xD0` | `set_power` works over BLE against a switch |
+
+Two things it did **not** establish. Notifications could not be subscribed to
+at all — this firmware declares `notify` on `...1911`, rejects the CCCD write
+with `Unlikely Error`, and then drops the connection, which is what
+`--no-notify` exists for. And only `set_power` was exercised; brightness,
+temperature and RGB are unconfirmed over this transport.
+
+Worth knowing for anyone building on this: none of it needed DNS redirection,
+and none of it needed the hub command family that currently gets no reply.
 
 ### Credentials
 
-Mesh name and password come from your own cloud export — the same values the
-integration's `query_mesh_credentials` button surfaces. Anyone holding them
-controls the mesh, so treat them like a password and keep them out of any log
-you paste into an issue.
+See the table above for which field is which. They come from `cync_mesh.yaml`,
+**not** from the `query_mesh_credentials` button — that button is a hub
+command, and hub commands currently get no reply at all.
+
+Anyone holding them controls the mesh, so treat them like a password and keep
+them out of any log you paste into an issue.
 
 ### Safety
 
-Sending only: one `set_power`, plus reading notifications. It does not
+Sending only: one `set_power`, plus reading notifications where the firmware
+allows it. It does not
 provision, does not write mesh credentials, and does not touch device
 settings, so nothing here can re-key or unpair a device.
