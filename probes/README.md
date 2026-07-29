@@ -29,8 +29,27 @@ works, those two functions are what moves into the library.
 python probes/ble_control_probe.py --self-test     # no hardware needed
 python probes/ble_control_probe.py --scan
 python probes/ble_control_probe.py --mac AA:BB:CC:DD:EE:FF \
+    --mesh-name NAME --mesh-password PASS --listen 20
+python probes/ble_control_probe.py --mac AA:BB:CC:DD:EE:FF \
     --mesh-name NAME --mesh-password PASS --target 1 --toggle
 ```
+
+**Run `--listen` before `--toggle`.** It performs the entire session
+handshake and decrypts real status packets while sending no control command,
+so it proves the part that can actually be wrong - the session key and the
+packet crypto - without changing the state of anything. Control is one write
+away after that. This matters when the hardware is a wall switch driving a
+real load and nobody is in the building.
+
+Getting the two things you need, both remotely:
+
+| | where |
+|---|---|
+| mesh ID for `--target` | download the integration's diagnostics; each node has an `id` and `type` |
+| mesh name / password | the `query_mesh_credentials` button - diagnostics **redacts** `mesh_password` on purpose |
+
+Never use `--target 0`. That is the mesh broadcast address and would command
+every device at once.
 
 `--self-test` validates the shipped crypto against a literal transcription of
 [`juanboro/cync2mqtt`](https://github.com/juanboro/cync2mqtt)'s `acync`

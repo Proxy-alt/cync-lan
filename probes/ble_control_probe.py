@@ -55,7 +55,15 @@ of acync's working implementation and needs no hardware or credentials.
     python ble_control_probe.py --self-test
     python ble_control_probe.py --scan
     python ble_control_probe.py --mac AA:BB:CC:DD:EE:FF \
+        --mesh-name YOURMESH --mesh-password YOURPASS --listen 20
+    python ble_control_probe.py --mac AA:BB:CC:DD:EE:FF \
         --mesh-name YOURMESH --mesh-password YOURPASS --target 1 --toggle
+
+Run --listen before --toggle. It completes the whole session handshake and
+decrypts real status packets while sending no control command at all, so it
+proves the hard part (crypto, session key, packet framing) without changing
+the state of anything. That matters when the devices are wall switches
+driving real loads and nobody is in the building.
 
 Mesh name/password come from your existing cloud export - the same values the
 `query_mesh_credentials` button surfaces. Treat them as secrets; anyone with
@@ -317,8 +325,31 @@ async def probe(args) -> int:
 
         await client.start_notify(NOTIFICATION_CHAR, on_notify)
         await asyncio.sleep(0.3)
+        # Writing 0x01 to the notification characteristic asks the mesh to
+        # report status. It is a request for data, not a control command -
+        # nothing changes state because of it.
         await client.write_gatt_char(NOTIFICATION_CHAR, bytes([0x01]), response=True)
         await asyncio.sleep(0.5)
+
+        if args.listen:
+            # Read-only mode. Proves the connection, the session key and the
+            # packet decryption without altering a single device - which is
+            # what you want when the hardware is a wall switch controlling a
+            # real load and you are not in the building.
+            print(f"  listening {args.listen:.0f}s, sending no commands ...")
+            for _ in range(int(args.listen)):
+                await asyncio.sleep(1.0)
+                await client.write_gatt_char(
+                    NOTIFICATION_CHAR, bytes([0x01]), response=True
+                )
+            print()
+            if got_notification:
+                print("  Status decoded. The session key and packet crypto are correct,")
+                print("  which is the hard part - control is one write away.")
+            else:
+                print("  No notifications. Connection and handshake worked, but nothing")
+                print("  reported - worth investigating before sending any command.")
+            return 0
 
         counter = 1
 
@@ -359,7 +390,13 @@ def main() -> int:
     p.add_argument("--mesh-name", help="mesh name from your cloud export")
     p.add_argument("--mesh-password", help="mesh password from your cloud export")
     p.add_argument("--target", type=int, default=1, help="mesh device id (0 broadcasts)")
-    p.add_argument("--toggle", action="store_true", help="off, then on")
+    p.add_argument(
+        "--listen",
+        type=float,
+        metavar="SECONDS",
+        help="read-only: connect, decode status, send NO control command",
+    )
+    p.add_argument("--toggle", action="store_true", help="off, then on (ends ON)")
     p.add_argument("--on", action="store_true", help="turn on")
     p.add_argument("--brightness", type=int, help="set brightness 0-100")
     p.add_argument("--dwell", type=float, default=1.5, help="seconds between commands")
