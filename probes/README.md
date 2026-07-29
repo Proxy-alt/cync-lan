@@ -50,9 +50,25 @@ that route is closed until the hub family is understood.
 
 It does not need to be open. The mesh credentials never came from the hub in
 the first place - they come from the cloud export, and the integration already
-writes them to disk. Read `cync_mesh.yaml` under the config directory
-(`CYNC_CONFIG_DIR`, which on a Home Assistant install is
-`.storage/cync-lan/config/`):
+writes them to disk. Read `cync_mesh.yaml` under `CYNC_CONFIG_DIR`.
+
+Do not guess that path. It is configurable, and on one real HAOS install it was
+`/config/cync_lan/cync_mesh.yaml` rather than anywhere under `.storage/`. Find it:
+
+```bash
+docker run --rm -v /:/host:ro alpine sh -c \
+  'find /host -name cync_mesh.yaml -not -path "*/host/proc/*" 2>/dev/null | head -3'
+```
+
+Strip the leading `/host`. Note that `docker run -v` resolves against the *host*
+filesystem, so a Home Assistant add-on's own `/config` is not a usable mount
+source - on HAOS the config directory lives at
+`/mnt/data/supervisor/homeassistant`.
+
+`--from-config` searches the file recursively for a mapping carrying both `mac`
+and `access_key`, so it does not depend on the nesting staying put. If it finds
+nothing it prints the structure's keys - never its values - so a mismatch is
+visible without exposing the credential.
 
 | probe argument | field in `cync_mesh.yaml` |
 |---|---|

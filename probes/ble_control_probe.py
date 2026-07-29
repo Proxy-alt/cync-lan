@@ -583,12 +583,42 @@ def main() -> int:
         except OSError as exc:
             p.error(f"cannot read {args.from_config}: {exc}")
 
-        homes = [v for v in cfg.values() if isinstance(v, dict) and "access_key" in v]
+        # Search recursively rather than assuming a depth. CYNC_CONFIG_DIR is
+        # configurable and the export has been reshaped before, so pinning the
+        # nesting is how this breaks on somebody else's install.
+        def _find_homes(node, found=None):
+            found = [] if found is None else found
+            if isinstance(node, dict):
+                if "access_key" in node and "mac" in node:
+                    found.append(node)
+                for value in node.values():
+                    _find_homes(value, found)
+            elif isinstance(node, list):
+                for value in node:
+                    _find_homes(value, found)
+            return found
+
+        homes = _find_homes(cfg)
         if not homes:
-            p.error(
-                f"no home with an 'access_key' found in {args.from_config} - expected "
-                "the structure cloud_api._parse_raw_export writes"
-            )
+            # Print the shape, never the values - a structure that does not match
+            # is worth seeing, and the file holds a credential.
+            def _skeleton(node, depth=0):
+                pad = "      " + "  " * depth
+                if isinstance(node, dict):
+                    for k, v in list(node.items())[:8]:
+                        kind = type(v).__name__
+                        print(f"{pad}{k}: <{kind}>")
+                        if depth < 2 and isinstance(v, (dict, list)):
+                            _skeleton(v, depth + 1)
+                elif isinstance(node, list):
+                    print(f"{pad}[{len(node)} items]")
+                    if node and depth < 2:
+                        _skeleton(node[0], depth + 1)
+
+            print(f"  no dict with both 'mac' and 'access_key' in {args.from_config}")
+            print("  structure found (keys only, no values):")
+            _skeleton(cfg)
+            p.error("cannot locate the mesh credentials in that file")
         if len(homes) > 1 and not args.mesh_name:
             names = ", ".join(str(h.get("mac", "?")) for h in homes)
             p.error(f"several homes present; pass --mesh-name to pick one of: {names}")
