@@ -41,12 +41,35 @@ packet crypto - without changing the state of anything. Control is one write
 away after that. This matters when the hardware is a wall switch driving a
 real load and nobody is in the building.
 
-Getting the two things you need, both remotely:
+### Where the credentials come from
 
-| | where |
+**Not from `query_mesh_credentials`.** That button is a hub command, and hub
+commands currently get no reply at all - see `docs/hub_envelope_ab_test.md`,
+where both candidate envelopes were tried and neither produced a response. So
+that route is closed until the hub family is understood.
+
+It does not need to be open. The mesh credentials never came from the hub in
+the first place - they come from the cloud export, and the integration already
+writes them to disk. Read `cync_mesh.yaml` under the config directory
+(`CYNC_CONFIG_DIR`, which on a Home Assistant install is
+`.storage/cync-lan/config/`):
+
+| probe argument | field in `cync_mesh.yaml` |
 |---|---|
-| mesh ID for `--target` | download the integration's diagnostics; each node has an `id` and `type` |
-| mesh name / password | the `query_mesh_credentials` button - diagnostics **redacts** `mesh_password` on purpose |
+| `--mesh-name` | the home's **`mac`** — yes, the MAC, not the home's `name` |
+| `--mesh-password` | the home's **`access_key`**, as a string |
+| `--target` | the device's id key (`deviceID`'s last three digits) |
+| `--mac` | any one device's `mac` — commands are relayed through the mesh |
+
+The name/password mapping is not a guess: `acync` builds its session as
+`network(meshmacs, mesh['mac'], str(mesh['access_key']))` against
+`network(meshmacs, name, password)`, and `cloud_api.py:_parse_raw_export`
+stores exactly `("access_key", "id", "mac")` per home. Both projects derive
+the device id the same way, `int(str(deviceID)[-3:])`.
+
+Diagnostics is the wrong place to look: it redacts `mesh_password`
+deliberately, and the export file is not redacted because it is not meant to
+leave the machine. Treat it accordingly.
 
 Never use `--target 0`. That is the mesh broadcast address and would command
 every device at once.
