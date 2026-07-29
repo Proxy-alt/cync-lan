@@ -358,27 +358,21 @@ async def probe(args) -> int:
         # 'Unlikely Error' while still accepting control writes perfectly, so
         # a failure here must not abort the run.
         notify_ok = False
-        try:
-            await client.start_notify(NOTIFICATION_CHAR, on_notify)
-            notify_ok = True
-        except Exception as exc:
-            print(f"  start_notify failed: {type(exc).__name__}: {exc}")
-            # Telink firmware often declares `notify` on this characteristic
-            # without implementing a usable 0x2902 descriptor, so BlueZ's CCCD
-            # write comes back 'Unlikely Error'. Writing the enable byte to the
-            # characteristic itself first sometimes wakes the reporting path up
-            # enough for the subscribe to be accepted on a second attempt.
+        if args.no_notify:
+            # Telink firmware here rejects the CCCD write and then drops the
+            # connection outright, so a run that only needs to SEND is better
+            # off never asking. Confirmed on hardware: the control write that
+            # followed a rejected subscribe failed with 'Not connected'.
+            print("  skipping notifications (--no-notify)")
+        else:
             try:
-                await client.write_gatt_char(NOTIFICATION_CHAR, bytes([0x01]), response=True)
-                await asyncio.sleep(0.3)
                 await client.start_notify(NOTIFICATION_CHAR, on_notify)
                 notify_ok = True
-                print("    retry after writing the enable byte first: worked")
-            except Exception as exc2:
-                print(f"    retry also failed: {type(exc2).__name__}: {exc2}")
-            if not notify_ok:
-                print("    Continuing without inbound status - sending still works,")
-                print("    because control writes go to a different characteristic.")
+            except Exception as exc:
+                print(f"  start_notify failed: {type(exc).__name__}: {exc}")
+                print("    Retry skipped - on this firmware the rejected CCCD write")
+                print("    also drops the connection, so a retry just fails again.")
+                print("    Use --no-notify to send without ever asking.")
             ch = client.services.get_characteristic(NOTIFICATION_CHAR)
             if ch is not None:
                 print(f"    notify char properties: {','.join(ch.properties)}")
@@ -421,6 +415,10 @@ async def probe(args) -> int:
             counter += 1
             enc = encrypt_packet(sk, address, packet)
             print(f"  -> {label}: op=0x{opcode:02X} target={args.target} {bytes(enc).hex()}")
+            if not client.is_connected:
+                print("     LINK IS DOWN - the device dropped us before this write.")
+                print("     Re-run with --no-notify; the subscribe is what kills it.")
+                return
             await client.write_gatt_char(CONTROL_CHAR, bytes(enc), response=False)
 
         if args.toggle:
@@ -449,6 +447,11 @@ def main() -> int:
     p.add_argument("--self-test", action="store_true", help="validate crypto, no hardware needed")
     p.add_argument("--scan", action="store_true", help="list nearby BLE devices")
     p.add_argument("--gatt", action="store_true", help="dump the GATT table after connecting")
+    p.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="skip notifications entirely - the failed CCCD write can drop the link",
+    )
     p.add_argument("--mac", help="MAC of any provisioned mesh node")
     p.add_argument("--mesh-name", help="mesh name from your cloud export")
     p.add_argument("--mesh-password", help="mesh password from your cloud export")
