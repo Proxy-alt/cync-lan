@@ -322,12 +322,28 @@ def parse_status(plaintext: bytes) -> list[DeviceStatus]:
     twenty-five with `byte[1] != 0` were `brightness=0, extra=0` with a
     byte[1] that varied like noise.
 
-    So a zero second byte is treated as *data-bearing*. This is **plausible,
-    not confirmed** - it rests on one capture from one mesh, and it contradicts
-    an implementation known to work elsewhere, which is exactly the kind of
-    disagreement worth flagging rather than resolving by assertion. The
-    `byte[1] != 0` records remain unexplained; they may be a different record
-    type sharing the `0xDC` opcode.
+    So a zero second byte is treated as *data-bearing*. This was recorded as
+    "plausible, not confirmed" for a long time - one capture, contradicting an
+    implementation known to work elsewhere. **It is now confirmed on
+    hardware.** A device was driven to known levels over BLE and the mesh
+    harvested after each change:
+
+        set brightness 60  -> decoded 60
+        set brightness 25  -> decoded 25
+        set power off      -> decoded 0
+
+    Exact agreement at two distinct levels, and a return to zero when switched
+    off, across a 38-device sweep. A wrong decode does not do that by
+    accident, so the rule stands and `brightness > 0` is a sound on/off test.
+
+    The `byte[1] != 0` records remain unexplained; they may be a different
+    record type sharing the `0xDC` opcode.
+
+    One timing caveat for consumers: a harvest taken immediately after a
+    command can still report the *previous* value - observed once, with the
+    next harvest a few seconds later reporting correctly. State propagates
+    through the mesh at its own pace; do not read one stale sample as a failed
+    command.
 
     Brightness above 127 flags an RGB device and carries the colour packed into
     the next byte.
