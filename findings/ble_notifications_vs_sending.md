@@ -154,10 +154,10 @@ what's recorded above.
   `AcquireNotify`) hit the identical wall, so going around bleak to talk to
   BlueZ's D-Bus interface directly would hit the same wall one layer down.
 - **A userspace ATT stack (e.g. `bumble`), bypassing BlueZ's GATT client
-  entirely.** Still not tried, and now the *only* remaining untried avenue at
-  the software-stack level — every BlueZ-mediated path is exhausted. This is
-  the actionable lead, not a dead end; flagged as untried so it is not mistaken
-  for a tested negative.
+  entirely.** Tried, and it works — see `ble_raw_hci_push_confirmed.md`. A raw
+  HCI client is not subject to any of the rows in the matrix above, because
+  none of them are device-level rejections; they are all BlueZ policy. This is
+  no longer an open lead.
 
 ## How this was tested
 
