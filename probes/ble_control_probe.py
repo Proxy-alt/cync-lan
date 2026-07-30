@@ -402,7 +402,7 @@ async def probe(args) -> int:
         # hub command's answer: the command goes out on a healthy link, and the
         # subscribe that follows harvests whatever is queued before the
         # connection goes down.
-        if args.send_before_notify and args.op is not None:
+        if not args.send_after_notify and args.op is not None:
             try:
                 opcode_early = int(args.op, 0)
             except ValueError:
@@ -524,7 +524,7 @@ async def probe(args) -> int:
                 return
             await client.write_gatt_char(CONTROL_CHAR, bytes(enc), response=False)
 
-        if args.op is not None and not args.send_before_notify:
+        if args.op is not None and args.send_after_notify:
             # Raw mode: send any opcode with any payload. The point is to test
             # commands whose BLE form is predicted by the transport mapping in
             # docs/mesh_opcodes.md but not yet confirmed - strip the leading
@@ -613,12 +613,21 @@ def main() -> int:
         "--op",
         help="raw opcode to send, e.g. 0xF0 - for testing an unconfirmed command",
     )
+    # Not opt-in any more. On this firmware a refused StartNotify drops the
+    # link, so sending AFTER subscribing cannot work - it fails with 'Not
+    # connected' every time, and looks like the command was rejected when it
+    # was never transmitted. Two hub-query tests were wasted that way.
+    #
+    # Sending first is the only ordering that can work, so it is the default and
+    # this flag exists to turn it OFF for anyone deliberately testing the other
+    # sequence.
     p.add_argument(
-        "--send-before-notify",
+        "--send-after-notify",
         action="store_true",
         help=(
-            "send --op on a healthy link and only then subscribe, to catch a "
-            "reply in the window before a refused StartNotify drops the link"
+            "subscribe first and send afterwards. Almost certainly useless on "
+            "this firmware - a refused StartNotify drops the link and the send "
+            "then fails with 'Not connected' - but kept for testing that claim"
         ),
     )
     p.add_argument(
