@@ -67,7 +67,42 @@ That is the control this finding asked for, and it passed. The hypothesis is now
 supported rather than merely suggested — but it is still one run each way, and
 the coincidence it rules out is only the most obvious one.
 
-## What would actually settle it
+## A second query produced nothing — the hypothesis is weaker
+
+`0x46` QueryDeviceTime, sent on a healthy link with the same ordering, produced
+**no `0xEA` at all**.
+
+| run | sent | `0xEA` seen |
+|---|---|---|
+| 1 | `0x4B` QueryHubInfo | **yes** — subtype `0x83` |
+| 2 | nothing | no |
+| 3 | `0x46` QueryDeviceTime | **no** |
+
+One positive against two negatives. Readings, in order of how much they would
+cost to be wrong about:
+
+1. **Run 1 was coincidence.** A single unexplained packet in one ten-second
+   window, on a mesh with forty chattering nodes. The control saw none, but that
+   is one sample against one sample.
+2. **`0x4B` is answered and `0x46` is not.** Entirely possible — the device may
+   not implement QueryDeviceTime, or it may need a payload rather than an empty
+   one.
+3. **Both were mis-addressed.** This is the confound that was missed at the
+   start: both went to mesh id 37, a wired switch. If hub commands must be
+   addressed to whichever device actually holds the hub role, neither test asked
+   the right device anything, and run 1's packet was something else entirely.
+
+## What to do next, and what not to
+
+**Repeat `0x4B` exactly.** Not a new query — reproducibility of the original is
+now the highest-information run available. If it comes back, `0x46` simply is
+not supported and the finding stands. If it does not, run 1 was noise and this
+document should say so.
+
+Trying further queries before that would be looking for a positive rather than
+testing the claim.
+
+## The earlier plan, kept for the record
 
 Not another `0x4B`. Send a **different** read-only hub query and see whether a
 **different** subtype comes back:
