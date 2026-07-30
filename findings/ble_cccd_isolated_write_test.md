@@ -84,31 +84,40 @@ firmware timing/robustness issue specific to this characteristic under mesh
 relay traffic, not a deliberate security decision — plausible, not confirmed;
 no attempt was made to isolate "quiet mesh" vs "busy mesh" conditions.
 
-## What this changes about the iOS hypothesis
+## What this changes about the iOS hypothesis — UPDATE: resolved, and revised
 
 The previous session's message speculated that CoreBluetooth's fully
 spec-compliant `setNotifyValue` might succeed where BlueZ's non-identical
 `StartNotify` sequence failed — i.e., that the wall was implementation-specific
-to BlueZ. **This test weakens that hypothesis.** A hand-crafted, correctly-
-formed, sequence-independent CCCD write — about as "generic compliant client"
-as it gets — also failed, just via a different failure mode (silence, not an
-explicit reject).
+to BlueZ. This test weakened that hypothesis by showing a hand-crafted,
+sequence-independent CCCD write also fails, via a different failure mode
+(silence, not an explicit reject).
 
-The better-supported reading now: the real apps on **both** platforms most
-likely never call the platform's standard subscribe API against this
-characteristic at all. Confirmed for Android from the decompile
-(`setCharacteristicNotification` only, no CCCD write, anywhere in the app's
-source). Not independently confirmed for iOS — no Apple hardware or iOS
-decompile available — but CoreBluetooth's shared `didUpdateValueFor` delegate
-(the same callback for both read completions and notifications) is at least
-architecturally consistent with a stack that, like bumble's raw ATT dispatch,
-does not gate delivery on prior subscription state. If the iOS app also relies
-on unsolicited delivery without ever subscribing, that would explain live
-status on iOS without requiring this firmware's CCCD path to actually work for
-anyone.
+At the time, this file went on to speculate that the real apps on **both**
+platforms most likely avoid calling the platform's standard subscribe API
+against this characteristic at all — confirmed for Android, guessed for iOS
+by architectural analogy. **That guess for iOS was wrong.** Static analysis
+of the real, decrypted iOS IPA (see `ble_ios_app_subscribe_confirmed.md`)
+found the vendor's own `CbyGEKit.framework` *does* call
+`setNotifyValue:forCharacteristic:` against this exact characteristic, using
+the standard CoreBluetooth API, with no way to skip the CCCD write - exactly
+as originally hypothesized before this file's own test result muddied it.
 
-**Still not confirmed:** whether this failure mode (timeout, not rejection) is
-mesh-traffic contention as hypothesized, a different firmware bug entirely, or
-something about this specific node's role as an active relay. Testing against
-a mesh node that is *not* mid-relay, or at a moment of lower mesh chatter,
-would help separate these - not attempted here.
+The better-supported reading now, combining both results: the CCCD
+write/subscribe against this characteristic is genuinely unreliable for
+**every** client that attempts it, including Apple's own first-party stack
+driven by the vendor's real app. The vendor's own code contains dedicated
+`subscribeRetryCounter` / `subscriptionRetryTimer` machinery and log strings
+like `"Unable to subscribe to Telink Status characteristic on "` - i.e., they
+built retry infrastructure because this exact call is known to fail in
+production, not because it never gets attempted. This test's timeout (rather
+than an explicit ATT error) is consistent with that: a genuine intermittent
+firmware weakness under real conditions, not a deliberate BlueZ-specific or
+Linux-specific rejection.
+
+**Still not confirmed:** whether the failure mode is mesh-traffic contention
+as hypothesized, a different firmware bug entirely, or something about this
+specific node's role as an active relay - and whether the vendor's retry loop
+typically succeeds on some attempt, or regularly exhausts its retries too.
+Testing against a mesh node that is *not* mid-relay, or at a moment of lower
+mesh chatter, would help separate these - not attempted here.
