@@ -83,15 +83,40 @@ close to what `cync2mqtt` does (see `cync2mqtt_status_model.md`: a periodic
 sweep, availability derived from whether devices answer). **Not yet
 implemented.**
 
-## Caveat worth keeping
+## Caveat resolved — `parse_status` is correct
 
-Every decoded brightness in these runs was `0`. That is plausible — the house
-may simply have been dark — but `parse_status`'s presence rule is the one
-piece of this protocol marked "plausible, not confirmed", resting on a single
-capture and contradicting acync. Before anything depends on harvested state,
-it needs one capture taken with a known device deliberately **on**, to prove
-the decode reports a non-zero brightness when it should. Until then, "34
-device ids decoded" means the framing is right, not necessarily the values.
+Every decoded brightness in the runs above was `0`, which was consistent with
+both "the decode is right and the house was dark" and "the decode always says
+zero". That has now been settled by driving a device to known levels over BLE
+and harvesting after each change:
+
+```
+baseline                   device 16: 0     (38 ids decoded)
+after ON + brightness 60   device 16: 60    (38 ids decoded)
+after brightness 25        device 16: 25    (38 ids decoded)
+after OFF (retried)        device 16: 0     (38 ids decoded)
+```
+
+**The decode reports exactly what was set, twice, at distinct values, and
+returns to zero when the device is switched off.** Matching 60 and then 25 in
+sequence is not something a broken decode does by accident.
+
+So `parse_status`'s presence rule — a zero second byte marks the
+*data-bearing* slot, inverting acync's rule — is **confirmed on hardware**,
+not merely plausible. It has carried a "one capture, contradicts a
+known-working implementation" warning since it was written; that warning can
+come off. Two further consequences:
+
+- `brightness > 0` is a sound on/off test, which is what `cync_ble`'s
+  switch and light entities already assume.
+- the harvested sweep is real, usable device state, not just correctly-framed
+  noise.
+
+One timing note, learned by getting it wrong: the harvest immediately after
+the OFF command still reported `25`. A second attempt a few seconds later
+reported `0`. State propagates through the mesh at its own pace, so a harvest
+taken straight after a command can legitimately show the previous value - a
+poller must not treat one stale reading as a failed command.
 
 ## How this was measured
 
