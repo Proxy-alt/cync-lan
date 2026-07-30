@@ -10,6 +10,8 @@ logic is based on.
 
 from __future__ import annotations
 
+import datetime
+
 from cync_lan.cloud_api import (
     CyncCloudAPI,
     _decode_sensor_schedule_slot,
@@ -308,3 +310,126 @@ async def test_parse_raw_export_no_schedules_key_gets_empty_dict():
     result = await api._parse_raw_export([home])
 
     assert result["exported_homes"]["Our Home"]["schedules"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Token refresh
+#
+# Regression tests for a bug found on a live install, where every scheduled
+# export refresh failed with:
+#
+#   ValidationError: 2 validation errors for ComputedTokenStruct
+#   user_id    Field required
+#   authorize  Field required
+#
+# The refresh endpoint answers with a new access/refresh token pair only -
+# user_id and authorize do not change, so it does not resend them.
+# ---------------------------------------------------------------------------
+
+
+class _FakeTokenResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    async def json(self):
+        return self._payload
+
+
+class _FakeTokenSession:
+    """Answers one token POST with a fixed payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.posted = []
+
+    async def post(self, url, **kwargs):
+        self.posted.append((url, kwargs))
+        return _FakeTokenResponse(self._payload)
+
+
+def _api_with_cached_token(payload):
+    from cync_lan.structs import ComputedTokenStruct
+
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    api.http_session = _FakeTokenSession(payload)
+    api._session_injected = True
+    api.token_cache = ComputedTokenStruct(
+        access_token="old-access",
+        refresh_token="old-refresh",
+        user_id=12345,
+        authorize="authorize-blob",
+        expire_in=7200,
+        issued_at=datetime.datetime.now(datetime.UTC),
+    )
+    return api
+
+
+async def test_refresh_carries_over_identity_fields(monkeypatch):
+    """The real refresh response shape: new tokens, no identity fields.
+
+    Before the fix this raised ValidationError straight out of a method
+    declared to return bool.
+    """
+    api = _api_with_cached_token(
+        {
+            "access_token": "new-access",
+            "refresh_token": "new-refresh",
+            "expire_in": 7200,
+        }
+    )
+    written = {}
+
+    async def _capture(tkn):
+        written["token"] = tkn
+        return True
+
+    monkeypatch.setattr(api, "write_token_cache", _capture)
+
+    assert await api.refresh_access_token() is True
+    assert written["token"].access_token == "new-access"
+    # Carried over from the token being refreshed, not from the response.
+    assert written["token"].user_id == 12345
+    assert written["token"].authorize == "authorize-blob"
+
+
+async def test_refresh_response_the_model_rejects_returns_false(monkeypatch):
+    """A genuinely unusable response must be reported as a failed refresh,
+    not raised. `_send_tkn_post` is declared `-> bool` and its callers -
+    check_token, and every config flow above it - treat an exception as an
+    unexpected error rather than an auth failure."""
+    CyncCloudAPI._instance = None
+    api = CyncCloudAPI()
+    api.http_session = _FakeTokenSession({"nothing": "usable"})
+    api._session_injected = True
+    api.token_cache = None
+
+    assert await api._send_tkn_post("https://example.invalid/token", {}) is False
+
+
+async def test_full_login_response_is_unaffected(monkeypatch):
+    """A login returns every field itself; the carry-over must not override
+    what the server actually sent."""
+    api = _api_with_cached_token(
+        {
+            "access_token": "login-access",
+            "refresh_token": "login-refresh",
+            "user_id": 99999,
+            "authorize": "fresh-authorize",
+            "expire_in": 7200,
+        }
+    )
+    written = {}
+
+    async def _capture(tkn):
+        written["token"] = tkn
+        return True
+
+    monkeypatch.setattr(api, "write_token_cache", _capture)
+
+    assert await api._send_tkn_post("https://example.invalid/token", {}) is True
+    assert written["token"].user_id == 99999
+    assert written["token"].authorize == "fresh-authorize"

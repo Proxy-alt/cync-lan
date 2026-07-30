@@ -15,6 +15,7 @@ import yaml
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from pydantic import ValidationError
 
 from cync_lan.const import (
     CYNC_ACCOUNT_LANGUAGE,
@@ -296,6 +297,12 @@ class CyncCloudAPI:
         A dropped connection during token refresh or OTP submission
         therefore blew up with "name 'lp' is not defined" instead of
         reporting a clean auth failure to the caller.
+
+        Building the token model is deliberately INSIDE the try as well.
+        It used to sit in an `else:` block, outside every handler above, so
+        a response that parsed as JSON but did not match the model raised
+        straight through a method whose whole contract is to return a bool -
+        see the identity-field note below for the case that actually hit.
         """
         lp = lp or f"{self.lp}:token post:"
         try:
@@ -306,11 +313,36 @@ class CyncCloudAPI:
             resp.raise_for_status()
             iat = datetime.datetime.now(datetime.UTC)
             token_data = await resp.json()
+            # add issued_at to the token data for computing the expiration datetime
+            token_data["issued_at"] = iat
+            # The refresh endpoint returns a new access/refresh token pair and
+            # nothing else: user_id and authorize do not change on a refresh, so
+            # it does not resend them. RawTokenStruct requires both, which made
+            # EVERY refresh fail validation - confirmed on a real account, where
+            # this raised on every scheduled export refresh:
+            #
+            #   ValidationError: 2 validation errors for ComputedTokenStruct
+            #   user_id    Field required
+            #   authorize  Field required
+            #
+            # Carry them over from the token being refreshed. Only fills fields
+            # the response genuinely omitted, so a full login (which does return
+            # them) is unaffected.
+            cached = getattr(self, "token_cache", None)
+            if cached is not None:
+                for identity_field in ("user_id", "authorize"):
+                    token_data.setdefault(
+                        identity_field, getattr(cached, identity_field)
+                    )
+            token = ComputedTokenStruct(**token_data)
         except aiohttp.ClientResponseError as e:
             logger.error(f"{lp} Failed to authenticate: {e}")
             return False
         except json.JSONDecodeError as je:
             logger.error(f"{lp} Failed to decode JSON: {je}")
+            return False
+        except ValidationError as ve:
+            logger.error(f"{lp} Token response did not match the expected shape: {ve}")
             return False
         except KeyError as ke:
             logger.error(f"{lp} Failed to get key from JSON: {ke}")
@@ -319,9 +351,7 @@ class CyncCloudAPI:
             logger.warning(f"{lp} Failed to refresh credentials: {e}")
             return False
         else:
-            # add issued_at to the token data for computing the expiration datetime
-            token_data["issued_at"] = iat
-            return await self.write_token_cache(ComputedTokenStruct(**token_data))
+            return await self.write_token_cache(token)
 
     async def write_token_cache(self, tkn: ComputedTokenStruct) -> bool:
         """
