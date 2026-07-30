@@ -1,7 +1,9 @@
-# Hub commands over BLE — hypothesis rejected, and the tests were malformed
+# Hub commands over BLE — closed. Confirmed unsupported by the real app's own code.
 
-**Status: the `0xEA` packet was background noise. Separately, all four runs sent
-malformed requests, so hub-over-BLE was never actually tested.**
+**Status: the `0xEA` packet was background noise, the tests that produced it were
+malformed, and — settling the question for good — the decompiled app explicitly
+refuses to send these commands over BLE at all. This is not a gap in what has
+been tested. It is how the real client is written.**
 
 Kept rather than deleted, because how this went wrong is more instructive than
 the result.
@@ -73,17 +75,67 @@ neither candidate envelope gets a reply. Combined with this, a hub command may
 not be a *mesh* command in either transport — in which case the envelope search
 was looking one layer too low.
 
-## What would actually test it
+## Confirmed from the decompile: it is gated in code, not merely untested
 
-Not another opcode. In order:
+Reading the command classes (`services/devices/command/`) and the dispatch layer
+answers this directly, rather than by more probing.
 
-1. **Establish where a hub command can be carried at all.** 64 bytes needs
-   segmentation or another channel; find which the app uses, from the decompile,
-   before sending anything.
-2. **Find which device holds the hub role**, since these are broadcast on TCP yet
-   something must answer.
-3. Only then construct a BLE request, and listen on whatever channel the reply is
-   meant to use.
+Every `DeviceCommand<T>` declares `mo14014o(): Set<ConnectionType>` — which
+transports it supports, from `{ROUTING, BLE, BLE_PROXY, WIFI, WIFI_PROXY}`. For
+every hub command relevant here:
+
+| command | declared transports |
+|---|---|
+| `QueryHubInfoCommand` | `{WIFI}` |
+| `QueryHubMeshNameAndPasswordCommand` | `{WIFI}` |
+| `DeleteAutomationHubCommand` | `{WIFI}` |
+| `StartHubFirmwareUpdatesCommand` | `{WIFI}` |
+| `QuerySolConfigCommand` | `{ROUTING, WIFI}` |
+
+**`BLE` appears in none of them.** None override the BLE send method
+(`mo14012f`/`mo14060M`); the base class default is to
+`throw new UnsupportedOperationException()`. The response side matches — each
+notification class (`HubInfoNotification`, `HubMeshNameAndPasswordNotification`,
+`SolConfigNotification`) declares only an `XlinkParser`, no Telink/BLE parser at
+all.
+
+The gate is enforced structurally, before any GATT write is possible —
+`DeviceController.DefaultImpls.m14176a`:
+
+```java
+if (!CollectionsKt.contains(command.mo14014o(), deviceController.mo14150j())) {
+    return new Err(new UnsupportedDeviceCommandException(...));
+}
+```
+
+`TelinkBleDeviceController` is hardcoded to `ConnectionType.BLE`. Since none of
+these commands list `BLE` in their supported set, this check fails and the
+command never reaches the Telink command delegate — never becomes a mesh
+packet, never needs chunking. **This is what "no BLE expression" looks like in
+the actual client**, not an absence of evidence.
+
+One instructive exception: `QueryDeviceTimeCommand` *does* support
+`{BLE, BLE_PROXY, WIFI, WIFI_PROXY}` — but over BLE it sends a **different,
+small** payload (a 4-byte opcode), not a BLE-segmented version of the 64-byte
+Xlink buffer. So "supported over multiple transports" does not mean "same wire
+bytes on each" — worth remembering before assuming any other multi-transport
+command behaves identically across them.
+
+No general large-payload BLE mechanism was missed, either: `sendBlocks` (used by
+11 non-hub commands — light shows, music shows, tile layouts, multi-colour
+bitmaps) and the separate OTA chunking path (`writeFirmwareDataChunk`, over
+characteristic `...1913` — confirmed as the firmware-update channel, unrelated to
+notifications) are the only two chunking schemes in the app. Neither is ever
+invoked by a hub command.
+
+## What this settles
+
+Combined with the earlier `hub_envelope_ab_test.md` result (neither TCP envelope
+gets a reply either), the picture is now complete rather than merely negative:
+hub commands are Xlink/WIFI-only **by design in the real client**. Not "unproven
+over BLE" — excluded from it in the source. There is no envelope, segmentation
+scheme, or addressing fix that unlocks this; the real app itself has no code
+path that would send one.
 
 ## How this went wrong
 
