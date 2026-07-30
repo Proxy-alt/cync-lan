@@ -16,6 +16,7 @@ bleak has now been tried.
 | enable-write, then `StartNotify` | enable accepted, subscribe refused, **link drops** |
 | enable-write only, never subscribe | **no notifications at all** |
 | write the CCCD by hand | **bleak refuses**: *"Cannot write to CCCD (0x2902) directly. Use start_notify() or stop_notify() instead."* |
+| `AcquireNotify` (bleak's alternate subscribe path) | **also rejected** (`Unlikely Error`), **link drops** |
 | never touch notifications | **sending works** — confirmed for power and brightness |
 
 The device is not the obstacle in the last two rows. Row 3 is BlueZ: it will not
@@ -107,19 +108,56 @@ simpler to test if a proxy is available: a proxy implements its own GATT client
 rather than delegating to BlueZ, so it may sidestep this entirely, independent of
 whether a userspace-ATT approach is ever built.
 
+## `AcquireNotify` — a second bleak mechanism, also tested, also fails
+
+Reading bleak's actual `bluezdbus/client.py` (not assumed — fetched and read)
+turned up a second BlueZ subscription path this project had not tried:
+`AcquireNotify`, a different D-Bus method from `StartNotify` that hands back a
+raw file descriptor instead of routing through `PropertiesChanged` signals.
+bleak defaults to `StartNotify`; passing `bluez={"use_start_notify": False}` to
+`start_notify()` switches to `AcquireNotify`. Genuinely untried, zero new
+tooling, one line to test — so it was tested before reaching for anything
+heavier.
+
+**Result: `AcquireNotify` fails identically.** Same `BleakGATTProtocolError:
+Unlikely Error`, and the connection goes down the same way — confirmed by the
+very next write failing with `Not connected`, even though `client.is_connected`
+still read `True` at that instant. (That staleness is exactly why
+`BleMeshSession.subscribe()` raises instead of trusting a post-hoc connection
+check — good independent confirmation that guard earns its place.)
+
+This closes off every bleak-level mechanism, and closes it more informatively
+than a single failure would: **two different BlueZ subscription APIs, presumably
+built on different D-Bus surfaces, both trip the same rejection.** That is
+stronger evidence that the CCCD write itself is the thing being refused at the
+ATT/kernel level, independent of which higher-level BlueZ call requests it —
+not a quirk of `StartNotify`'s specific implementation.
+
+One methodology note, kept because this project's whole discipline is about
+catching exactly this. The first version of the `AcquireNotify` test connected
+to the wrong home (this device belongs to two homes in the export; the first one
+found programmatically is the one that fails mutual auth — see
+`ble_hub_commands_rejected.md`-adjacent context) and printed "handshake ok"
+without actually checking `verify_pairing_response`. That result would have been
+meaningless if reported. It was caught and rerun with the home selected
+explicitly and auth checked before drawing any conclusion — the corrected run is
+what's recorded above.
+
 ## What was not tried, and why
 
 - **bluepy directly.** It would very likely work now that the mechanism is
   understood, and it remains a dead end for the integration regardless: Home
   Assistant's Bluetooth stack is bleak-based, and an integration cannot bring its
   own ATT implementation just for this device family.
-- **Raw D-Bus, bypassing bleak.** No help — BlueZ's `StartNotify` performing the
-  CCCD write is intrinsic to BlueZ's own GATT server implementation, not
-  something bleak adds on top. Going around bleak to talk to BlueZ directly hits
-  the identical wall one layer down.
-- **A userspace ATT stack (e.g. `bumble`).** Not yet tried. This is the
-  actionable lead above, not a dead end — flagged here only to be explicit that
-  no attempt has been made yet, so it is not mistaken for a tested negative.
+- **Raw D-Bus, bypassing bleak.** No help, and now doubly confirmed rather than
+  merely reasoned — both of BlueZ's own subscription APIs (`StartNotify` and
+  `AcquireNotify`) hit the identical wall, so going around bleak to talk to
+  BlueZ's D-Bus interface directly would hit the same wall one layer down.
+- **A userspace ATT stack (e.g. `bumble`), bypassing BlueZ's GATT client
+  entirely.** Still not tried, and now the *only* remaining untried avenue at
+  the software-stack level — every BlueZ-mediated path is exhausted. This is
+  the actionable lead, not a dead end; flagged as untried so it is not mistaken
+  for a tested negative.
 
 ## How this was tested
 
