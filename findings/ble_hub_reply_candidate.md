@@ -53,7 +53,37 @@ needing no DNS redirection. That would unlock scenes, schedules, automations, an
   and a device settings or firmware notification arriving unprompted would look
   much like this.
 
-## The control run
+## The control run — done, and it came back clean
+
+Same node, same ordering, same `enable-first`, ten seconds, **nothing sent**.
+Sixteen `0xDC` status packets arrived and **no `0xEA` of any subtype**.
+
+| run | hub query sent | `0xEA` seen |
+|---|---|---|
+| 1 | `0x4B` QueryHubInfo | **yes** — subtype `0x83` |
+| 2 | none | no |
+
+That is the control this finding asked for, and it passed. The hypothesis is now
+supported rather than merely suggested — but it is still one run each way, and
+the coincidence it rules out is only the most obvious one.
+
+## What would actually settle it
+
+Not another `0x4B`. Send a **different** read-only hub query and see whether a
+**different** subtype comes back:
+
+| opcode | command | subtype if the `\| 0x80` rule holds |
+|---|---|---|
+| `0x46` | QueryDeviceTime | ? |
+| `0xAD` | QuerySolConfig | ? |
+| `0x8A` | QueryHubMeshNameAndPassword | ? |
+
+One request producing one subtype could be coincidence. Two different requests
+producing two different subtypes could not be. That is the experiment worth
+running next, and it is as safe as the first — all three are reads.
+
+## The original control instructions
+
 
 Same ordering, same duration, **nothing sent**. If `0xEA`/`0x83` appears anyway
 it is background traffic; if it does not, that is real evidence.

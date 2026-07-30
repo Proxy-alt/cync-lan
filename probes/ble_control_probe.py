@@ -362,7 +362,12 @@ async def probe(args) -> int:
             if tag == "status":
                 for off in (10, 14):
                     resp = clear[off : off + 4]
-                    if len(resp) == 4 and resp[1] != 0:
+                    # Presence byte ZERO marks the data-bearing slot here - the
+                    # opposite of acync's rule, which this probe used to copy.
+                    # Across 34 captured slots, every one with a zero presence
+                    # byte held plausible state and every one with a non-zero
+                    # byte was empty. See cync_lan.ble_mesh.parse_status.
+                    if len(resp) == 4 and resp[1] == 0 and resp != b"\x00\x00\x00\x00":
                         bright = resp[2]
                         if bright >= 128:
                             print(f"      id={resp[0]} brightness={bright - 128} (rgb)")
