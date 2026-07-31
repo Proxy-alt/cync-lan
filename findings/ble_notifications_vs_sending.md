@@ -47,9 +47,25 @@ gatt.setCharacteristicNotification(bluetoothGattCharacteristicM14996d, true);
 this.f36846t = bluetoothGattCharacteristicM14996d;
 ```
 
-**No CCCD write anywhere.** An exhaustive grep of the whole decompiled tree for
-`writeDescriptor`, the CCCD UUID `2902`, or any `CLIENT_CHARACTERISTIC_CONFIG`
-constant returns nothing. `setCharacteristicNotification()` is the load-bearing
+**No CCCD write in the Telink path** - and, better, a deliberate contrast
+inside the same binary.
+
+An earlier version of this file claimed an exhaustive grep of the whole
+decompiled tree for `writeDescriptor`/`2902`/`CLIENT_CHARACTERISTIC_CONFIG`
+"returns nothing". **That was wrong**, and would have been trivially
+falsified by anyone re-running the grep: `writeDescriptor` appears in 15
+files. The correct, and considerably stronger, statement is scoped:
+
+| package | writes a CCCD? |
+|---|---|
+| `com/gelighting/cbygekit/services/devices/telink/` (75 files) | **no** - zero `writeDescriptor`, zero `2902`, zero `CLIENT_CHARACTERISTIC_CONFIG` |
+| `com/thingclips/sdk/**` (Tuya's BLE SDK) | yes, 14 files |
+| `chip/platform/AndroidBleManager.java` (Matter) | yes |
+
+So the same app, written by the same developers, writes CCCDs correctly for
+its Tuya and Matter device paths and deliberately does not for Telink. That
+is vendor intent demonstrated by contrast rather than by absence, and it is
+verifiable by a reviewer in one grep. `setCharacteristicNotification()` is the load-bearing
 fact here: on Android it is **purely local** — it tells the Android Bluetooth
 stack "route incoming notification PDUs to this app" and performs *no GATT
 operation over the air at all*. The characteristic value is never written with
