@@ -62,24 +62,30 @@ jobs:
         run: mypy -p custom_components.cync_lan
 
   docs-in-sync:
-    name: docs match the canonical copy on core
+    name: docs match the canonical copy in cync-lan-lib
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      # docs/ is mirrored on core, python and feature/ha-custom-component
-      # because each is a separately published artifact. core is canonical.
-      # mesh_opcodes.md had already drifted 9 lines between branches before
+      # docs/ is mirrored into each artifact's repository because each is a
+      # separately published artifact. Proxy-alt/cync-lan-lib is canonical.
+      # mesh_opcodes.md had already drifted 9 lines between copies before
       # this check existed, so nothing catches it but CI.
-      - name: Compare docs/ against origin/core
+      #
+      # This used to fetch the `core` branch of this same repository, back
+      # when all three artifacts shared one. The library has its own
+      # repository now, so the fetch is cross-repo - it is public, so no
+      # token is needed.
+      - name: Compare docs/ against the canonical copy
         run: |
-          git fetch --no-tags --depth=1 origin core
+          git remote add canonical https://github.com/Proxy-alt/cync-lan-lib.git
+          git fetch --no-tags --depth=1 canonical main
           if ! git diff --quiet FETCH_HEAD -- docs/; then
-            echo "docs/ differs from the canonical copy on the core branch:"
+            echo "docs/ differs from the canonical copy in Proxy-alt/cync-lan-lib:"
             git --no-pager diff --stat FETCH_HEAD -- docs/
             echo
-            echo "Copy the updated files from core, or update core first."
+            echo "Copy the updated files from cync-lan-lib, or update it first."
             exit 1
           fi
-          echo "docs/ is in sync with core"
+          echo "docs/ is in sync with cync-lan-lib"

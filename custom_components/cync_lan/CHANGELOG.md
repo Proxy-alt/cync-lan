@@ -2,9 +2,9 @@
 
 Version history for the Home Assistant `cync_lan` custom_component
 specifically (`custom_components/cync_lan/manifest.json`'s `version` field).
-This is independent of the [`cync-lan`](https://github.com/Proxy-alt/cync-lan/tree/core)
+This is independent of the [`cync-lan`](https://github.com/Proxy-alt/cync-lan-lib)
 core protocol library's own version scheme and the
-[`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan/tree/python)
+[`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt)
 Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.

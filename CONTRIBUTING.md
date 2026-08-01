@@ -71,13 +71,15 @@ happened.
 
 A few things worth knowing before a first PR:
 
-- **Three branches, three artifacts.** `core` is the protocol library on PyPI,
-  `python` is the Docker/MQTT add-on, `feature/ha-custom-component` is the Home
-  Assistant integration. Each versions and releases separately —
-  see [RELEASING.md](./RELEASING.md).
-- **`docs/` is mirrored byte-for-byte across all three**, canonical copy on
-  `core`, and CI fails on drift. Edit it on `core` and copy to the others in
-  the same change.
+- **Three repositories, three artifacts.**
+  [`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib) is the protocol
+  library on PyPI, [`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt)
+  is the Docker/MQTT add-on, and this one is the Home Assistant integration.
+  Each versions and releases separately — see [RELEASING.md](./RELEASING.md),
+  which also explains why they are not branches of one repository any more.
+- **`docs/` is mirrored byte-for-byte across all three**, canonical copy in
+  `cync-lan-lib`, and CI fails on drift. Edit it there and copy to the others
+  in the same change.
 - **Setup guides live in the [wiki](https://github.com/Proxy-alt/cync-lan/wiki)**,
   not in `docs/`. Router UIs change and nobody owns every model, so those pages
   are editable directly — no PR needed.

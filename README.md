@@ -74,7 +74,7 @@ accessories are the exception, both exposed as `occupancy` binary sensors.
 >[!NOTE]
 > You still need the official Cync app to add new devices to your account as
 > you acquire them. This integration controls devices that are already on
-> the account - it does not replace onboarding. (The `core` branch's
+> the account - it does not replace onboarding. (The core library's
 > `cync-lan-ble-provision` CLI is an experimental exception.)
 
 ## Installation
@@ -114,22 +114,27 @@ See [Known limitations](./custom_components/cync_lan/README.md#known-limitations
 
 ## Repository layout
 
-Three separately-versioned, separately-released artifacts share this one
-repository, each on its own branch. **You are on
-`feature/ha-custom-component`.**
+Three separately-versioned, separately-released artifacts, each in its own
+repository. **You are in the Home Assistant integration.**
 
-| Artifact | Branch | What it is | Distributed via |
+| Artifact | Repository | What it is | Distributed via |
 |---|---|---|---|
-| `cync-lan` | [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) | Core protocol library - sessions, packet codec, cloud auth, BLE | [PyPI](https://pypi.org/project/cync-lan/) |
-| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + [ghcr.io](https://github.com/Proxy-alt/cync-lan/pkgs/container/cync-lan-mqtt) image |
-| `cync_lan` custom_component | **`feature/ha-custom-component`** (here) | This: native Home Assistant integration | GitHub Release / HACS |
+| `cync-lan` | [`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib) | Core protocol library - sessions, packet codec, cloud auth, BLE | [PyPI](https://pypi.org/project/cync-lan/) |
+| `cync-lan-mqtt` | [`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt) | Standalone Docker/MQTT daemon + HTTP device exporter | [PyPI](https://pypi.org/project/cync-lan-mqtt/) + [ghcr.io](https://github.com/Proxy-alt/cync-lan-mqtt/pkgs/container/cync-lan-mqtt) image |
+| `cync_lan` custom_component | **`cync-lan`** (here) | This: native Home Assistant integration | GitHub Release / HACS |
+
+They used to share this repository, one branch each. That broke HACS, which
+resolves an integration's version from the *newest release in the list*
+rather than from the Latest flag, and so kept offering `cync-lan-v*` tags -
+which carry no `custom_components/` directory - as this integration's
+update. [RELEASING.md](./RELEASING.md) has the full explanation.
 
 ### Which one do you want?
 
 All three need the same [DNS redirection](https://github.com/Proxy-alt/cync-lan/wiki/DNS); they differ in
 everything else.
 
-| | This integration (HACS) | Home Assistant App ([hass-addons](https://github.com/Proxy-alt/hass-addons)) | Docker Compose ([`python`](https://github.com/Proxy-alt/cync-lan/tree/python)) |
+| | This integration (HACS) | Home Assistant App ([hass-addons](https://github.com/Proxy-alt/hass-addons)) | Docker Compose ([`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt)) |
 |---|---|---|---|
 | Requires Docker | No | Yes, Supervisor manages it | Yes, you run it |
 | Requires an MQTT broker | No | Yes | Yes |
@@ -147,8 +152,9 @@ the details, including the rule that decides releases from prereleases: a
 plain `X.Y.Z` version cuts a full release, `X.Y.ZbN` cuts a prerelease,
 and anything else fails the build.
 
-`docs/` is mirrored byte-for-byte across all three branches (canonical copy
-on `core`), so any `docs/` link resolves on any branch.
+`docs/` is mirrored byte-for-byte across all three repositories (canonical
+copy in [`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib)), so any
+`docs/` link resolves in any of them. CI enforces it.
 
 ## About this fork
 

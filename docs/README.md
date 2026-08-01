@@ -59,6 +59,9 @@ Prefer an explicit "not found" over a plausible-looking guess: a wrong opcode
 that looks right costs more than a documented gap, because the failure mode is
 a command that silently does nothing.
 
-`docs/` is mirrored byte-for-byte across `core`, `python` and
-`feature/ha-custom-component`, with `core` canonical. CI fails the build when
-they drift, so edit on `core` and copy to the others in the same change.
+`docs/` is mirrored byte-for-byte across the three artifact repositories -
+[`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib),
+[`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt) and
+[`cync-lan`](https://github.com/Proxy-alt/cync-lan) - with `cync-lan-lib`
+canonical. CI fails the build when they drift, so edit it in `cync-lan-lib`
+and copy to the others in the same change.

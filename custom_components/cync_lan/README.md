@@ -577,15 +577,14 @@ report otherwise takes several rounds of questions to establish.
 
 ## Where this fits
 
-This integration is one of three separately-versioned artifacts in the
-[Proxy-alt/cync-lan](https://github.com/Proxy-alt/cync-lan) repository, each
-on its own branch:
+This integration is one of three separately-versioned artifacts, each in its
+own repository:
 
-| Artifact | Branch | What it is |
+| Artifact | Repository | What it is |
 |---|---|---|
-| `cync-lan` | [`core`](https://github.com/Proxy-alt/cync-lan/tree/core) | The protocol library this integration depends on |
-| `cync-lan-mqtt` | [`python`](https://github.com/Proxy-alt/cync-lan/tree/python) | Standalone Docker/MQTT daemon - an alternative to this integration |
-| `cync_lan` custom_component | `feature/ha-custom-component` | **This** |
+| `cync-lan` | [`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib) | The protocol library this integration depends on |
+| `cync-lan-mqtt` | [`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt) | Standalone Docker/MQTT daemon - an alternative to this integration |
+| `cync_lan` custom_component | [`cync-lan`](https://github.com/Proxy-alt/cync-lan) | **This** |
 
 The repository's [root README](https://github.com/Proxy-alt/cync-lan/blob/feature/ha-custom-component/README.md)
 compares the three and explains when you would want each.

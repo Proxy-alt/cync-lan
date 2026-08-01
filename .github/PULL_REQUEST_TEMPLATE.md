@@ -20,10 +20,9 @@ touched protocol code or docs.
 ## Checks
 
 - [ ] Tests pass (`pytest tests/`)
-- [ ] Types pass — `mypy -p custom_components.cync_lan`, or `ruff check` and
-      `ruff format --check` on `core`
-- [ ] If `docs/` changed, the same change is on all three branches — CI
-      compares against `origin/core` and fails on drift
+- [ ] Types pass — `mypy -p custom_components.cync_lan`
+- [ ] If `docs/` changed, the same change is in all three artifact
+      repositories — CI compares against `cync-lan-lib` and fails on drift
 
 ## Protocol changes
 

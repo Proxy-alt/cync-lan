@@ -1,10 +1,10 @@
 # Hub envelope A/B test, and two open items from the 2026-07-25 decompile pass
 
-> **Mirroring**: `docs/` is mirrored across `core`, `python` and
-> `feature/ha-custom-component`, and CI's `docs-in-sync` job compares the whole
-> directory against `core`. `core` is canonical. This file was written on
-> `feature/ha-custom-component` — **put it on `core` first, then copy**, or CI
-> will fail on every branch that has it.
+> **Mirroring**: `docs/` is mirrored across the three artifact repositories,
+> and CI's `docs-in-sync` job compares the whole directory against
+> [`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib), which is
+> canonical. **Put any change there first, then copy**, or CI will fail in
+> every repository that has the file.
 
 Three items, in priority order. Item 1 concerns code that is already shipping;
 items 2 and 3 are research state being recorded so it is not lost.

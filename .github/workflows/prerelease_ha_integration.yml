@@ -2,10 +2,13 @@ name: Release - HA integration
 
 # Automatically creates a GitHub release every time
 # custom_components/cync_lan/manifest.json's version changes on this
-# branch - see RELEASING.md. Tagged vX.Y.Z - distinct from the python
-# package's own cync-lan-vX.Y.Z tags (see the core branch's
-# publish_pypi_core.yml), since the two are versioned and released
-# independently.
+# branch - see RELEASING.md. Tagged vX.Y.Z - distinct from the core
+# library's own cync-lan-vX.Y.Z tags, which are now cut in
+# Proxy-alt/cync-lan-lib, since the two are versioned and released
+# independently. Historical cync-lan-v* and cync-lan-mqtt-v* tags remain in
+# this repository, but nothing here may cut a release against them: HACS
+# reads the newest release in the list, not the Latest flag, and those tags
+# carry no custom_components/ directory.
 #
 # Release vs prerelease is decided from the version string alone, by the
 # "Classify the version" step below:
@@ -105,10 +108,15 @@ jobs:
         run: |
           version="${{ steps.version.outputs.version }}"
           if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            # --latest: this repo ships three independently-versioned
-            # artifacts from one release list, and the HA integration is the
-            # one HACS surfaces, so it should hold Latest rather than
-            # whichever tag happens to be newest by date.
+            # The integration is the only artifact released from this
+            # repository, so its newest release is unambiguously Latest.
+            #
+            # Note that Latest is cosmetic as far as HACS is concerned: HACS
+            # takes the first non-draft, non-prerelease entry from the
+            # /releases list, in date order, and never reads the flag. That
+            # is exactly why the core library and the MQTT add-on had to move
+            # to their own repositories - see RELEASING.md. Nothing but this
+            # workflow may create a release here.
             echo "flags=--latest" >> "$GITHUB_OUTPUT"
             echo "kind=release" >> "$GITHUB_OUTPUT"
             echo "discussion=--discussion-category Announcements" >> "$GITHUB_OUTPUT"
