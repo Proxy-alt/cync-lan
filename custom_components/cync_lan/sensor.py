@@ -11,15 +11,16 @@ docs/mesh_opcodes.md). See docs/cync_automations.md for the full data model.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .bridge import CyncLanBridge
@@ -36,6 +37,25 @@ if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
 
 PARALLEL_UPDATES = 0
+
+# How often the hub query sensors ask the hub for a fresh value.
+#
+# These do not use HA's polling. A platform-level SCAN_INTERVAL would slow
+# every sensor on the platform, and the rest are cheap local reads, so the
+# hub queries drive themselves off a timer instead (see
+# _CyncLanHubQuerySensor).
+#
+# This class of sensor used to be `should_poll = True` with no interval set
+# anywhere, which meant HA's 30-second default - despite the docstring
+# claiming the interval was "deliberately long". Every one of those polls
+# puts a real command on the mesh and blocks for up to 10s waiting for a
+# reply that, on this command family, may never come (the transport is
+# unconfirmed - see docs/mesh_opcodes.md). On real hardware that produced a
+# timeout warning every 30 seconds, around 5,700 log lines a day, plus HA's
+# own "taking over 10 seconds" entity warning each time.
+#
+# Neither firmware version nor hub clock drifts meaningfully in 15 minutes.
+HUB_QUERY_SCAN_INTERVAL = timedelta(minutes=15)
 
 _SLOT_LABELS = {
     "morning": "Morning",
@@ -298,10 +318,15 @@ class _CyncLanHubQuerySensor(SensorEntity):
     A query that times out leaves the previous value in place rather than
     blanking the entity: the reply channel is unconfirmed, so an occasional
     miss is expected and should not look like the hub vanished.
+
+    Self-timed on HUB_QUERY_SCAN_INTERVAL rather than polled by HA. Polling
+    is per-platform, and the other sensors here are cheap local reads that
+    should stay responsive; only these put a command on the mesh and wait on
+    a reply, so only these need the long interval.
     """
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
+    _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
 
@@ -312,6 +337,34 @@ class _CyncLanHubQuerySensor(SensorEntity):
             manufacturer=MANUFACTURER,
             name="Cync LAN Bridge",
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Start the query timer, and take one reading now.
+
+        The first reading is deliberately not awaited here: these queries
+        block for up to their timeout, and setup should not wait on a reply
+        channel that may never answer.
+        """
+        await super().async_added_to_hass()
+
+        @callback
+        def _schedule(_now: Any = None) -> None:
+            self.hass.async_create_task(self._async_refresh())
+
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass, _schedule, HUB_QUERY_SCAN_INTERVAL
+            )
+        )
+        _schedule()
+
+    async def async_update(self) -> None:
+        """Issue the query and store the result. Implemented per subclass."""
+        raise NotImplementedError
+
+    async def _async_refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
 
 
 class CyncLanHubFirmwareSensor(_CyncLanHubQuerySensor):

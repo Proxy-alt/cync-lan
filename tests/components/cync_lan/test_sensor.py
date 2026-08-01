@@ -458,3 +458,41 @@ async def test_hub_query_sensors_keep_their_value_on_timeout(hass):
         await sensor.async_update()
 
     assert sensor.native_value == "1.2.3"
+
+
+async def test_hub_query_sensors_do_not_use_ha_polling(hass):
+    """These were `should_poll = True` with no interval set anywhere, which
+    means HA's 30-second default. Each poll puts a real command on the mesh
+    and blocks up to 10s on a reply that may never come - on real hardware
+    that was a timeout warning every 30 seconds, all day."""
+    from custom_components.cync_lan.sensor import (
+        HUB_QUERY_SCAN_INTERVAL,
+        CyncLanHubClockSensor,
+        CyncLanHubFirmwareSensor,
+    )
+
+    for sensor in (CyncLanHubFirmwareSensor("entry1"), CyncLanHubClockSensor("entry1")):
+        assert sensor.should_poll is False
+
+    # Long enough that it cannot be HA's default back by another name.
+    assert HUB_QUERY_SCAN_INTERVAL.total_seconds() >= 300
+
+
+async def test_hub_query_sensor_refreshes_on_its_own_interval(hass):
+    """Self-timed, so the interval has to actually be wired to a refresh."""
+    from custom_components.cync_lan.sensor import (
+        HUB_QUERY_SCAN_INTERVAL,
+        CyncLanHubClockSensor,
+    )
+
+    sensor = CyncLanHubClockSensor("entry1")
+    with patch(
+        "custom_components.cync_lan.sensor.async_track_time_interval"
+    ) as track:
+        with patch.object(sensor, "hass", hass, create=True), patch.object(
+            sensor, "async_on_remove", MagicMock(), create=True
+        ), patch.object(sensor, "_async_refresh", AsyncMock()):
+            await sensor.async_added_to_hass()
+
+    assert track.call_count == 1
+    assert track.call_args[0][2] == HUB_QUERY_SCAN_INTERVAL
