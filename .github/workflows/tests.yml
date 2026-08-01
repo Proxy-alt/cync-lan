@@ -22,7 +22,7 @@ jobs:
         # and datetime.UTC (3.11+).
         python-version: ["3.12", "3.14"]
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -34,7 +34,7 @@ jobs:
     name: ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -47,7 +47,7 @@ jobs:
     name: docs match the canonical copy on core
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       # docs/ is mirrored on core, python and feature/ha-custom-component
