@@ -809,6 +809,12 @@ a command class's own `{0xEF,0x11,0x02}` array is the leading bytes of a payload
 outer op is hardcoded elsewhere. Every entry below was read from the dispatch call, not from an
 opcode array.
 
+> **Correction (2026-08-01 pass).** Reading the dispatch call was necessary but
+> not sufficient: it does not show *whether the app reaches that call* for a
+> given device. Two gating conditions were missed on the first sweep, and
+> between them they explain why none of these ever returned a reply on real
+> hardware. See "Why the hub family never answers" below the table.
+
 `WriteBuffer` widths, from `services/devices/xlink/legacy/WriteBuffer.java`:
 `m14441a()` = 1 byte, `m14442b()` = raw byte array, `m14443c()` = **4-byte LE**,
 `m14444d()` = **2-byte LE**. Buffers are allocated zero-filled and the whole array is sent, so an
@@ -817,7 +823,7 @@ under-filled buffer goes out with trailing zero padding — the allocation size 
 | op_code | Command class | Request payload | Response |
 | --- | --- | --- | --- |
 | `0x32` | `DeleteGroupHubCommand` | 2 B — `groupAddress` (u16 LE) | none |
-| `0x46` | `QueryDeviceTimeCommand` | 64 B, all zero | `DeviceTimeNotification` |
+| `0x46` | `QueryDeviceTimeCommand` | 64 B, all zero — **Sol/C-Reach only**, see below | `DeviceTimeNotification` |
 | `0x49` | `QueryHubFirmwareUpdatesCommand` | 32 B, all zero | `HubFirmwareUpdatesNotification` |
 | `0x4B` | `QueryHubInfoCommand` | 64 B, all zero | `HubInfoNotification` |
 | `0x4F` | `StartHubFirmwareUpdatesCommand` | 32 B — `0x00` + `{0x00,0x00}` or `{0xFF,0xFF}` | `HubFirmwareUpdateStatusNotification` |
@@ -828,6 +834,78 @@ under-filled buffer goes out with trailing zero padding — the allocation size 
 Confidence: **confirmed** for op_code and request payload (read from decompiled dispatch +
 `WriteBuffer` calls). **Not** hardware-tested — none of these is wired into `devices.py`, and the
 `cmd_code` for each would still need the length formula from "TCP relay envelope research" above.
+
+### Why the hub family never answers
+
+Two conditions gate these commands in the app. Neither is visible from the
+dispatch call itself, and cync-lan satisfies neither. Together they account for
+the A/B test result in `hub_envelope_ab_test.md` ("neither envelope produces a
+reply") without the envelope being wrong at all — the frames cync-lan emits
+match `Xlink.m14391a()` byte for byte.
+
+**1. `0x46` is not the command your devices use.** `QueryDeviceTimeCommand` is
+the only one of the eight whose `mo14023N()` (the Xlink path) *branches*, and
+the hub-envelope dispatch sits in the far arm:
+
+```java
+if (!xlinkCommandDelegate.getDeviceType().getProductType().f31219d) {
+    // every ordinary device lands here
+    return XlinkCommandDelegate.DefaultImpls.m14394c(this, TELINK_OPCODE_BYTES, meshAddress, 0, cont, 12);
+}
+// only Sol / C-Reach reach the 0x46 hub envelope
+WriteBuffer writeBuffer = new WriteBuffer(64);
+... XlinkTranslatorKt.m14449a(seq, (byte) 70, writeBuffer) ...
+```
+
+`f31219d` is the SDK's "is this a Hub product" flag, already documented above as
+meaning `ProductType.Sol` or `ProductType.CReach`. `ProductType.java`'s
+initialiser sets it `true` for exactly those two and `false` for Light,
+IndoorLightStrip, OutdoorLightStrip, NeonLightStrip, OutdoorNeonLightStrip,
+CafeStringLights, Downlight, UndercabinetFixtures, LightTile, Plug, Switch,
+FanSpeedSwitch, WireFreeSwitch, WireFreeSensor, WireFreeRemote, Thermostat and
+Camera.
+
+So on any normal fleet — switches, plugs, bulbs — the app never sends `0x46`.
+It sends `TELINK_OPCODE_BYTES = E8 11 02 10` through `DefaultImpls.m14394c()`,
+which forwards to `mo14056h()` and therefore goes out as the **`0x8E`
+mesh-relay family** documented in the CORRECTION section above — a path
+cync-lan already implements correctly for other commands. `0x46` is not a
+"predicted cmd_code" problem; it is the wrong command for the hardware.
+
+**2. Six of the eight cannot be broadcast.** `DeviceCommand.m()` defaults to
+`false` and is overridden to `true` by `DeleteGroupHubCommand` (`0x32`),
+`QueryHubFirmwareUpdatesCommand` (`0x49`), `QueryHubInfoCommand` (`0x4B`),
+`StartHubFirmwareUpdatesCommand` (`0x4F`),
+`QueryHubMeshNameAndPasswordCommand` (`0x8A`) and
+`DeleteAutomationHubCommand` (`0x97`). Only `QueryDeviceTimeCommand` and
+`QuerySolConfigCommand` leave it `false`.
+
+`DeviceServiceDefault.sendBroadcastCommand()` treats that flag as a hard error:
+
+```java
+if (!(!deviceCommand.getF34564v())) {
+    throw new IllegalArgumentException("Command " + name + " doesn't support non-self destination");
+}
+```
+
+and the multicast path, rather than broadcasting, builds a
+`DeviceCommand.DuplicateFactory` and fans out one unicast per `DeviceId`,
+merging replies through `MulticastResultMerger`. These are self-addressed
+commands: they must carry a specific device's `MeshAddress`.
+
+cync-lan's `_query_hub()` calls `broadcast_control_command(op, cmd_, 0x00,
+0x00, ...)` — `target_id` and `sub_id` both zero, i.e. the broadcast address.
+That is precisely the addressing the app refuses to emit for these six.
+
+`0x4B` and `0x8A` additionally declare `ConnectionType` set
+`DeviceCommand.f34462l` = `{WIFI}` alone, where `QueryDeviceTimeCommand` uses
+`f34461k` = `{BLE, BLE_PROXY, WIFI, WIFI_PROXY}`. The TCP relay is the WIFI
+path, so this one is satisfied already — noted only so a future sweep does not
+re-flag it.
+
+Confidence: **confirmed via decompiled source** for both conditions.
+Not yet hardware-tested — the `0x8E` route for `query_device_time` is the
+cheapest thing to try next, since the transport it needs is already working.
 
 ### Implementation status
 

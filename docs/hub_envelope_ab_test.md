@@ -172,7 +172,35 @@ had been, exactly one of the two shapes should have produced a reply.
   all. The op codes come from the phone app talking to *a* hub; nothing
   establishes that every WiFi device answers them.
 
-**Next discriminator** is `hardware_verification.md`'s **Step 3** — a hub-family
+### Resolved: the envelope was never the problem — 2026-08-01 decompile pass
+
+The third bullet above was the right one, and the mechanism is now read from
+source rather than guessed. Both A/B arms emit frames that match
+`Xlink.m14391a()` byte for byte; the envelope was correct in both. Two other
+things were wrong, and they are documented in full in `mesh_opcodes.md`'s "Why
+the hub family never answers":
+
+- **`0x46` is Sol/C-Reach only.** `QueryDeviceTimeCommand.mo14023N()` branches
+  on `getProductType().f31219d`, and only `ProductType.Sol` and
+  `ProductType.CReach` set it. Every ordinary device — Switch, Plug, Light,
+  FanSpeedSwitch and the rest — takes the other arm, which sends
+  `E8 11 02 10` through the `0x8E` mesh-relay path instead. The hub clock
+  sensor was polling a command the app would never send to that hardware, so
+  no envelope could have made it answer.
+- **Six of the eight refuse a broadcast destination.** They override
+  `DeviceCommand.m()` to `true`, which makes `sendBroadcastCommand()` throw
+  `"doesn't support non-self destination"`; the app fans out one unicast per
+  device instead. `_query_hub()` sends `target_id=0x00`. `0x46` is *not* one
+  of the six, so this is a second, independent fault affecting `0x4B`, `0x8A`,
+  `0x32`, `0x97`, `0x49` and `0x4F`.
+
+This supersedes the "Next discriminator" plan below: a hub-family *write* would
+have failed for reason 2 and taught nothing about the envelope. The cheap test
+now is `query_device_time` over `0x8E` with `E8 11 02 10`, because that
+transport already demonstrably works.
+
+**Next discriminator** (superseded, kept for the reasoning) was
+`hardware_verification.md`'s **Step 3** — a hub-family
 *write* with a visible physical outcome. A write that visibly works proves the
 request side is fine and moves all suspicion to the reply channel. A write that
 does nothing keeps both halves in play, and at that point a packet capture stops
