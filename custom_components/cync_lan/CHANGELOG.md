@@ -9,6 +9,35 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.6.3
+
+Fixes the hub query sensors ("Hub Firmware", "Hub Clock") polling the mesh far
+harder than intended.
+
+These are diagnostic entities, disabled by default, and their class docstring
+described the poll interval as "deliberately long". It was never actually set:
+the class asked Home Assistant to poll it and no `SCAN_INTERVAL` existed
+anywhere in the platform, so they ran on HA's 30-second default.
+
+That matters because each poll puts a real command on the mesh and then blocks
+for up to 10 seconds waiting for a reply. This command family's transport is
+unconfirmed (see `docs/mesh_opcodes.md`), so on hardware where it simply does
+not answer, every poll cost a timeout warning plus Home Assistant's own
+"Update of sensor ... is taking over 10 seconds" - measured on a real system at
+around 5,700 log lines a day, from a sensor that had never once produced a
+value.
+
+They now run on their own 15-minute timer rather than HA's polling, so the
+other sensors on the platform - all cheap local reads - stay responsive.
+Neither firmware version nor hub clock drifts meaningfully in that window.
+
+If you enabled either of these and saw nothing but timeouts, that behaviour
+itself is unchanged: the command may not be answerable on your hub. It is just
+quiet about it now. The matching core-library fix stops the repeated warning
+and stops waiting out the full timeout when there was no connection to send
+the request on in the first place - relevant right after a restart, when Cync
+devices can take many minutes to reconnect.
+
 ### 2.6.2
 
 Reworks the `logo` variants added in 2.6.1. The LAN badge is now a smaller pill

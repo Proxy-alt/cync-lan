@@ -194,9 +194,16 @@ Supported entity types in this integration specifically:
 
   With experimental commands enabled, the bridge also gains **Hub firmware
   version** and **Hub clock** (both disabled by default - each poll sends a
-  real command to the hub). The clock is the useful one: native Cync
+  real command to the hub, so they refresh every 15 minutes rather than on
+  Home Assistant's normal polling). The clock is the useful one: native Cync
   Schedules fire off the hub's own clock rather than Home Assistant's, so
   drift there silently shifts when your Cync-side automations run.
+
+  Both may simply never answer on your hardware - this command family's
+  transport is unconfirmed. If that happens they log one warning and then go
+  quiet, and the entities keep whatever value they last had rather than
+  blanking. Leaving them disabled costs you nothing unless you specifically
+  want those two readings.
 
   The **Cync LAN Bridge** device also gains **Connected devices**, the number
   of devices currently holding a connection to the local listener. Zero is
