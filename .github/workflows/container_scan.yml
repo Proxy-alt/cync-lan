@@ -59,7 +59,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # For a code change the published image does not yet contain it, so build
       # the Dockerfile as written. Single architecture is deliberate:
