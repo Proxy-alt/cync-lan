@@ -88,7 +88,7 @@ jobs:
           exit-code: "0"
 
       - name: Upload to the Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4.37.3
         with:
           sarif_file: trivy.sarif
           # The category must describe *what was scanned*, or a run against the
