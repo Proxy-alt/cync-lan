@@ -904,13 +904,62 @@ path, so this one is satisfied already — noted only so a future sweep does not
 re-flag it.
 
 Confidence: **confirmed via decompiled source** for both conditions.
-Not yet hardware-tested — the `0x8E` route for `query_device_time` is the
-cheapest thing to try next, since the transport it needs is already working.
+
+### The `0x8E` route for `query_device_time`, as implemented
+
+Wired into `devices.py` as `_query_device_time_telink()`. `query_device_time()`
+now takes this route by default and only sends the `0x46` hub envelope when
+called with `hub_product=True`, which is correct for a Sol lamp or a C-Reach
+hub and wrong for everything else.
+
+Request, matching `TELINK_OPCODE_BYTES` exactly:
+
+```
+op        = 0x8E          # mesh-relay family, repeat_op_code=False
+cmd_      = 0x0B          # 7 + len(payload), as for every other 0x8E command
+payload   = E8 11 02 10   # opcode 0xE8, Telink vendor id 0x1102, one parameter
+target_id = 0x00          # broadcast is legitimate here - m() is false
+```
+
+The reply is **not** an Xlink/HDLC frame, so it does not arrive through
+`try_resolve_xlink_notification()`. It comes back as a relayed Telink mesh
+notification, and `services/devices/telink/NotificationType.java` maps it:
+
+```java
+QUERY_TIME((byte) -23, DeviceTimeNotification.TelinkParser.f36440a)
+```
+
+`(byte) -23` = **`0xE9`** — request `0xE8`, response `0xE9`.
+
+Frame layout is Telink's standard `sno[3] src[2] dst[2] op vendor[2] par[10]`,
+which is why every parser in that registry reads from offset 10: offset 10 is
+`par[0]`. `try_resolve_telink_notification()` locates the frame by searching
+for the `11 02` vendor id and reading the opcode from the byte before it,
+rather than trusting a fixed offset into whatever wrapper the relay used. A
+real captured `0x83` supports that choice — its inner data ran
+`1e 00 00 00 fa db 13 00 15 35 11 b7 00 b7 00 db 11 02 01 00 ...`, with the
+Telink frame starting 8 bytes in.
+
+`DeviceTimeNotification.TelinkParser` reads `par` as: year (u16 LE at
+`par[0..1]`), month, day, hour, minute, second, then a DST marker and a packed
+UTC offset. That last pair is the layout's only difference from the Xlink one
+and is deliberately not applied — it is the device's configured offset, not a
+timezone, and applying it would reinterpret the wall-clock reading the caller
+asked for.
+
+Confidence: **confirmed via decompiled source**; not yet hardware-tested.
 
 ### Implementation status
 
 `0x32`, `0x46`, `0x4B`, `0x8A`, `0x97` and `0xAD` are wired into `devices.py`
-as of cync-lan 0.3.0.
+as of cync-lan 0.3.0. `query_device_time`'s `0x8E`/`0xE8` route was added
+later, once the `0x46` gating above was understood.
+
+The five self-addressed commands (`0x32`, `0x4B`, `0x8A`, `0x97`, plus `0x49`
+below) are still emitted to the broadcast address and so are still expected
+not to answer. Fixing them means threading a real `MeshAddress` through
+`_query_hub()`, which is a larger change than the `query_device_time` reroute
+and has not been made.
 
 `0x49` `QueryHubFirmwareUpdates` is **deliberately not implemented**. Its
 reply is not a fixed record like the others: `HubFirmwareUpdatesNotification`
