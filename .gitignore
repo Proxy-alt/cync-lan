@@ -14,3 +14,5 @@ __pycache__/
 .coverage
 .pytest_cache/
 .DS_Store
+scripts/.cync_lan_cache/
+scripts/data/

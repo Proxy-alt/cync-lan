@@ -12,11 +12,11 @@ body:
           change up. See the [DNS page](https://github.com/Proxy-alt/cync-lan/wiki/DNS).
         - **Debug logs.** A report without them usually cannot be acted on.
 
-        ⚠️ **Redact before pasting.** Logs contain your Cync account email,
+        **WARNING: Redact before pasting.** Logs contain your Cync account email,
         device MAC addresses, and sometimes the BTLE mesh password. Replace
         them rather than trusting that nobody will read them.
 
-        ⚠️ Please **do not contact GE or Savant** about problems with this
+        **WARNING:** Please **do not contact GE or Savant** about problems with this
         project, and **do not firmware-upgrade** Cync devices after running it.
 
   - type: dropdown

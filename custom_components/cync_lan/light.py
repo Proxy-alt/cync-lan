@@ -295,6 +295,13 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             return None
         return (state.red, state.green, state.blue)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose 5% hardware minimum dimming floor for dimmer switches and plugs."""
+        if not self._node.is_light and self._node.is_dimmable:
+            return {"min_brightness_pct": 5}
+        return None
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         if ATTR_RGB_COLOR in kwargs:
             r, g, b = kwargs[ATTR_RGB_COLOR]
@@ -306,6 +313,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         bri_pct = (
             round(kwargs[ATTR_BRIGHTNESS] * 100 / 255) if ATTR_BRIGHTNESS in kwargs else None
         )
+        min_floor = 5 if (not self._node.is_light and self._node.is_dimmable) else 1
         if ATTR_TRANSITION in kwargs:
             # EXPERIMENTAL (see set_fine_brightness's docstring, predicted
             # cmd_code): the fine-brightness wire command always carries a
@@ -313,7 +321,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             # needs one - falls back to current brightness, then 100, when
             # only `transition=` was given with no explicit brightness=.
             if bri_pct is not None:
-                target_bri = max(1, bri_pct)
+                target_bri = max(min_floor, bri_pct)
             elif self.brightness:
                 target_bri = round(self.brightness * 100 / 255)
             else:
@@ -321,7 +329,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             fade_ms = round(kwargs[ATTR_TRANSITION] * 1000)
             await self._node.set_fine_brightness(target_bri, fade_ms)
         elif bri_pct is not None:
-            await self._node.set_brightness(max(1, bri_pct))
+            await self._node.set_brightness(max(min_floor, bri_pct))
         if not kwargs:
             await self._node.set_power(1)
 

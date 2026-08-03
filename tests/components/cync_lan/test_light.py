@@ -734,3 +734,19 @@ async def test_add_light_groups_hide_members_defaults_from_entry_options(hass):
         registry.async_get_entity_id(Platform.LIGHT, DOMAIN, "entry1_1")
     )
     assert reg_entry.hidden_by is er.RegistryEntryHider.INTEGRATION
+
+
+async def test_dimmer_minimum_brightness_floor_5_percent():
+    """Dimmer switches/plugs (is_light=False, is_dimmable=True) must expose
+    min_brightness_pct=5 in extra_state_attributes and clamp turn_on brightness
+    to at least 5%."""
+    dimmer_node = _fake_node(is_light=False, is_dimmable=True)
+    bridge = MagicMock()
+    entity = CyncLanLight(bridge, "entry1", dimmer_node)
+
+    assert entity.extra_state_attributes == {"min_brightness_pct": 5}
+
+    # Setting brightness to 1% (2 in 0-255 scale) clamps to 5% floor
+    await entity.async_turn_on(brightness=2)
+    dimmer_node.set_brightness.assert_called_once_with(5)
+

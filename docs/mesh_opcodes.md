@@ -95,8 +95,8 @@ replicates. Flagging as **plausible**, not confirmed, for that reason.
 they're `WriteBuffer.d(length)` (`xlink/legacy/WriteBuffer.java:41-44`), the little-endian **byte
 length of `data`** (7-byte routing prefix + `commandBody`). Testing `cmd_code = 7 + len(commandBody)`
 against all three already-confirmed production values below reproduces them exactly:
-`set_power`: 7 + (1 op_code + 5B payload) = 13 = `0x0D` ✓. `set_brightness`/`set_rgb`: 7 + (1 + 8B)
-= 16 = `0x10` ✓. `set_lightshow`: 7 + (1 + 6B) = 14 = `0x0E` ✓. The doc's fixed trailing `0x00` byte
+`set_power`: 7 + (1 op_code + 5B payload) = 13 = `0x0D` . `set_brightness`/`set_rgb`: 7 + (1 + 8B)
+= 16 = `0x10` . `set_lightshow`: 7 + (1 + 6B) = 14 = `0x0E` . The doc's fixed trailing `0x00` byte
 is simply the length field's high byte, zero because no mesh payload is anywhere near 256 bytes.
 This gives a directly testable formula for every "blocked" command above (e.g. scenes `0xEF`:
 7+(1+4B `[0x11,0x02,sceneId,0x01]`)=`0x0C`; fine-brightness `0xE2`: 7+(1+7B)=`0x0F`) — cheap to
