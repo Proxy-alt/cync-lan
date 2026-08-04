@@ -4,20 +4,36 @@ This document presents the Home Assistant integration architecture, unified Core
 
 ---
 
-## 1. Unified Home Assistant Core Submission Strategy
+## 1. Home Assistant Core Submission Strategy
 
-To meet strict Home Assistant Core submission requirements (100% UI Config Flow, zero mandatory router/DNS reconfiguration), `cync_lan` utilizes a multi-tier submission architecture:
+> **Superseded.** This section previously described a two-tier strategy whose
+> first tier was a zero-config "Direct Local UDP (Port 5987)" onboarding path,
+> marked Core Submission Ready. **That transport does not exist.** It is defined
+> in the bundled vendor SDK but not implemented by the firmware - all 46 Wi-Fi
+> devices on the development account refuse UDP 5987, and no UDP listener was
+> found on any nearby port. See
+> `cync-lan-research/findings/xlink_local_udp_absent.md`.
+>
+> No zero-DNS onboarding path for Wi-Fi devices is currently known.
+
+Core submission requires 100% UI config flow and no mandatory router or DNS
+reconfiguration. `cync_lan` meets the first and, for Wi-Fi devices, cannot
+currently meet the second:
 
 ```mermaid
 graph TD
     User["User Onboarding Flow"]
 
-    User --> Option1["Option 1: Direct Local UDP (Port 5987)"]
-    Option1 --> Opt1_Details["DHCP Discovery (88:50:F6)<br/>Zero-Config Onboarding<br/>100% UI Config Flow<br/>Core Submission Ready"]
+    User --> WiFi["Wi-Fi devices: Local TCP Socket Interception (23778 / 23779)"]
+    WiFi --> WiFi_Details["100% UI Config Flow<br/>Requires DNS Redirection (cm.gelighting.com)<br/>Blocks Core submission as-is"]
 
-    User --> Option2["Option 2: Local TCP Socket Interception (Port 23778)"]
-    Option2 --> Opt2_Details["Opt-in Options Flow Toggle<br/>Requires DNS Redirection (cm.gecbyge.com)<br/>Power User Feature"]
+    User --> BLE["BLE mesh devices: cync-ble"]
+    BLE --> BLE_Details["100% UI Config Flow<br/>No DNS or router changes<br/>local_polling, HA Bluetooth / ESPHome proxies"]
 ```
+
+The DNS-redirection requirement is what keeps `cync_lan` itself out of Core
+today. `cync-ble` is the pathway with no such requirement, which is why it -
+not a UDP tier - is the Core-eligible sibling.
 
 ---
 
