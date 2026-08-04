@@ -9,6 +9,33 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.7.0
+
+**New: a "Last firmware released" sensor, for people who turn on firmware
+capture.**
+
+The wait is the hard part. GE publishes rarely, so `CYNC_FIRMWARE_CAPTURE_DIR`
+can sit idle for months — and then an image lands, and it is the most valuable
+single artefact this project can get hold of: something real to inspect for
+whether it is signed or encrypted, and whether an ESPHome/LibreTiny path is
+conceivable at all. Nobody notices a file appearing in a directory. An entity
+that changes state can drive an automation.
+
+The state is the **target version**, so it changes exactly once per release.
+Everything else is in the attributes: where the image was written, its size,
+the source URL, and whether it matched the MD5 and size the cloud advertised. A
+mismatch is surfaced rather than hidden — a truncated or re-signed image is
+itself a finding.
+
+**Only created when capture is switched on.** An entity reading "unknown"
+indefinitely would be clutter for the overwhelming majority who never enable
+it. Diagnostic category.
+
+Nothing here installs anything. The sensor reads what the capture watcher
+recorded, and the capture path has no route to a device — see
+`cync_lan.cloud_api.capture_firmware`, whose signature takes an upgrade task
+and a directory and nothing else. Requires `cync-lan` 0.8.0.
+
 ### Unreleased — documentation retraction, no code change
 
 No component code changed here, so there is no version bump. This is recorded

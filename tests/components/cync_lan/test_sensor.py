@@ -496,3 +496,107 @@ async def test_hub_query_sensor_refreshes_on_its_own_interval(hass):
 
     assert track.call_count == 1
     assert track.call_args[0][2] == HUB_QUERY_SCAN_INTERVAL
+
+
+# ---------------------------------------------------------------------------
+# Last firmware released. Opt-in, and the whole point is noticing an arrival.
+# ---------------------------------------------------------------------------
+
+
+def _firmware_sensor():
+    from custom_components.cync_lan.sensor import CyncLanLastFirmwareSensor
+
+    return CyncLanLastFirmwareSensor("entry123")
+
+
+def test_last_firmware_sensor_reports_nothing_before_a_release_lands():
+    """Months of "None" is the expected steady state, not a fault - GE
+    publishes rarely. It must not look broken while waiting."""
+    sensor = _firmware_sensor()
+    with patch(
+        "cync_lan.cloud_api.CyncCloudAPI"
+    ) as api:
+        api.return_value.last_firmware_capture = None
+        assert sensor.native_value is None
+        assert sensor.extra_state_attributes == {"captured": False}
+
+
+def test_last_firmware_sensor_reports_the_version_so_state_changes_once():
+    """State is the target version: it changes exactly once per release, which
+    is what an automation can trigger on."""
+    sensor = _firmware_sensor()
+    capture = {
+        "target_version": "1234",
+        "from_version": "1000",
+        "product_id": "abc",
+        "path": "/share/fw/cync_fw_abc_1234.bin",
+        "bytes_written": 512000,
+        "md5": "deadbeef",
+        "md5_matches": True,
+        "size_matches": True,
+        "captured_at": "2026-08-04T05:00:00+00:00",
+        "url": "https://example.invalid/fw.bin",
+    }
+    with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
+        api.return_value.last_firmware_capture = capture
+        assert sensor.native_value == "1234"
+        attrs = sensor.extra_state_attributes
+        assert attrs["captured"] is True
+        assert attrs["path"].endswith("cync_fw_abc_1234.bin")
+        assert attrs["md5_matches"] is True
+        assert attrs["source_url"] == "https://example.invalid/fw.bin"
+
+
+def test_last_firmware_sensor_surfaces_a_verification_mismatch():
+    """An image that does not match what the cloud advertised is a finding,
+    not something to hide behind a happy-looking state."""
+    sensor = _firmware_sensor()
+    with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
+        api.return_value.last_firmware_capture = {
+            "target_version": "9",
+            "md5_matches": False,
+            "size_matches": False,
+        }
+        assert sensor.native_value == "9"
+        assert sensor.extra_state_attributes["md5_matches"] is False
+
+
+def test_last_firmware_sensor_survives_the_library_being_unavailable():
+    """A diagnostic must never take setup down with it."""
+    sensor = _firmware_sensor()
+    with patch("cync_lan.cloud_api.CyncCloudAPI", side_effect=RuntimeError("boom")):
+        assert sensor.native_value is None
+        assert sensor.extra_state_attributes == {"captured": False}
+
+
+def test_last_firmware_sensor_is_diagnostic():
+    from homeassistant.const import EntityCategory
+
+    assert _firmware_sensor()._attr_entity_category is EntityCategory.DIAGNOSTIC
+
+
+async def test_firmware_sensor_absent_unless_capture_is_enabled(hass):
+    """Opt-in. Nobody who has not switched capture on should get an entity
+    that reads "unknown" forever."""
+    from custom_components.cync_lan import sensor as sensor_mod
+
+    entry = MagicMock()
+    entry.entry_id = "e1"
+    entry.options = {}
+    entry.runtime_data = SimpleNamespace(
+        bridge=MagicMock(),
+        groups={},
+        ncync_server=SimpleNamespace(node_devices={}),
+    )
+    added: list = []
+
+    with patch.object(sensor_mod, "CYNC_FIRMWARE_CAPTURE_DIR", None):
+        await sensor_mod.async_setup_entry(hass, entry, lambda e: added.extend(e))
+    assert not any(
+        type(e).__name__ == "CyncLanLastFirmwareSensor" for e in added
+    )
+
+    added.clear()
+    with patch.object(sensor_mod, "CYNC_FIRMWARE_CAPTURE_DIR", "/share/fw"):
+        await sensor_mod.async_setup_entry(hass, entry, lambda e: added.extend(e))
+    assert any(type(e).__name__ == "CyncLanLastFirmwareSensor" for e in added)

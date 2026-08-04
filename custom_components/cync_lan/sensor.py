@@ -23,6 +23,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
+from cync_lan.const import CYNC_FIRMWARE_CAPTURE_DIR
+
 from .bridge import CyncLanBridge
 from .const import (
     CONF_ENABLE_EXPERIMENTAL,
@@ -115,6 +117,12 @@ async def async_setup_entry(
         entities.append(CyncLanDeviceIdSensor(bridge, entry.entry_id, node))
 
     entities.append(CyncLanConnectedDevicesSensor(entry.entry_id, runtime_data))
+
+    # Only exists when firmware capture is switched on. A release may not
+    # appear for months, so an entity that reads "unknown" indefinitely would
+    # be clutter for the overwhelming majority who never enable capture.
+    if CYNC_FIRMWARE_CAPTURE_DIR:
+        entities.append(CyncLanLastFirmwareSensor(entry.entry_id))
 
     # Hub queries. Read-only, but they put a command on the mesh to get an
     # answer, and their reply channel is unconfirmed - so they stay behind
@@ -306,6 +314,76 @@ class CyncLanConnectedDevicesSensor(SensorEntity):
             return len(self._runtime_data.ncync_server.tcp_connections)
         except Exception:  # noqa: BLE001 - a diagnostic must not break setup
             return None
+
+
+class CyncLanLastFirmwareSensor(SensorEntity):
+    """The most recent firmware release the cloud has offered for this account.
+
+    Exists because the wait is the hard part. GE publishes rarely, so this can
+    sit at "None" for months - and then one lands, and it is the most valuable
+    single artefact this project can get hold of: a real image to inspect for
+    whether it is signed or encrypted, and whether an ESPHome/LibreTiny path is
+    conceivable at all. Nobody is going to notice a file appearing in a
+    directory. An entity that changes state can drive an automation.
+
+    Reports the target version, so the state changes exactly once per release.
+    Everything else - where the image was written, its size, whether it matched
+    the MD5 the cloud advertised - is in the attributes.
+
+    **Nothing here installs anything.** The sensor reads what the capture
+    watcher recorded; the capture path has no route to a device (see
+    `cync_lan.cloud_api.capture_firmware`).
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _attr_translation_key = "last_firmware_released"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:package-down"
+
+    def __init__(self, entry_id: str) -> None:
+        self._attr_unique_id = f"{entry_id}_last_firmware_released"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer=MANUFACTURER,
+            name="Cync LAN Bridge",
+        )
+
+    @property
+    def _capture(self) -> Optional[dict]:
+        try:
+            from cync_lan.cloud_api import CyncCloudAPI
+
+            return CyncCloudAPI().last_firmware_capture
+        except Exception:  # noqa: BLE001 - a diagnostic must not break setup
+            return None
+
+    @property
+    def native_value(self) -> Optional[str]:
+        capture = self._capture
+        if not capture:
+            return None
+        return str(capture.get("target_version") or "")[:255] or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        capture = self._capture
+        if not capture:
+            return {"captured": False}
+        return {
+            "captured": True,
+            "captured_at": capture.get("captured_at"),
+            "path": capture.get("path"),
+            "product_id": capture.get("product_id"),
+            "from_version": capture.get("from_version"),
+            "bytes": capture.get("bytes_written"),
+            "md5": capture.get("md5"),
+            # False here is worth looking at rather than worth hiding: an image
+            # that does not match what the cloud advertised is itself a finding.
+            "md5_matches": capture.get("md5_matches"),
+            "size_matches": capture.get("size_matches"),
+            "source_url": capture.get("url"),
+        }
 
 
 class _CyncLanHubQuerySensor(SensorEntity):

@@ -263,6 +263,9 @@
       },
       "hub_clock": {
         "name": "Hub clock"
+      },
+      "last_firmware_released": {
+        "name": "Last firmware released"
       }
     },
     "button": {
