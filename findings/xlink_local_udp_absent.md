@@ -1,6 +1,6 @@
 # The Xlink local UDP path is real in the SDK and absent from the firmware
 
-**Status: settled on hardware, negative.** The vendor SDK bundled in the Cync
+**Status: settled on hardware for provisioned devices, negative.** The vendor SDK bundled in the Cync
 Android app defines a complete local UDP control protocol on port **5987** -
 discovery, authenticated handshake, datapoint writes, raw pipe, keep-alive.
 Every one of this account's **46 Wi-Fi devices refuses UDP 5987 outright**.
@@ -133,6 +133,55 @@ silent  : 0
 
 No UDP listener anywhere near the Xlink range. These devices appear to run no
 UDP service at all.
+
+## The app's own dispatch agrees
+
+Stronger than the probe, because it is the shipped code deciding this at
+runtime. `XlinkAgent.sendPipeData` is a router, and every command to a Wi-Fi
+device passes through it:
+
+```java
+if (XlinkUdpService.isConnected() && device.isLanControlDev()) {
+    return sendLocalPipeData(device, (byte) 0, bArr, i, sendPipeListener);
+}
+if (!XlinkTcpService.isConnected()) { return -4; }
+if (device.isValidId()) {
+    return TcpSendPacket.getInstance().sendPipe(device, (byte) 0, bArr, ...);
+}
+```
+
+`isLanControlDev` is set only by `XDevice.setStates(0)`, which
+`ConnectDeviceTask2` calls in exactly one place: the handshake success callback,
+under the log line `"lan control device"`. The cloud branch sets `setStates(1)`
+and logs `"cloud control device"`.
+
+`ConnectDeviceTask2.run()` fires **both** paths concurrently - the local UDP
+scan and the cloud probe - and whichever answers first decides the flag. So the
+app attempts local UDP on every single device connect, and on this hardware the
+local attempt can never win, because nothing answers. Every device is
+permanently `cloud control`, and every command takes the TCP branch.
+
+That is the branch `cync-lan` intercepts. It is not intercepting a fallback the
+app rarely uses; it is intercepting the only branch that ever executes here.
+
+## Scope of the negative
+
+The 46 devices tested were all provisioned and in service - connected to
+`cync-lan` over TCP at the moment of the probe. **This does not rule out the
+port being open in a factory-fresh or setup state.**
+
+There is a specific reason to suspect it might be. `HubManager.setWifiCredentials`
+(`com.gelighting.cbygekit.foundation.wifi`) provisions a hub by calling
+`scanHub` → `XlinkAgent.connectDevice` → `sendPipeData`, and `scanHub` is the
+UDP broadcast discovery above. If that flow ever works over UDP rather than
+falling through to cloud, the firmware must listen on 5987 at least during
+commissioning.
+
+That would still not yield a control transport - the window closes once the
+device is provisioned, which is the state every device spends its life in - but
+it would change "absent from the firmware" to "present only before
+commissioning". Testing it needs a device held in setup mode, which was not
+done.
 
 ## Why the SDK has it anyway
 
