@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -590,13 +591,14 @@ async def test_firmware_sensor_absent_unless_capture_is_enabled(hass):
     )
     added: list = []
 
-    with patch.object(sensor_mod, "CYNC_FIRMWARE_CAPTURE_DIR", None):
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("CYNC_FIRMWARE_CAPTURE_DIR", None)
         await sensor_mod.async_setup_entry(hass, entry, lambda e: added.extend(e))
     assert not any(
         type(e).__name__ == "CyncLanLastFirmwareSensor" for e in added
     )
 
     added.clear()
-    with patch.object(sensor_mod, "CYNC_FIRMWARE_CAPTURE_DIR", "/share/fw"):
+    with patch.dict(os.environ, {"CYNC_FIRMWARE_CAPTURE_DIR": "/share/fw"}):
         await sensor_mod.async_setup_entry(hass, entry, lambda e: added.extend(e))
     assert any(type(e).__name__ == "CyncLanLastFirmwareSensor" for e in added)

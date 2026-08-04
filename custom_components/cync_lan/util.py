@@ -72,6 +72,7 @@ async def configure_environment(
     password: str,
     capture_unknown_packets: bool = False,
     hub_envelope_bare: bool = False,
+    capture_firmware: bool = False,
 ) -> None:
     """Point the upstream package's env-var-driven config at this entry.
 
@@ -129,6 +130,21 @@ async def configure_environment(
     # without a Home Assistant restart - the A/B is only worth offering if
     # running both arms is cheap. See docs/hub_envelope_ab_test.md.
     os.environ["CYNC_HUB_ENVELOPE"] = "bare" if hub_envelope_bare else "routed"
+
+    # Firmware capture. Like CYNC_HUB_ENVELOPE, this one is re-read where it
+    # is used rather than cached at import, so toggling it takes effect on a
+    # config-entry reload instead of needing a full Home Assistant restart -
+    # see nCyncServer._start_firmware_watcher and sensor.py. The directory
+    # lives under HA's own config dir so it survives updates and is reachable
+    # over the Samba/SSH add-ons for pulling an image off the box.
+    if capture_firmware:
+        firmware_dir = os.path.join(config_dir, "firmware")
+        await hass.async_add_executor_job(
+            lambda: os.makedirs(firmware_dir, exist_ok=True)
+        )
+        os.environ["CYNC_FIRMWARE_CAPTURE_DIR"] = firmware_dir
+    else:
+        os.environ.pop("CYNC_FIRMWARE_CAPTURE_DIR", None)
 
     os.environ["CYNC_MAX_TCP_CONN"] = str(
         max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)

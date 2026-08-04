@@ -11,6 +11,7 @@ docs/mesh_opcodes.md). See docs/cync_automations.md for the full data model.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -22,8 +23,6 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
-
-from cync_lan.const import CYNC_FIRMWARE_CAPTURE_DIR
 
 from .bridge import CyncLanBridge
 from .const import (
@@ -65,6 +64,18 @@ _SLOT_LABELS = {
     "evening": "Evening",
     "sleep": "Sleep",
 }
+
+
+def _firmware_capture_dir() -> Optional[str]:
+    """Where captured firmware goes, or None if capture is off.
+
+    Read from the environment at call time rather than from
+    cync_lan.const, whose module-level constants are fixed at import - which
+    for this integration is before configure_environment() has run. Reading
+    it here is what lets the option take effect on a config-entry reload
+    instead of requiring a full Home Assistant restart.
+    """
+    return os.environ.get("CYNC_FIRMWARE_CAPTURE_DIR") or None
 
 
 async def async_setup_entry(
@@ -121,7 +132,7 @@ async def async_setup_entry(
     # Only exists when firmware capture is switched on. A release may not
     # appear for months, so an entity that reads "unknown" indefinitely would
     # be clutter for the overwhelming majority who never enable capture.
-    if CYNC_FIRMWARE_CAPTURE_DIR:
+    if _firmware_capture_dir():
         entities.append(CyncLanLastFirmwareSensor(entry.entry_id))
 
     # Hub queries. Read-only, but they put a command on the mesh to get an

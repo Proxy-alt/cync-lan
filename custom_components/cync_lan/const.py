@@ -21,6 +21,10 @@ CONF_ENABLE_EXPERIMENTAL = "enable_experimental"
 # client connecting to the listener, which is otherwise invisible without
 # packet capture on the host.
 CONF_CAPTURE_UNKNOWN_PACKETS = "capture_unknown_packets"
+# Download firmware images the cloud offers, for inspection. Never installs
+# them - see cync_lan.cloud_api.capture_firmware, which takes an upgrade task
+# and a directory and has no route to a device at all.
+CONF_CAPTURE_FIRMWARE = "capture_firmware"
 # Switches the hub-family commands to the "bare" envelope - no 7-byte mesh
 # routing block, length field 7 shorter. The decompiled phone app builds hub
 # commands that way; whether our device-facing wire agrees is unproven, so
@@ -35,6 +39,7 @@ DEFAULT_ENABLE_LIGHT_GROUPS = False
 DEFAULT_HIDE_GROUP_MEMBERS = False
 DEFAULT_ENABLE_EXPERIMENTAL = False
 DEFAULT_CAPTURE_UNKNOWN_PACKETS = False
+DEFAULT_CAPTURE_FIRMWARE = False
 DEFAULT_HUB_ENVELOPE_BARE = False
 
 MANUFACTURER = "Savant"

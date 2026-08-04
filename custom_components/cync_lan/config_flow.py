@@ -32,6 +32,7 @@ from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
+    CONF_CAPTURE_FIRMWARE,
     CONF_CAPTURE_UNKNOWN_PACKETS,
     CONF_HUB_ENVELOPE_BARE,
     CONF_ENABLE_EXPERIMENTAL,
@@ -39,6 +40,7 @@ from .const import (
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_HIDE_GROUP_MEMBERS,
     CONF_LOCAL_PORT,
+    DEFAULT_CAPTURE_FIRMWARE,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
     DEFAULT_HUB_ENVELOPE_BARE,
     DEFAULT_ENABLE_EXPERIMENTAL,
@@ -520,6 +522,12 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         default=current.get(
                             CONF_CAPTURE_UNKNOWN_PACKETS,
                             DEFAULT_CAPTURE_UNKNOWN_PACKETS,
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_CAPTURE_FIRMWARE,
+                        default=current.get(
+                            CONF_CAPTURE_FIRMWARE, DEFAULT_CAPTURE_FIRMWARE
                         ),
                     ): bool,
                     vol.Required(
