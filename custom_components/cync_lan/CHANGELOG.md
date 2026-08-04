@@ -9,6 +9,47 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### Unreleased — documentation retraction, no code change
+
+No component code changed here, so there is no version bump. This is recorded
+because it removes a capability the documentation claimed this integration had.
+
+**There is no local UDP transport, and there never was.** `docs/` listed
+"Direct Local UDP (Port 5987)" as a supported pathway at "Native / Core Ready"
+confidence with zero-config DHCP discovery, and the Core submission strategy
+was built on it as a zero-DNS onboarding tier. Both were wrong.
+
+The protocol is genuinely defined in the vendor SDK bundled in the Cync Android
+app — discovery, an `MD5(access_key)` handshake, datapoint writes, pipe,
+keep-alive, all on `XlinkProperty.DEVICE_PORT = 5987`. The firmware does not
+implement it. All 46 Wi-Fi devices on the development account return ICMP port
+unreachable on UDP 5987, and a 144-pair sweep of the surrounding ranges found
+no UDP listener at all.
+
+The app's own dispatch agrees: `XlinkAgent.sendPipeData` races a local UDP scan
+against a cloud probe on every connect and takes whichever answers, and on this
+hardware the local attempt can never win. Every device ends up `cloud control`,
+which is the branch cync-lan intercepts.
+
+**Consequence: TCP interception remains the only local pathway to Wi-Fi
+devices, so the DNS-redirection requirement stands.** `cync-ble` — not a UDP
+tier — is the sibling with no such requirement.
+
+Scoped honestly: all 46 devices tested were provisioned and in service.
+`HubManager.setWifiCredentials` drives commissioning through the same UDP scan,
+so the port may well be open in setup state. That would not yield a control
+transport, but it would make the accurate claim "absent after commissioning"
+rather than "absent".
+
+Full protocol map and method:
+`cync-lan-research/findings/xlink_local_udp_absent.md`.
+
+Two smaller corrections in the same pass: the feature matrix listed the Light
+Show engine as partially implemented when all five run modes have been wired
+for some time, and the Hexagon Tile layout row now carries the full wire format
+(opcode, dispatch path, payload, and the chunked `sendBlocks` framing that is
+the actual blocker) instead of a gesture at the source class.
+
 ### 2.6.3
 
 Fixes the hub query sensors ("Hub Firmware", "Hub Clock") polling the mesh far
