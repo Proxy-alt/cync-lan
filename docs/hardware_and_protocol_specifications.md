@@ -6,26 +6,66 @@ This document provides a comprehensive overview of hardware microcontrollers, BL
 
 ## 1. Microcontroller & Chipset Distribution (157 Models)
 
-Cync devices utilize five primary microcontroller and BLE SoC families across 157 model variants:
+**Source: the app states this itself.** `product/BTChipset.java` and
+`product/WifiChipset.java` are first-class enums, and `product/DeviceType.java`
+assigns both to every model. So these are not teardown inferences or guesses
+from model names - they are the manufacturer's own per-model declarations, and
+the counts below are a direct tally of those assignments (156 BT assignments and
+157 WiFi assignments across 157 device types).
 
 ```mermaid
-pie title Microcontroller Architecture Distribution across Cync Fleet
-    "Realtek AmebaD (RTL8720CM)" : 72
-    "Telink BLE (TLSR8258 / TLSR8269)" : 61
-    "Espressif RISC-V (ESP32-C3)" : 18
-    "Realtek AmebaZ (RTL8710BX)" : 4
-    "MediaTek MIPS (MT7688AN)" : 2
+pie title Bluetooth SoC Distribution (BTChipset, 156 models)
+    "Realtek RTL8720CM" : 72
+    "Telink TLSR8269" : 31
+    "Telink TLSR8258" : 30
+    "Espressif ESP32-C3" : 18
+    "Telink TLSR8267" : 2
+    "None" : 3
+```
+
+```mermaid
+pie title Wi-Fi SoC Distribution (WifiChipset, 157 models)
+    "Realtek RTL8720CM" : 72
+    "None - no Wi-Fi radio" : 37
+    "Espressif ESP32-C3" : 19
+    "Realtek RTL8711AM" : 15
+    "Realtek RTL8720" : 5
+    "Realtek RTL8710BX" : 4
+    "MediaTek MT7688AN" : 2
+    "Unspecified" : 3
 ```
 
 ### Hardware Fleet Summary
 
 | SoC / Chipset Family | Architecture | Models | Common Form Factors | Serial Flashing Mode | Open-Source Targets |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Realtek AmebaD** (`RTL8720CM`) | ARM Cortex-M4F / M0 | 72 | Direct Connect Bulbs, Strips, Smart Plugs | UART Download Pin (Log TX/RX) | OpenBeken (`amebad`) |
-| **Telink BLE** (`TLSR8258` / `TLSR8269`) | 32-bit Proprietary RISC | 61 | C-Life/C-Sleep Bulbs, Wire-Free Switches, Remotes | Single-wire Swire (SWS) | Telink OTA / OpenBeken |
-| **Espressif** (`ESP32-C3`) | 32-bit RISC-V | 18 | Dynamic Effects Strips, Hexagon Tiles | GPIO0 Low + UART TX/RX | ESPHome, Tasmota32 |
+| **Realtek AmebaD** (`RTL8720CM`) | ARM Cortex-M4F / M0 | 72 (BT **and** Wi-Fi - one combo part) | Direct Connect Bulbs, Strips, Smart Plugs | UART Download Pin (Log TX/RX) | OpenBeken (`amebad`) |
+| **Telink BLE** (`TLSR8258` / `TLSR8269` / `TLSR8267`) | 32-bit Proprietary RISC | 63 (30 / 31 / 2) | C-Life/C-Sleep Bulbs, Wire-Free Switches, Remotes | Single-wire Swire (SWS) | Telink OTA / OpenBeken |
+| **Espressif** (`ESP32-C3`) | 32-bit RISC-V | 18 BT / 19 Wi-Fi | Dynamic Effects Strips, Hexagon Tiles | GPIO0 Low + UART TX/RX | ESPHome, Tasmota32 |
+| **Realtek** (`RTL8711AM`) | ARM Cortex-M3 | 15 | Earlier Wi-Fi models | UART Download Pin | OpenBeken (`rtl8710a`) |
+| **Realtek** (`RTL8720`, non-CM) | ARM Cortex-M4F / M0 | 5 | Earlier Wi-Fi models | UART Download Pin | OpenBeken (`amebad`) |
 | **Realtek AmebaZ** (`RTL8710BX`) | ARM Cortex-M4 | 4 | Early Wi-Fi Smart Plugs, 4-Wire Switches | UART Download Pin | OpenBeken (`rtl8710b`) |
 | **MediaTek** (`MT7688AN`) | MIPS24KEc 580MHz | 2 | C-Reach Bridge Hub | UART Serial Console (115200) | OpenWrt |
+
+### Two things this table implies for any "reflash it" plan
+
+**37 of 157 models have no Wi-Fi radio at all** (`WifiChipset.NONE`) - the
+BLE-only accessories: standalone motion sensors, wire-free switches, remotes.
+No ESPHome or LibreTiny image can ever apply to them, whatever happens with the
+Realtek parts. The BLE mesh is the only local route to that third of the fleet,
+which is what `cync-ble` exists for.
+
+**The Realtek fleet is four parts, not one.** `RTL8720CM` dominates at 72, but
+`RTL8711AM` (15), `RTL8720` non-CM (5) and `RTL8710BX` (4) are separate silicon
+with separate LibreTiny/OpenBeken targets. A flashing effort that assumes one
+Realtek part covers ~60% of Wi-Fi models, not all of them.
+
+The **flashing modes and open-source targets** columns are the one part of this
+table the app does *not* supply - those come from the chips' own public
+documentation and the LibreTiny/OpenBeken target lists, not from Cync. Nothing
+here has been tried against a real device, and no claim is made that these parts
+are actually flashable as shipped; a locked or signed bootloader would not be
+visible from any of this.
 
 ---
 
