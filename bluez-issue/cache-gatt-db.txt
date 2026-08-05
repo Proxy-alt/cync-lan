@@ -1,0 +1,46 @@
+# /var/lib/bluetooth/<adapter>/cache/<device>
+#
+# Written by BlueZ after discovery. This entry was regenerated from scratch
+# after `bluetoothctl remove <MAC>` with the previous file confirmed deleted,
+# so it is not stale state.
+#
+# The relevant lines:
+#
+#   0011=2803:0012:1a:...1911   characteristic, props 0x1a = read|write|NOTIFY
+#   0013=00002902-...           <-- SYNTHESIZED. No FIND_INFORMATION_REQ
+#                                   covering 0x0013 appears on the wire (see
+#                                   capture-A / capture-C). The device declares
+#                                   0x2901 here; an ATT READ_REQ returns
+#                                   53 74 61 74 75 73 = "Status".
+#   0016=00002901-...           discovered, "Command"
+#   0019=00002901-...           discovered
+#   001c=00002901-...           discovered
+#
+# Every descriptor BlueZ actually queried is recorded 2901. The only one it did
+# not query is recorded 2902 - and it is the sole descriptor of the sole
+# characteristic declaring NOTIFY.
+
+[General]
+Name=<MESH-NAME-REDACTED>
+
+[Attributes]
+0001=2800:0006:00001800-0000-1000-8000-00805f9b34fb
+0002=2803:0003:02:00002a00-0000-1000-8000-00805f9b34fb
+0004=00002901-0000-1000-8000-00805f9b34fb
+0005=2803:0006:02:00002a01-0000-1000-8000-00805f9b34fb
+0007=2800:000f:0000180a-0000-1000-8000-00805f9b34fb
+0008=2803:0009:02:00002a26-0000-1000-8000-00805f9b34fb
+000a=2803:000b:02:00002a29-0000-1000-8000-00805f9b34fb
+000c=2803:000d:02:00002a24-0000-1000-8000-00805f9b34fb
+000e=2803:000f:02:00002a27-0000-1000-8000-00805f9b34fb
+0010=2800:001c:00010203-0405-0607-0809-0a0b0c0d1910
+0011=2803:0012:1a:00010203-0405-0607-0809-0a0b0c0d1911
+0013=00002902-0000-1000-8000-00805f9b34fb
+0014=2803:0015:0e:00010203-0405-0607-0809-0a0b0c0d1912
+0016=00002901-0000-1000-8000-00805f9b34fb
+0017=2803:0018:06:00010203-0405-0607-0809-0a0b0c0d1913
+0019=00002901-0000-1000-8000-00805f9b34fb
+001a=2803:001b:0a:00010203-0405-0607-0809-0a0b0c0d1914
+001c=00002901-0000-1000-8000-00805f9b34fb
+001d=2800:001f:19200d0c-0b0a-0908-0706-050403020100
+001e=2803:001f:02:00002af0-0000-1000-8000-00805f9b34fb
