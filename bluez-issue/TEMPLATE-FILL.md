@@ -1,19 +1,14 @@
 # Filling bluez/bluez's issue form
 
-The repo uses a single template (`.github/ISSUE_TEMPLATE/issue.yml`) with seven
-fields. Copy each block into the matching box.
+The repo uses a single template (`.github/ISSUE_TEMPLATE/issue.yml`) with seven fields. Copy each block into the matching box.
 
 ---
 
 ## ⚠ Why the attached trace is safe, and what would not have been
 
-**A btsnoop is attached, and it is safe to publish** — but only because of how
-it was captured. Read this before substituting your own.
+**A btsnoop is attached, and it is safe to publish** — but only because of how it was captured. Read this before substituting your own.
 
-The template's trace field feeds [btsnoop-analyzer](https://github.com/Vudentz/btsnoop-analyzer),
-which sends the decoded trace to a third-party LLM API. Its default
-anonymization scrubs **MAC addresses and device names**. It does not scrub ATT
-payload bytes, and that is where the problem is:
+The template's trace field feeds [btsnoop-analyzer](https://github.com/Vudentz/btsnoop-analyzer), which sends the decoded trace to a third-party LLM API. Its default anonymization scrubs **MAC addresses and device names**. It does not scrub ATT payload bytes, and that is where the problem is:
 
 ```
 ATT WRITE_REQ handle=0x001b value=0c a0a1a2a3a4a5a6a7 <8-byte proof>
@@ -22,20 +17,13 @@ ATT WRITE_REQ handle=0x001b value=0c a0a1a2a3a4a5a6a7 <8-byte proof>
 - `a0…a7` is `R_app`, a fixed constant in the vendor's SDK - not a nonce.
 - The 8-byte proof is derived from the mesh name and the mesh password.
 - The mesh name is the home's MAC, which also appears as the BLE device name.
-- The mesh password is the account's `access_key`, an integer the vendor SDK
-  bounds to `0 … 999999999`.
+- The mesh password is the account's `access_key`, an integer the vendor SDK bounds to `0 … 999999999`.
 
-With a known `R_app`, a known mesh name and a 10⁹ keyspace, that proof is
-brute-forceable offline in minutes. Publishing it hands over local control of
-every device on the mesh.
+With a known `R_app`, a known mesh name and a 10⁹ keyspace, that proof is brute-forceable offline in minutes. Publishing it hands over local control of every device on the mesh.
 
-**The solution was to avoid it, not redact it.** The defect needs no
-authenticated session, so `btmon-startnotify.log` was captured with the
-vendor pairing never performed, and with `cync_ble` disabled so nothing else on
-the host could pair during the window. Verified: zero writes to `0x001b`.
+**The solution was to avoid it, not redact it.** The defect needs no authenticated session, so `btmon-startnotify.log` was captured with the vendor pairing never performed, and with `cync_ble` disabled so nothing else on the host could pair during the window. Verified: zero writes to `0x001b`.
 
-If you ever re-capture, keep both of those conditions, and leave **"Skip
-anonymization" unchecked** either way.
+If you ever re-capture, keep both of those conditions, and leave **"Skip anonymization" unchecked** either way.
 
 ---
 
@@ -87,10 +75,7 @@ anonymization" unchecked** either way.
 
 **Attach `btmon-startnotify.log`.** It is safe to publish.
 
-The credential problem is avoided rather than redacted: the defect needs no mesh
-authentication, so this capture was taken with the vendor pairing never
-performed. Verified — **zero writes to `0x001b` appear in it**. `cync_ble` was
-disabled during the capture so no other client on the host could pair either.
+The credential problem is avoided rather than redacted: the defect needs no mesh authentication, so this capture was taken with the vendor pairing never performed. Verified — **zero writes to `0x001b` appear in it**. `cync_ble` was disabled during the capture so no other client on the host could pair either.
 
 What it contains, in one connection:
 
@@ -100,15 +85,9 @@ READ_REQ  handle=0x0013  →  READ_RSP 53 74 61 74 75 73   ← "Status"
 WRITE_REQ handle=0x0013  value=0100                      ← the synthesized CCCD
 ```
 
-Trimmed to the HCI layer: 8,991 records, mgmt-channel scan reports dropped.
-Those were two thirds of the file and carried every neighbouring device's
-address while adding nothing diagnostic. Format validated by round-trip parse -
-btsnoop v1, datalink 2001.
+Trimmed to the HCI layer: 8,991 records, mgmt-channel scan reports dropped. Those were two thirds of the file and carried every neighbouring device's address while adding nothing diagnostic. Format validated by round-trip parse - btsnoop v1, datalink 2001.
 
-**The `.log` extension matters.** GitHub's uploader rejects `.btsnoop`
-("File type .btsnoop not supported"), and the template's own instructions say
-`btmon -w btmon.log`, so `.log` is what it expects. The contents are an ordinary
-btsnoop binary either way - the extension carries no meaning to the parser.
+**The `.log` extension matters.** GitHub's uploader rejects `.btsnoop` ("File type .btsnoop not supported"), and the template's own instructions say `btmon -w btmon.log`, so `.log` is what it expects. The contents are an ordinary btsnoop binary either way - the extension carries no meaning to the parser.
 
 ---
 
@@ -118,9 +97,7 @@ btsnoop binary either way - the extension carries no meaning to the parser.
 GATT discovery
 ```
 
-(Only meaningful if a trace is attached. `Disconnection analysis` is the
-alternative if you want the teardown examined rather than the discovery gap —
-but the discovery gap is the defect.)
+(Only meaningful if a trace is attached. `Disconnection analysis` is the alternative if you want the teardown examined rather than the discovery gap — but the discovery gap is the defect.)
 
 ---
 
@@ -131,9 +108,7 @@ but the discovery gap is the defect.)
 [x] I understand this trace …   ← tick, since a trace is attached
 ```
 
-Leave anonymization on regardless. The trace carries no pairing material, but
-the mesh name travels as the BLE device *name* in advertisements, and name
-scrubbing is exactly what the default covers.
+Leave anonymization on regardless. The trace carries no pairing material, but the mesh name travels as the BLE device *name* in advertisements, and name scrubbing is exactly what the default covers.
 
 ---
 
