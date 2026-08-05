@@ -9,3 +9,18 @@
 * **Device:** GE Cync bulb/switch, Telink TLSR825x SDK firmware.
   Two separate units reproduce; a third unit with an empty 28-byte cache file
   (never previously connected) reproduces identically.
+
+## Device coverage
+
+Both OUI families on this account carry the same GATT layout, so the defect is
+not specific to one product line:
+
+| | `F4:BC:DA` | `78:6D:EB` |
+| :--- | :--- | :--- |
+| char `...1911` | 0x0011, props 0x1a (read/write/**notify**) | identical |
+| BlueZ reports at 0x0013 | `0x2902` | `0x2902` |
+| device returns on READ 0x0013 | `"Status"` | `"Status"` |
+| 0x0016 / 0x0019 / 0x001c | `0x2901` | `0x2901` |
+
+The full descriptor set reads back `"Status"`, `"Command"`, `"OTA"`, `"Pair"` -
+one `0x2901` per characteristic, and no CCCD anywhere on the service.

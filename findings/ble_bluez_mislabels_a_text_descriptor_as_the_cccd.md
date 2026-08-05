@@ -195,6 +195,39 @@ Two hurdles worth recording, because both cost time:
 
 Needs no mesh credentials — only the GATT layer is involved.
 
+## Both OUI families, and the contrast test
+
+`78:6D:EB` has the identical layout: `0x2902` claimed by BlueZ at `0x0013`,
+`"Status"` returned by the device, and `0x2901` at `0x0016`/`0x0019`/`0x001c`
+reading `"Command"`, `"OTA"`, `"Pair"`. So this is the Telink SDK's table, not
+one product line.
+
+**And the CCCD write is not what enables notifications.** Driven over
+`HCI_CHANNEL_USER` with bumble as its own ATT client - BlueZ entirely out of the
+path, `subscribe()` never called, subscriber registered locally:
+
+```
+notifications received : 21
+distinct devices seen  : 42
+CCCD writes performed  : 0
+connection still up    : True
+```
+
+The capture confirms it independently: zero writes to `0x0013`, 21
+notifications. The only writes are pairing (`0x001b`) and the vendor enable
+(`0x0012`), both acknowledged.
+
+## A caveat on the per-family split
+
+`cync-ble` 0.2.0 recorded a clean split - `F4:BC:DA` hanging, `78:6D:EB`
+returning `WRITE_NOT_PERMITTED` - across 13 nodes. A `78:6D:EB` node has since
+returned `UNLIKELY_ERROR` (the timeout path) instead, so **the split is not
+reliably by family**. Since both families have the same GATT table, a
+structural explanation is ruled out; timing or firmware revision is more
+likely. `cync-ble`'s code measures whether a node actually delivered a sweep
+rather than inferring from its OUI, so the behaviour is unaffected - but the
+stated rationale was over-confident.
+
 ## Scope
 
 Two peripherals, two runs, at -87 and -64 dBm, identical results. macOS hides
