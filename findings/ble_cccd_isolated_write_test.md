@@ -56,13 +56,26 @@ SUMMARY: manual CCCD write REJECTED, link survived the full window, 23 notificat
 ```
 
 The write **timed out** — no response within bumble's `GATT_REQUEST_TIMEOUT`,
-not an explicit `ATT_ERROR_RESPONSE`. This is a **different failure mode**
-from before: BlueZ's `StartNotify` and bumble's `subscribe()` both got an
-explicit ATT error `0x0E` ("Unlikely Error") back from the device. This bare
-write got silence — which is itself notable, since the ATT spec requires a
-Write Request to always receive either a Write Response or an Error Response;
-genuine timeout-to-silence is non-compliant behavior on the device's part,
-distinct from an active, spec-legal rejection.
+not an explicit `ATT_ERROR_RESPONSE`.
+
+> **Correction.** This section originally called that a *different* failure
+> mode from BlueZ's, on the basis that `StartNotify` "got an explicit ATT error
+> `0x0E` ("Unlikely Error") back from the device". **It does not come from the
+> device.** An on-air ATT capture (`probes/att_monitor.py`) taken while
+> `start_notify` returned `UNLIKELY_ERROR` shows no `ERROR_RESPONSE` with
+> `req=0x12` and no `error=0x0e` anywhere — BlueZ synthesises it locally when
+> its own write goes unanswered. The two failure modes are therefore the *same*
+> one seen through different stacks: silence on the wire.
+>
+> The same capture shows BlueZ never issuing a `FIND_INFORMATION` for `0x0013`
+> at all, so the handle was never confirmed to exist by anything except BlueZ's
+> own assumption that a `notify` characteristic must have a CCCD at
+> value-handle-plus-one. See `ble_no_cccd_exists_at_all.md`.
+
+The silence is itself the signal, since the ATT spec requires a Write Request
+to always receive either a Write Response or an Error Response. In the same
+capture, the pairing characteristic and the vendor enable write both *are*
+acknowledged — so this is not a device that fails to answer writes generally.
 
 **The connection survived regardless** — unlike every prior CCCD-write
 attempt via BlueZ/bumble's own subscribe machinery, which took the link down

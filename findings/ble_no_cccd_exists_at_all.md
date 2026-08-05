@@ -1,7 +1,8 @@
 # The characteristic declares Notify and has no CCCD
 
-**Status: confirmed on hardware via CoreBluetooth; one corroborating capture
-outstanding (see "the one loose end").** The Telink notify
+**Status: confirmed on hardware, two independent ways.** CoreBluetooth's
+descriptor discovery reports no CCCD, and an on-air ATT capture under BlueZ
+shows the device never answering a write to the handle BlueZ assumes is one. The Telink notify
 characteristic (`...1911`) advertises the `notify` property and ships **no
 Client Characteristic Configuration Descriptor**. Its only descriptor is
 `0x2901`, Characteristic User Description.
@@ -46,22 +47,57 @@ CoreBluetooth's enumeration is not an inference. `discoverDescriptors` issues a
 real ATT Find Information Request and reports what comes back. Three
 peripherals, three complete enumerations, one descriptor each.
 
-### The one loose end, stated plainly
+### Settled by capture: 0x0E is BlueZ's, not the device's
 
-That same document reports BlueZ's `StartNotify` receiving an explicit ATT
-error `0x0E` ("Unlikely Error") and attributes it to the device. If the device
-really sent that, the handle exists and this finding is wrong.
+An ATT capture off the HCI monitor socket (`probes/att_monitor.py`), taken
+while `start_notify` ran and returned `UNLIKELY_ERROR`, closes this.
 
-But the same handle, written bare, produced *silence* — and one attribute
-cannot both answer and not answer. The consistent explanation is that `0x0E` is
-**synthesised by BlueZ** when its own descriptor write times out, not received
-from the peer.
+**Three things the capture shows.**
 
-**That is the piece still to confirm**, and it is a single btmon capture:
-subscribe under BlueZ and look for whether an `ATT_Error_Response` actually
-arrives on the wire from the peer, or whether the error appears only in BlueZ's
-D-Bus reply with nothing corresponding on the air. Until that is run, treat
-this finding's mechanism as the best-supported model rather than settled.
+**1. BlueZ never asks whether 0x0013 exists.** Its descriptor discovery issues
+`FIND_INFORMATION` for `0x0004`, `0x0016`, `0x0019` and `0x001c` — the slots
+after every *other* characteristic — and each returns a `0x2901`. The slot
+after the notify characteristic's value handle (`0x0012`) is `0x0013`, and it
+is **never queried**, in either of the two connections captured. BlueZ assumes
+a CCCD at value-handle-plus-one from the `notify` property and writes there
+blind.
+
+**2. The device never answers that write.**
+
+```
+TX->dev  WRITE_REQ handle=0x001b value=0c9c9a...   ← pairing
+RX<-dev  WRITE_RSP                                  ← answered
+TX->dev  WRITE_REQ handle=0x0012 value=01           ← vendor enable
+RX<-dev  WRITE_RSP                                  ← answered
+TX->dev  WRITE_REQ handle=0x0013 value=0100         ← the "CCCD"
+         (nothing)
+```
+
+Both real attributes acknowledge their writes. `0x0013` gets silence. The ATT
+spec requires a Write Request to be answered by a Write Response or an Error
+Response; no attribute produces neither.
+
+**3. No `0x0E` appears on the air at any point.** Every `ERROR_RESPONSE` in the
+capture is `req=0x08`/`req=0x10` with `ATTRIBUTE_NOT_FOUND` — the ordinary
+end-of-discovery markers. **None carries `req=0x12`, and none carries
+`error=0x0e`.** So the `UNLIKELY_ERROR` bleak surfaces is **manufactured by
+BlueZ** when its own write times out.
+
+`ble_cccd_isolated_write_test.md` attributes that `0x0E` to the device. That
+attribution is wrong and is corrected there.
+
+### And the notifications come from the vendor write, not the CCCD
+
+The two connections in the capture happen to form a controlled comparison:
+
+| connection | enable write to `0x0012` | write to `0x0013` | notifications |
+| :--- | :--- | :--- | ---: |
+| first | yes, acknowledged | yes, unanswered | **20** |
+| second | no | yes, unanswered | **0** |
+
+The CCCD write alone produces nothing. The vendor value write is what starts
+reporting — which is what this document already argued, now isolated rather
+than inferred.
 
 ## Why this replaces the previous explanation
 
