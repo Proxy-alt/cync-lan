@@ -203,7 +203,7 @@ the link survives.
 * `cache-gatt-db.txt` - the regenerated cache entry with the synthesized line in
   context.
 
-* `btmon-startnotify.btsnoop` - binary trace of the reproduction, attached in
+* `btmon-startnotify.log` - binary trace of the reproduction, attached in
   the trace field. Captured **without performing the vendor pairing at all**,
   since the defect needs no authenticated session: discovery skipping `0x0013`,
   the read returning `"Status"`, and the `0100` write, in one connection.

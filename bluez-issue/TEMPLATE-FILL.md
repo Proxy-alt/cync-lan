@@ -30,7 +30,7 @@ brute-forceable offline in minutes. Publishing it hands over local control of
 every device on the mesh.
 
 **The solution was to avoid it, not redact it.** The defect needs no
-authenticated session, so `btmon-startnotify.btsnoop` was captured with the
+authenticated session, so `btmon-startnotify.log` was captured with the
 vendor pairing never performed, and with `cync_ble` disabled so nothing else on
 the host could pair during the window. Verified: zero writes to `0x001b`.
 
@@ -85,7 +85,7 @@ anonymization" unchecked** either way.
 
 ## Field 3 — btmon trace
 
-**Attach `btmon-startnotify.btsnoop`.** It is safe to publish.
+**Attach `btmon-startnotify.log`.** It is safe to publish.
 
 The credential problem is avoided rather than redacted: the defect needs no mesh
 authentication, so this capture was taken with the vendor pairing never
@@ -104,6 +104,11 @@ Trimmed to the HCI layer: 8,991 records, mgmt-channel scan reports dropped.
 Those were two thirds of the file and carried every neighbouring device's
 address while adding nothing diagnostic. Format validated by round-trip parse -
 btsnoop v1, datalink 2001.
+
+**The `.log` extension matters.** GitHub's uploader rejects `.btsnoop`
+("File type .btsnoop not supported"), and the template's own instructions say
+`btmon -w btmon.log`, so `.log` is what it expects. The contents are an ordinary
+btsnoop binary either way - the extension carries no meaning to the parser.
 
 ---
 
