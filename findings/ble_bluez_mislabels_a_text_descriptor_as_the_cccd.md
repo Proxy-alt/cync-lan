@@ -35,7 +35,47 @@ after its value handle must be a CCCD.
 The capture shows BlueZ never checking. Its descriptor discovery issues
 `FIND_INFORMATION` for `0x0004`, `0x0016`, `0x0019` and `0x001c` - the slot
 after every *other* characteristic, each answered `0x2901` - and **skips
-`0x0013` entirely**, the one slot it had already decided about.
+`0x0013` entirely**, the one slot it had already decided about. The
+discriminator is exact: it queries the descriptor slot after every
+characteristic *except* the one declaring `notify`.
+
+## Not the cache: proven by deleting it
+
+The obvious alternative was stale state — BlueZ caching a `2902` from some
+earlier session and never re-checking. Tested directly, and it is not that.
+
+**The exhibit, from BlueZ's own cache file** (`/var/lib/bluetooth/<adapter>/
+cache/<device>`) for a Cync node:
+
+```
+0011=2803:0012:1a:00010203-0405-0607-0809-0a0b0c0d1911   ← notify (props 0x1a)
+0013=00002902-0000-1000-8000-00805f9b34fb                ← BlueZ: CCCD
+0014=2803:0015:0e:...1912
+0016=00002901-0000-1000-8000-00805f9b34fb                ← User Description
+0017=2803:0018:06:...1913
+0019=00002901-0000-1000-8000-00805f9b34fb                ← User Description
+001a=2803:001b:0a:...1914
+001c=00002901-0000-1000-8000-00805f9b34fb                ← User Description
+```
+
+Every descriptor BlueZ **asked** about is recorded `2901`. The single one it
+never asked about is recorded `2902` — and it is the slot following the only
+characteristic whose properties include `notify`.
+
+**Then `bluetoothctl remove` and rediscover from scratch.** Cache confirmed
+gone (zero `2902` lines). On the fresh connection:
+
+- descriptor discovery issued `FIND_INFORMATION` for `0x0004`, `0x0016`,
+  `0x0019`, `0x001c` — **`0x0013` skipped again**;
+- bleak still reported `descriptor 00002902 handle=0x0013`;
+- reading `0x0013` still returned `537461747573`, `"Status"`;
+- and BlueZ **wrote `0013=00002902-…` back into the newly created cache**,
+  having never asked the device.
+
+So the mislabel is not stale state to be cleared. It is regenerated on every
+fresh discovery, and then persisted. A second node (`F4:BC:DA:33:52:66`) had no
+cached GATT at all — only `Name=` — and behaved identically, which rules the
+cache out from the other direction too.
 
 ## Why the handle exists but the descriptor does not
 
