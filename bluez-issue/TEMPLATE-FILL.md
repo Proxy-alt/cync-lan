@@ -5,9 +5,10 @@ fields. Copy each block into the matching box.
 
 ---
 
-## ⚠ Read this before touching the "btmon trace" field
+## ⚠ Why the attached trace is safe, and what would not have been
 
-**Do not attach a raw btsnoop of a session that includes the pairing exchange.**
+**A btsnoop is attached, and it is safe to publish** — but only because of how
+it was captured. Read this before substituting your own.
 
 The template's trace field feeds [btsnoop-analyzer](https://github.com/Vudentz/btsnoop-analyzer),
 which sends the decoded trace to a third-party LLM API. Its default
@@ -28,10 +29,13 @@ With a known `R_app`, a known mesh name and a 10⁹ keyspace, that proof is
 brute-forceable offline in minutes. Publishing it hands over local control of
 every device on the mesh.
 
-**So:** leave **"Skip anonymization" unchecked**, and either attach nothing to
-the trace field, or attach a capture taken *after* pairing has already
-completed. The decoded, redacted logs below carry every byte a maintainer needs
-to see and none of the credential material.
+**The solution was to avoid it, not redact it.** The defect needs no
+authenticated session, so `btmon-startnotify.btsnoop` was captured with the
+vendor pairing never performed, and with `cync_ble` disabled so nothing else on
+the host could pair during the window. Verified: zero writes to `0x001b`.
+
+If you ever re-capture, keep both of those conditions, and leave **"Skip
+anonymization" unchecked** either way.
 
 ---
 
