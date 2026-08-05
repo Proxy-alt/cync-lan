@@ -31,8 +31,14 @@ def find_root(start: Path | None = None) -> Path:
     # the research branch: the resolved path sits outside the decompile tree,
     # so only the logical one can find sources/.
     logical = os.environ.get("PWD")
-    candidates = [start, Path(logical) if logical else None,
-                  Path(__file__).resolve(), Path.cwd().resolve()]
+    default_fallback = Path("/Users/proxy-alt/Documents/Projects/cync_decompiled_v2")
+    candidates = [
+        start,
+        Path(logical) if logical else None,
+        Path(__file__).resolve(),
+        Path.cwd().resolve(),
+        default_fallback,
+    ]
     for base in filter(None, candidates):
         for cand in [base, *base.parents]:
             if (cand / "sources").is_dir():

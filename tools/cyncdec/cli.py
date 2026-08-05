@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import enums, hexify, index, kmeta, opcodes, paths, render, trace
+from . import devices, enums, hexify, index, kmeta, opcodes, paths, render, services, trace
 
 
 def _idx(args) -> index.Index:
@@ -139,9 +139,47 @@ def cmd_enums(args) -> None:
     print(f"\n# {len(items)} of {len(emap)} entries", file=sys.stderr)
 
 
+def cmd_devices(args) -> None:
+    idx = _idx(args)
+    dlist = devices.extract_device_types(idx)
+    q = (args.query or "").lower()
+    cat = (args.category or "").lower()
+    
+    print(f"# Cync Hardware Device Types ({len(dlist)} found)\n")
+    for d in dlist:
+        if q and q not in d.name.lower():
+            continue
+        if cat and cat not in d.category.lower():
+            continue
+        caps = f" [{', '.join(d.capabilities)}]" if d.capabilities else ""
+        val_str = f"val={d.value:<3}" if d.value is not None else "val=-  "
+        print(f"  {val_str}  {d.category:<12} {d.name}{caps}")
+
+
+def cmd_services(args) -> None:
+    idx = _idx(args)
+    slist = services.extract_services(idx)
+    q = (args.query or "").lower()
+    
+    print(f"# Decompiled Cync Services & Handlers ({len(slist)} found)\n")
+    for s in slist:
+        if q and q not in s.name.lower() and q not in s.category.lower():
+            continue
+        print(f"## {s.name} ({s.category})")
+        print(f"   FQN: {s.fqn}")
+        if s.commands_referenced:
+            print(f"   Commands: {', '.join(s.commands_referenced[:8])}")
+            if len(s.commands_referenced) > 8:
+                print(f"   ... and {len(s.commands_referenced) - 8} more")
+        print()
+
+
 def cmd_opcodes(args) -> None:
     idx = _idx(args)
     cmds = opcodes.extract_all(idx)
+    if getattr(args, "family", None):
+        fam = args.family.lower()
+        cmds = [c for c in cmds if fam in c.name.lower()]
     if args.json:
         out = opcodes.to_json(cmds)
     elif args.table:
@@ -286,8 +324,18 @@ def build_parser() -> argparse.ArgumentParser:
     o = sub.add_parser("opcodes", help="regenerate the mesh command catalogue")
     o.add_argument("--json", action="store_true")
     o.add_argument("--table", action="store_true", help="terse opcode/name columns")
+    o.add_argument("--family", help="filter by command family (e.g. light, switch, fan, tile)")
     o.add_argument("-o", "--output", help="write to a file instead of stdout")
     o.set_defaults(func=cmd_opcodes)
+
+    dev = sub.add_parser("devices", help="list Cync hardware device types and capabilities")
+    dev.add_argument("query", nargs="?", help="filter by device type name")
+    dev.add_argument("--category", help="filter by category (Light, Switch, Plug, Fan, Thermostat, Sensor)")
+    dev.set_defaults(func=cmd_devices)
+
+    srv = sub.add_parser("services", help="list decompiled Cync Service classes and handlers")
+    srv.add_argument("query", nargs="?", help="filter by service name or category")
+    srv.set_defaults(func=cmd_services)
 
     cc = sub.add_parser("codes", help="the XlinkCommandCode op namespace")
     cc.add_argument("query", nargs="?", help="filter by name or hex value")
