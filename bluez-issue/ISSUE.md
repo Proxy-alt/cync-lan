@@ -87,7 +87,10 @@ One `0x2901` per characteristic, each named after its function. No `0x2902`
 anywhere. Independently corroborated by CoreBluetooth on the same hardware,
 whose `discoverDescriptors` returns exactly one descriptor - `0x2901` - and whose
 `setNotifyValue` therefore fails with "the attribute could not be found" while
-**leaving the connection up**.
+**leaving the connection up**. (macOS exposes peripherals as opaque per-host
+UUIDs rather than BD_ADDRs, so those units are from the same account and product
+line but their OUI family cannot be identified from that host. The Linux-side
+results above cover both families explicitly.)
 
 ## Reproduction
 

@@ -1,0 +1,169 @@
+# Filling bluez/bluez's issue form
+
+The repo uses a single template (`.github/ISSUE_TEMPLATE/issue.yml`) with seven
+fields. Copy each block into the matching box.
+
+---
+
+## ⚠ Read this before touching the "btmon trace" field
+
+**Do not attach a raw btsnoop of a session that includes the pairing exchange.**
+
+The template's trace field feeds [btsnoop-analyzer](https://github.com/Vudentz/btsnoop-analyzer),
+which sends the decoded trace to a third-party LLM API. Its default
+anonymization scrubs **MAC addresses and device names**. It does not scrub ATT
+payload bytes, and that is where the problem is:
+
+```
+ATT WRITE_REQ handle=0x001b value=0c a0a1a2a3a4a5a6a7 <8-byte proof>
+```
+
+- `a0…a7` is `R_app`, a fixed constant in the vendor's SDK - not a nonce.
+- The 8-byte proof is derived from the mesh name and the mesh password.
+- The mesh name is the home's MAC, which also appears as the BLE device name.
+- The mesh password is the account's `access_key`, an integer the vendor SDK
+  bounds to `0 … 999999999`.
+
+With a known `R_app`, a known mesh name and a 10⁹ keyspace, that proof is
+brute-forceable offline in minutes. Publishing it hands over local control of
+every device on the mesh.
+
+**So:** leave **"Skip anonymization" unchecked**, and either attach nothing to
+the trace field, or attach a capture taken *after* pairing has already
+completed. The decoded, redacted logs below carry every byte a maintainer needs
+to see and none of the credential material.
+
+---
+
+## Field 1 — Description *(required)*
+
+> Use the contents of `ISSUE.md`, **minus** its `## Environment` section (that
+> goes in Field 7) and **minus** its `## Attachments` section (that goes in
+> Field 6). Everything else — Summary, the attribute table, Control, Expected
+> vs. actual, Notes on fault attribution, Possible directions — belongs here.
+
+---
+
+## Field 2 — To reproduce
+
+```
+1. Connect to the device and let gatt-client run discovery (observed via
+   bleak/StartNotify, but the behaviour is in shared/gatt-client, not the
+   binding).
+
+2. In btmon, note that descriptor discovery issues FIND_INFORMATION_REQ for
+   0x0004, 0x0016, 0x0019 and 0x001c - the descriptor slot following every
+   OTHER characteristic - and never for 0x0013, the sole descriptor of the
+   notify characteristic. The only slot skipped is the one following the only
+   characteristic declaring notify.
+
+3. ATT READ_REQ handle=0x0013 returns 53 74 61 74 75 73 ("Status") - an
+   ordinary successful exchange. 0x0016/0x0019/0x001c return "Command", "OTA",
+   "Pair", all declared 0x2901.
+
+4. Call StartNotify. btmon shows WRITE_REQ handle=0x0013 value=0100. Outcome
+   varies by attempt on the same device and firmware: either
+   WRITE_NOT_PERMITTED, or no response at all followed ~30s later by teardown.
+   Across 14 measured attempts in two runs, every one ended in UNLIKELY_ERROR
+   after a consistent ~30s delay and the link was held for the full window in
+   zero of them - while 17-19 notifications arrived per attempt.
+
+5. Inspect /var/lib/bluetooth/<adapter>/cache/<MAC>: every descriptor BlueZ
+   actually discovered is recorded 2901; the one it never asked about is
+   recorded 2902.
+
+6. bluetoothctl remove <MAC>, confirm the cache file is gone, reconnect.
+   Identical result, and BlueZ writes 0013=00002902-... back into a freshly
+   created cache having still issued no FIND_INFORMATION for it.
+```
+
+---
+
+## Field 3 — btmon trace
+
+Leave empty. See the warning above.
+
+If you would rather attach one, capture it so the pairing exchange falls
+outside the window: connect and authenticate first, start `btmon -w` only then,
+and trigger `StartNotify` alone. The `0x0013` write, its non-response and the
+teardown are all that the analysis needs.
+
+---
+
+## Field 4 — Analysis focus
+
+```
+GATT discovery
+```
+
+(Only meaningful if a trace is attached. `Disconnection analysis` is the
+alternative if you want the teardown examined rather than the discovery gap —
+but the discovery gap is the defect.)
+
+---
+
+## Field 5 — Privacy checkboxes
+
+```
+[ ] Skip anonymization          ← leave UNCHECKED
+[ ] I understand this trace …   ← only tick if you attach a trace
+```
+
+---
+
+## Field 6 — Other logs
+
+> Attach these five files (all in `bluez-issue/`), and paste the note below
+> into the box.
+
+```
+Decoded ATT exchanges, captured from the HCI monitor socket
+(HCI_CHANNEL_MONITOR, the same feed btmon consumes) and rendered as text.
+The mesh name and the pairing payloads are redacted - they are crypto inputs
+to the device's session key and are not relevant to the defect. Handles,
+opcodes, the CCCD write and every response are untouched.
+
+  capture-A-startnotify-failing.txt
+      The failing path. Two sessions: one where the vendor enable write is
+      acknowledged and 20 notifications stream while the 0x0013 write goes
+      unanswered; one where pairing completes without an enable write and no
+      notifications arrive. Together they isolate what actually starts the
+      reporting - it is not the CCCD write.
+
+  capture-B-handle-0x0013-read.txt
+      READ_REQ 1300 -> "Status". The attribute exists, is readable, and is
+      correctly typed by the device.
+
+  capture-C-after-cache-removal.txt
+      Discovery after `bluetoothctl remove`, still skipping 0x0013.
+
+  capture-D-raw-hci-no-cccd-works.txt
+      Control: same device, same handles, driven over HCI_CHANNEL_USER with
+      the application as its own ATT client. Zero writes to 0x0013, 21
+      notifications, connection still up.
+
+  cache-gatt-db.txt
+      The regenerated cache entry with the synthesized 0013=00002902 line in
+      context.
+
+Raw btsnoop and device MACs available on request - withheld here only because
+the pairing payload in them is brute-forceable back to the mesh credentials.
+```
+
+---
+
+## Field 7 — Versions
+
+```
+- BlueZ version: 5.86 (the discover_descs() single-descriptor optimization is
+  present unchanged on current master, verified 2026-08)
+- Kernel version: 6.18.34-haos-raspi (aarch64), Home Assistant OS
+- Problematic device: GE Cync bulb/switch, Telink TLSR825x SDK firmware.
+  Three units reproduce across two OUI families (F4:BC:DA and 78:6D:EB), which
+  carry an identical attribute table. One of the three had never been connected
+  before - a 28-byte cache file containing only Name= - and reproduced
+  identically, which rules out stale cached state.
+  Adapter: Raspberry Pi 5 built-in, Broadcom BCM4345C0, firmware 003.001.025,
+  patch brcm/BCM4345C0.raspberrypi,5-model-b.hcd, HCI manufacturer 0x0131,
+  HCI version 0x09.
+```
