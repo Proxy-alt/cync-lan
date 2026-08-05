@@ -203,10 +203,15 @@ the link survives.
 * `cache-gatt-db.txt` - the regenerated cache entry with the synthesized line in
   context.
 
-Captures are decoded from the HCI monitor socket (`HCI_CHANNEL_MONITOR`, the
-same feed btmon consumes). The mesh name and pairing payloads are redacted -
-they are crypto inputs to the device's session key and are not relevant to the
-defect; handles, opcodes and the CCCD write are untouched. Raw btsnoop and
-device MACs available on request.
+* `btmon-startnotify.btsnoop` - binary trace of the reproduction, attached in
+  the trace field. Captured **without performing the vendor pairing at all**,
+  since the defect needs no authenticated session: discovery skipping `0x0013`,
+  the read returning `"Status"`, and the `0100` write, in one connection.
+
+Decoded captures come from the HCI monitor socket (`HCI_CHANNEL_MONITOR`, the
+same feed btmon consumes). Where a pairing exchange appears in them it is
+redacted - it is a crypto input to the device's session key and irrelevant to
+the defect; handles, opcodes and the CCCD write are untouched. Device MACs
+available on request.
 
 Happy to test patches against the physical devices.

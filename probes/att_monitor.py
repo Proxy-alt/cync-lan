@@ -22,6 +22,7 @@ import socket
 import struct
 import sys
 import time
+from typing import BinaryIO
 
 AF_BLUETOOTH = 31
 BTPROTO_HCI = 1
@@ -85,8 +86,78 @@ def describe(pdu: bytes) -> str:
     return f"{name} {pdu[1:].hex()[:40]}"
 
 
+# btsnoop, as bluez/src/shared/btsnoop.c writes it for monitor traces:
+# datalink 2001, flags carrying (index << 16) | monitor-opcode, and a
+# timestamp counted from the format's own epoch.
+BTSNOOP_DATALINK_MONITOR = 2001
+BTSNOOP_TS_EPOCH = 0x00DCDDB30F2F8000
+BTSNOOP_TS_2000 = 946684800
+
+
+def btsnoop_open(path: str) -> BinaryIO:
+    handle = open(path, "wb")
+    handle.write(b"btsnoop\x00" + struct.pack(">II", 1, BTSNOOP_DATALINK_MONITOR))
+    return handle
+
+
+# The vendor's pairing characteristic. Its write value carries a proof
+# derived from the mesh name and password, and R_app is a fixed SDK constant
+# rather than a nonce - so with the mesh name (which travels as the BLE device
+# name) the proof is brute-forceable back to the credentials over a 10^9
+# keyspace. Any trace that leaves this machine has those bytes zeroed. Other
+# clients on the same adapter pair while we capture, so this cannot be avoided
+# by simply not pairing ourselves.
+PAIRING_HANDLE = 0x001B
+_last_read: dict[int, int] = {}
+
+
+def _scrub(payload: bytes) -> bytes:
+    """Zero the pairing value in an ACL record, leaving everything else exact."""
+    if len(payload) < 9:
+        return payload
+    handle_flags, dlen = struct.unpack("<HH", payload[:4])
+    conn = handle_flags & 0x0FFF
+    l2len, cid = struct.unpack("<HH", payload[4:8])
+    if cid != ATT_CID:
+        return payload
+    pdu = payload[8 : 8 + l2len]
+    if not pdu:
+        return payload
+    op = pdu[0]
+    if op in (0x0A, 0x12) and len(pdu) >= 3:
+        target = struct.unpack("<H", pdu[1:3])[0]
+        if op == 0x0A:
+            _last_read[conn] = target
+        if target == PAIRING_HANDLE and op == 0x12 and len(pdu) > 3:
+            scrubbed = pdu[:3] + bytes(len(pdu) - 3)
+            return payload[:8] + scrubbed + payload[8 + l2len :]
+    if op == 0x0B and _last_read.get(conn) == PAIRING_HANDLE and len(pdu) > 1:
+        return payload[:8] + pdu[:1] + bytes(len(pdu) - 1) + payload[8 + l2len :]
+    return payload
+
+
+def btsnoop_write(handle: BinaryIO, opcode: int, index: int, payload: bytes) -> None:
+    if opcode in (OP_ACL_TX, OP_ACL_RX):
+        payload = _scrub(payload)
+    now = time.time()
+    ts = int((now - BTSNOOP_TS_2000) * 1_000_000) + BTSNOOP_TS_EPOCH
+    handle.write(
+        struct.pack(
+            ">IIIIq",
+            len(payload),
+            len(payload),
+            (index << 16) | opcode,
+            0,
+            ts,
+        )
+        + payload
+    )
+    handle.flush()
+
+
 def main() -> int:
     duration = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
+    snoop = btsnoop_open(sys.argv[2]) if len(sys.argv) > 2 else None
     sock = socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI)
     try:
         sock.bind((HCI_DEV_NONE, HCI_CHANNEL_MONITOR))
@@ -115,6 +186,8 @@ def main() -> int:
             continue
         opcode, _index, plen = struct.unpack("<HHH", data[:6])
         body = data[6 : 6 + plen]
+        if snoop is not None:
+            btsnoop_write(snoop, opcode, _index, body)
         if opcode not in (OP_ACL_TX, OP_ACL_RX) or len(body) < 4:
             continue
 
@@ -145,6 +218,8 @@ def main() -> int:
             continue
         print(f"{time.strftime('%H:%M:%S')} conn=0x{conn:03x} {direction}  {describe(pdu)}")
 
+    if snoop is not None:
+        snoop.close()
     print("# done")
     return 0
 

@@ -81,12 +81,25 @@ to see and none of the credential material.
 
 ## Field 3 — btmon trace
 
-Leave empty. See the warning above.
+**Attach `btmon-startnotify.btsnoop`.** It is safe to publish.
 
-If you would rather attach one, capture it so the pairing exchange falls
-outside the window: connect and authenticate first, start `btmon -w` only then,
-and trigger `StartNotify` alone. The `0x0013` write, its non-response and the
-teardown are all that the analysis needs.
+The credential problem is avoided rather than redacted: the defect needs no mesh
+authentication, so this capture was taken with the vendor pairing never
+performed. Verified — **zero writes to `0x001b` appear in it**. `cync_ble` was
+disabled during the capture so no other client on the host could pair either.
+
+What it contains, in one connection:
+
+```
+FIND_INFORMATION_REQ 0x0004 / 0x0016 / 0x0019 / 0x001c   ← 0x0013 never queried
+READ_REQ  handle=0x0013  →  READ_RSP 53 74 61 74 75 73   ← "Status"
+WRITE_REQ handle=0x0013  value=0100                      ← the synthesized CCCD
+```
+
+Trimmed to the HCI layer: 8,991 records, mgmt-channel scan reports dropped.
+Those were two thirds of the file and carried every neighbouring device's
+address while adding nothing diagnostic. Format validated by round-trip parse -
+btsnoop v1, datalink 2001.
 
 ---
 
@@ -106,8 +119,12 @@ but the discovery gap is the defect.)
 
 ```
 [ ] Skip anonymization          ← leave UNCHECKED
-[ ] I understand this trace …   ← only tick if you attach a trace
+[x] I understand this trace …   ← tick, since a trace is attached
 ```
+
+Leave anonymization on regardless. The trace carries no pairing material, but
+the mesh name travels as the BLE device *name* in advertisements, and name
+scrubbing is exactly what the default covers.
 
 ---
 
@@ -146,8 +163,9 @@ opcodes, the CCCD write and every response are untouched.
       The regenerated cache entry with the synthesized 0013=00002902 line in
       context.
 
-Raw btsnoop and device MACs available on request - withheld here only because
-the pairing payload in them is brute-forceable back to the mesh credentials.
+A btsnoop of the same reproduction is attached in the trace field above. It
+was captured without performing the vendor pairing at all, so it carries no
+key material - the defect does not require an authenticated session.
 ```
 
 ---
