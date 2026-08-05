@@ -1,6 +1,7 @@
 # The characteristic declares Notify and has no CCCD
 
-**Status: confirmed on hardware via CoreBluetooth.** The Telink notify
+**Status: confirmed on hardware via CoreBluetooth; one corroborating capture
+outstanding (see "the one loose end").** The Telink notify
 characteristic (`...1911`) advertises the `notify` property and ships **no
 Client Characteristic Configuration Descriptor**. Its only descriptor is
 `0x2901`, Characteristic User Description.
@@ -16,6 +17,51 @@ This firmware declares the capability and omits the mechanism.
 
 *** LINK SURVIVED 60s after the CCCD write.
 ```
+
+## Reconciling this with handle 0x0013
+
+`ble_cccd_isolated_write_test.md` records a CCCD at **handle `0x0013`**,
+"confirmed twice" — once from a `bleak --gatt` dump and again as the notify
+characteristic's value handle `0x0012` plus one. If that descriptor exists,
+this finding cannot be right. It is the obvious objection and it deserves a
+direct answer.
+
+The two observations reconcile, and the resolving evidence is already in that
+same document:
+
+**A bare `ATT_Write_Request` to `0x0013` — no BlueZ, no subscribe wrapper, just
+bumble writing to the handle — got silence.** No Write Response, no Error
+Response. A real attribute answers a Write Request; the spec requires it. An
+ATT server with nothing matching that handle is exactly what produces no reply.
+That document called the silence "non-compliant behaviour on the device's part";
+the simpler reading is that there was nothing there to answer.
+
+**The `bleak --gatt` dump is not independent of BlueZ.** bleak on Linux does
+not do its own descriptor discovery — it reports the GATT table BlueZ hands it,
+and BlueZ populates a CCCD for any characteristic declaring `notify`. So
+`0x0013` is BlueZ's *inference* from the notify property, at the conventional
+value-handle-plus-one offset, rather than something read off the device.
+
+CoreBluetooth's enumeration is not an inference. `discoverDescriptors` issues a
+real ATT Find Information Request and reports what comes back. Three
+peripherals, three complete enumerations, one descriptor each.
+
+### The one loose end, stated plainly
+
+That same document reports BlueZ's `StartNotify` receiving an explicit ATT
+error `0x0E` ("Unlikely Error") and attributes it to the device. If the device
+really sent that, the handle exists and this finding is wrong.
+
+But the same handle, written bare, produced *silence* — and one attribute
+cannot both answer and not answer. The consistent explanation is that `0x0E` is
+**synthesised by BlueZ** when its own descriptor write times out, not received
+from the peer.
+
+**That is the piece still to confirm**, and it is a single btmon capture:
+subscribe under BlueZ and look for whether an `ATT_Error_Response` actually
+arrives on the wire from the peer, or whether the error appears only in BlueZ's
+D-Bus reply with nothing corresponding on the air. Until that is run, treat
+this finding's mechanism as the best-supported model rather than settled.
 
 ## Why this replaces the previous explanation
 

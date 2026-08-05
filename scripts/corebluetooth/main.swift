@@ -38,6 +38,7 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var subscribeResolvedAt: Date?
     var notifications = 0
     var finished = false
+    var subject: CBCharacteristic?
 
     func run() {
         central = CBCentralManager(delegate: self, queue: nil)
@@ -124,13 +125,19 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         // be absent rather than present-and-refusing. Discover descriptors and
         // say so outright, because the two readings mean very different things.
         print("[*] Properties: \(describe(char.properties))")
+        // Discovery must COMPLETE before subscribing. Racing them and printing
+        // whatever had arrived reported a partial enumeration as if it were the
+        // whole table - which is how the first version of this test wrongly
+        // concluded there was no CCCD.
+        self.subject = char
         p.discoverDescriptors(for: char)
+    }
 
+    func proceed(_ p: CBPeripheral, _ char: CBCharacteristic) {
         print("[*] Writing the vendor enable byte (a plain value write, not the CCCD)")
         p.writeValue(Data([0x01]), for: char, type: .withResponse)
 
         print("[*] Calling setNotifyValue - THIS is the CCCD write")
-        subscribeResolvedAt = nil
         p.setNotifyValue(true, for: char)
 
         // Whatever the descriptor write does, hold the link and see whether it
@@ -159,13 +166,19 @@ final class Probe: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         didDiscoverDescriptorsFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        let found = characteristic.descriptors ?? []
-        if found.isEmpty {
-            print("[!] NO DESCRIPTORS on the notify characteristic - there is no")
-            print("    CCCD (0x2902) to write. Subscribing cannot work by the book.")
-        } else {
-            for d in found { print("[*] descriptor present: \(d.uuid)") }
+        if let error {
+            print("[!] descriptor discovery errored: \(error.localizedDescription)")
         }
+        let found = characteristic.descriptors ?? []
+        print("[*] descriptor discovery COMPLETE - \(found.count) descriptor(s):")
+        for d in found { print("      \(d.uuid)  (\(d.uuid.uuidString))") }
+        let hasCCCD = found.contains { $0.uuid.uuidString.uppercased().hasPrefix("2902") }
+        print(hasCCCD
+            ? "[*] CCCD 0x2902 IS present in discovery"
+            : "[!] CCCD 0x2902 NOT returned by discovery - note that independent"
+              + "\n    bleak --gatt dumps on Linux DO report handle 0x0013 here,"
+              + "\n    so discovery and reality may disagree on this firmware.")
+        proceed(p, characteristic)
     }
 
     func peripheral(
