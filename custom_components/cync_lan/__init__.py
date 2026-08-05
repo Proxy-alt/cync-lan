@@ -25,7 +25,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
@@ -33,12 +37,14 @@ from .bridge import CyncLanBridge
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_CAPTURE_FIRMWARE,
+    CONF_INDICATOR_LED_AS_LIGHT,
     CONF_CAPTURE_UNKNOWN_PACKETS,
     CONF_HUB_ENVELOPE_BARE,
     CONF_ACCOUNT_USERNAME,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
     DEFAULT_CAPTURE_FIRMWARE,
+    DEFAULT_INDICATOR_LED_AS_LIGHT,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
     DEFAULT_HUB_ENVELOPE_BARE,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
@@ -105,9 +111,13 @@ class CyncLanRuntimeData:
     bridge: CyncLanBridge
     ncync_server: "nCyncServer"
     server_task: "asyncio.Task[None]"
-    groups: Optional[dict[int, dict[str, Any]]] = None  # {group_id: {"name", "device_ids", "is_subgroup"}}
+    groups: Optional[dict[int, dict[str, Any]]] = (
+        None  # {group_id: {"name", "device_ids", "is_subgroup"}}
+    )
     scenes: Optional[dict[int, dict[str, Any]]] = None  # {scene_id: {"name"}}
-    schedules: Optional[dict[int, dict[str, Any]]] = None  # {schedule_id: {"name", "scene_id", "enabled"}}
+    schedules: Optional[dict[int, dict[str, Any]]] = (
+        None  # {schedule_id: {"name", "scene_id", "enabled"}}
+    )
     unsub_refresh: Optional[CALLBACK_TYPE] = None
     unsub_no_devices_check: Optional[CALLBACK_TYPE] = None
     # Stashed by light.py's async_setup_entry so light groups can be added
@@ -310,6 +320,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, _NO_DEVICES_CHECK_DELAY, _check_no_devices_connected
     )
 
+    _prune_indicator_led_entities(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     async_setup_services(hass)
     return True
@@ -431,3 +443,33 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     async_unload_services(hass)
     return unloaded
+
+
+# The two presentations of the indicator ring, by unique_id suffix. Only one
+# set is created at a time (see light.py's CyncLanIndicatorLedLight), so the
+# other has to be cleared out of the registry - otherwise flipping the option
+# leaves the previous form behind as permanently unavailable entities, which
+# looks like something broke rather than something moved.
+_INDICATOR_LED_AS_LIGHT_SUFFIXES = ("_indicator_led_light",)
+_INDICATOR_LED_AS_CONTROLS_SUFFIXES = (
+    "_indicator_led_mode",
+    "_indicator_led_color",
+    "_indicator_led_brightness",
+    "_indicator_led_wifi_blink",
+)
+
+
+def _prune_indicator_led_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove whichever indicator-LED form this entry is not using."""
+    as_light = entry.options.get(
+        CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT
+    )
+    stale = (
+        _INDICATOR_LED_AS_CONTROLS_SUFFIXES
+        if as_light
+        else _INDICATOR_LED_AS_LIGHT_SUFFIXES
+    )
+    registry = er.async_get(hass)
+    for reg_entry in list(er.async_entries_for_config_entry(registry, entry.entry_id)):
+        if reg_entry.unique_id.endswith(stale):
+            registry.async_remove(reg_entry.entity_id)

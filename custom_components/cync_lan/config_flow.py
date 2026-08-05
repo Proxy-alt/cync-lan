@@ -39,6 +39,7 @@ from .const import (
     CONF_ENABLE_LIGHT_GROUPS,
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_HIDE_GROUP_MEMBERS,
+    CONF_INDICATOR_LED_AS_LIGHT,
     CONF_LOCAL_PORT,
     DEFAULT_CAPTURE_FIRMWARE,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
@@ -47,6 +48,7 @@ from .const import (
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS,
     DEFAULT_HIDE_GROUP_MEMBERS,
+    DEFAULT_INDICATOR_LED_AS_LIGHT,
     DEFAULT_LOCAL_PORT,
     DOMAIN,
     FADE_OPTIONS,
@@ -522,6 +524,13 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         default=current.get(
                             CONF_CAPTURE_UNKNOWN_PACKETS,
                             DEFAULT_CAPTURE_UNKNOWN_PACKETS,
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_INDICATOR_LED_AS_LIGHT,
+                        default=current.get(
+                            CONF_INDICATOR_LED_AS_LIGHT,
+                            DEFAULT_INDICATOR_LED_AS_LIGHT,
                         ),
                     ): bool,
                     vol.Required(

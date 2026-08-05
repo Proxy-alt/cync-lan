@@ -16,20 +16,22 @@ from homeassistant.components.light import (
 )
 from homeassistant.components.light.const import ColorMode, LightEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import EntityCategory, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_ENABLE_LIGHT_GROUPS,
+    CONF_INDICATOR_LED_AS_LIGHT,
     CONF_HIDE_GROUP_MEMBERS,
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_HIDE_GROUP_MEMBERS,
+    DEFAULT_INDICATOR_LED_AS_LIGHT,
     DOMAIN,
 )
 from .bridge import CyncLanBridge
-from .entity import CyncLanEntity
+from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
@@ -96,6 +98,20 @@ async def async_setup_entry(
             continue
         entities.append(CyncLanLight(bridge, entry.entry_id, node))
         light_dev_ids.append(node.id)
+
+    # The status ring as a light, when the user has chosen that form. It is
+    # exclusive with the select/number/switch trio rather than additional to
+    # it: all of them write the same single atomic mesh command, so shipping
+    # both would put two UIs in a race over one piece of hardware and let
+    # them disagree about its state. The other platforms skip their
+    # indicator entities when this is on, and stale ones are removed from
+    # the registry so flipping the option does not leave debris behind.
+    if entry.options.get(CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT):
+        for node in runtime_data.ncync_server.node_devices.values():
+            if node.metadata is None or not node.metadata.supported:
+                continue
+            entities.append(CyncLanIndicatorLedLight(bridge, entry.entry_id, node))
+
     async_add_entities(entities)
 
     # Stashed so groups can be (re)applied later - e.g. from the options
@@ -224,7 +240,9 @@ def _apply_group_member_visibility(
 class CyncLanLight(CyncLanEntity, LightEntity):
     _attr_name = None  # has-entity-name: device name is the entity name
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(bridge, entry_id, node)
         modes: set[ColorMode] = set()
         if node.supports_temperature:
@@ -240,9 +258,13 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         self._attr_color_mode = next(iter(modes))
         if node.metadata and node.metadata.characteristics:
             if node.metadata.characteristics.min_kelvin:
-                self._attr_min_color_temp_kelvin = node.metadata.characteristics.min_kelvin
+                self._attr_min_color_temp_kelvin = (
+                    node.metadata.characteristics.min_kelvin
+                )
             if node.metadata.characteristics.max_kelvin:
-                self._attr_max_color_temp_kelvin = node.metadata.characteristics.max_kelvin
+                self._attr_max_color_temp_kelvin = (
+                    node.metadata.characteristics.max_kelvin
+                )
 
     @property
     def is_on(self) -> bool | None:
@@ -311,7 +333,9 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         if ATTR_EFFECT in kwargs:
             await self._node.set_light_effect(kwargs[ATTR_EFFECT])
         bri_pct = (
-            round(kwargs[ATTR_BRIGHTNESS] * 100 / 255) if ATTR_BRIGHTNESS in kwargs else None
+            round(kwargs[ATTR_BRIGHTNESS] * 100 / 255)
+            if ATTR_BRIGHTNESS in kwargs
+            else None
         )
         min_floor = 5 if (not self._node.is_light and self._node.is_dimmable) else 1
         if ATTR_TRANSITION in kwargs:
@@ -383,3 +407,113 @@ def _light_run_mode_effects() -> KeysView[str]:
     from cync_lan.const import LIGHT_RUN_MODE_EFFECTS
 
     return LIGHT_RUN_MODE_EFFECTS.keys()
+
+
+# The four colours the ring can actually be, and the RGB each one is meant to
+# look like. Confirmed values, not a palette choice: the hardware takes an enum
+# (DimmingLedsIndicatorColor), so anything a colour wheel produces has to be
+# mapped onto one of these four before it can be sent.
+_LED_REFERENCE_RGB: dict[str, tuple[int, int, int]] = {
+    "white": (255, 255, 255),
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
+}
+
+
+def nearest_led_color(rgb: tuple[int, int, int]) -> str:
+    """The ring colour closest to an arbitrary RGB value.
+
+    Straight Euclidean distance in RGB space. Not perceptually uniform - CIEDE
+    2000 would be the "correct" answer - but with only four widely separated
+    reference points, every input is unambiguously nearest one of them and the
+    extra machinery would not change a single result.
+
+    Ties go to the earlier entry in `_LED_REFERENCE_RGB`, which only happens on
+    exact midpoints such as (255, 255, 0) between red and green.
+    """
+    red, green, blue = rgb
+    return min(
+        _LED_REFERENCE_RGB,
+        key=lambda name: (
+            (red - _LED_REFERENCE_RGB[name][0]) ** 2
+            + (green - _LED_REFERENCE_RGB[name][1]) ** 2
+            + (blue - _LED_REFERENCE_RGB[name][2]) ** 2
+        ),
+    )
+
+
+class CyncLanIndicatorLedLight(CyncLanIndicatorLedEntity, LightEntity):
+    """A switch's status ring, presented as a light.
+
+    The point is reach rather than capability: the select/number/switch trio
+    already sets everything this does, but none of them can be dropped on a
+    light card, and none are exposed to HomeKit or Alexa as a light. This is,
+    so "set the porch switch ring to red" works from anywhere that speaks
+    lights.
+
+    Two lossy edges, both unavoidable and both deliberate:
+
+    - **Colour is snapped.** The hardware takes an enum of four colours, so an
+      arbitrary RGB is mapped to the nearest of them (`nearest_led_color`). The
+      entity then reports back the *reference* RGB rather than what was asked
+      for, because reporting the requested value would claim a precision the
+      device does not have.
+    - **On/off maps onto mode**, which has three values, not two. Off is
+      `always_off`. On is `always_on` - except when the mode is already
+      `normal`, which is already "on" in every sense that matters, and
+      overwriting it would silently destroy a setting the user chose from the
+      select entity. So turning on a ring that is already in `normal` leaves it
+      there.
+
+    `assumed_state` for the same reason as its siblings: the device never
+    reports this back over the mesh.
+    """
+
+    _attr_translation_key = "indicator_led_light"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_assumed_state = True
+    _attr_color_mode = ColorMode.RGB
+
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_indicator_led_light"
+        )
+        # Instance rather than class attribute, matching CyncLanLight above -
+        # a mutable class-level default is shared across every instance.
+        self._attr_supported_color_modes = {ColorMode.RGB}
+
+    @property
+    def _led(self) -> Any:
+        return self._bridge.get_indicator_led(self._node.id)
+
+    @property
+    def is_on(self) -> bool:
+        return self._led.mode != "always_off"
+
+    @property
+    def brightness(self) -> int:
+        # The ring is 0-100; HA lights are 0-255.
+        return round(max(0, min(100, self._led.brightness)) * 255 / 100)
+
+    @property
+    def rgb_color(self) -> tuple[int, int, int]:
+        return _LED_REFERENCE_RGB.get(self._led.color, (255, 255, 255))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        fields: dict[str, Any] = {}
+        if (rgb := kwargs.get(ATTR_RGB_COLOR)) is not None:
+            fields["color"] = nearest_led_color(tuple(rgb))
+        if (brightness := kwargs.get(ATTR_BRIGHTNESS)) is not None:
+            fields["brightness"] = round(brightness * 100 / 255)
+        # Only force the mode when the ring is actually off. See the class
+        # docstring: clobbering `normal` on every turn_on would quietly undo a
+        # deliberate choice made through the mode select.
+        if self._led.mode == "always_off":
+            fields["mode"] = "always_on"
+        await self._bridge.set_indicator_led_field(self._node, **fields)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._bridge.set_indicator_led_field(self._node, mode="always_off")

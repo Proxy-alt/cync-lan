@@ -9,6 +9,43 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.8.0
+
+**New: the indicator ring as a light entity** — the thing
+`docs/ha_integration_architecture_and_uiux.md` §3 has described in detail,
+including a sequence diagram, since before it existed. It did not exist:
+`light.py` had no indicator entity and there was no Euclidean snapping anywhere
+in the integration. Now there is.
+
+The point is reach, not capability. The select/number/switch trio already sets
+everything this does, but none of them can go on a light card, and none are
+exposed to HomeKit or Alexa as a light. This is — so "set the porch switch ring
+to red" works from anywhere that speaks lights.
+
+**Enabled by a setting, and exclusive with the trio.** Turn on "Show the
+indicator ring as a light instead of separate controls" and the light appears
+while the select/number/switch entities stand down; turn it off and they come
+back. Not both at once: all of them write the same *single atomic* mesh command,
+so shipping both would put two UIs in a race over one piece of hardware and let
+them disagree about its state. Whichever form is not in use is removed from the
+entity registry, so flipping the option does not strand the other set as
+permanently-unavailable entities.
+
+Two lossy edges, both deliberate and both documented in the entity:
+
+- **Colour is snapped.** The hardware takes an enum of four colours
+  (`DimmingLedsIndicatorColor`), so an arbitrary RGB is mapped to the nearest by
+  Euclidean distance. The entity then reports the *reference* RGB back rather
+  than what was requested — reporting the request would claim a precision the
+  device does not have. Not perceptually uniform, and with four widely separated
+  points CIEDE2000 would not change a single result.
+- **On/off maps onto mode**, which has three values. Off is `always_off`, on is
+  `always_on` — *except* when the mode is already `normal`, which is on in every
+  sense that matters. Forcing `always_on` there would silently undo a setting
+  chosen from the mode select, so a ring already in `normal` is left alone.
+
+`assumed_state`, like its siblings: the device never reports this back.
+
 ### 2.7.0
 
 **New: a "Last firmware released" sensor, for people who turn on firmware

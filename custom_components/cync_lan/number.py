@@ -25,6 +25,18 @@ if TYPE_CHECKING:
 PARALLEL_UPDATES = 0
 
 
+# Indicator-LED presentation: one form or the other, never both. All of these
+# entities write the same single atomic mesh command, so offering both a light
+# and the select/number/switch trio would put two UIs in a race over one piece
+# of hardware and let them disagree about its state.
+def _indicator_led_is_a_light(entry: ConfigEntry) -> bool:
+    from .const import CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT
+
+    return bool(
+        entry.options.get(CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT)
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -34,7 +46,8 @@ async def async_setup_entry(
     for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
-        entities.append(CyncLanIndicatorLedBrightness(bridge, entry.entry_id, node))
+        if not _indicator_led_is_a_light(entry):
+            entities.append(CyncLanIndicatorLedBrightness(bridge, entry.entry_id, node))
 
     # Experimental-only. Gated like the experimental_* services - the
     # cmd_code for this command is predicted, not confirmed.
@@ -55,7 +68,9 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class CyncLanIndicatorLedBrightness(CyncLanIndicatorLedEntity, RestoreNumber, NumberEntity):
+class CyncLanIndicatorLedBrightness(
+    CyncLanIndicatorLedEntity, RestoreNumber, NumberEntity
+):
     _attr_translation_key = "indicator_led_brightness"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_assumed_state = True
@@ -64,8 +79,12 @@ class CyncLanIndicatorLedBrightness(CyncLanIndicatorLedEntity, RestoreNumber, Nu
     _attr_native_step = 1
     _attr_mode = NumberMode.SLIDER
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
-        super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_brightness")
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_indicator_led_brightness"
+        )
 
     @property
     def native_value(self) -> int:
@@ -101,7 +120,9 @@ class CyncLanMultiColorSegmentCount(CyncLanEntity, RestoreNumber, NumberEntity):
     _attr_native_step = 1
     _attr_mode = NumberMode.BOX
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(
             bridge, entry_id, node, unique_id_suffix="_multicolor_segment_count"
         )
@@ -136,7 +157,9 @@ class CyncLanDimmerLedBrightness(CyncLanEntity, RestoreNumber, NumberEntity):
     _attr_native_step = 1
     _attr_mode = NumberMode.SLIDER
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(
             bridge, entry_id, node, unique_id_suffix="_dimmer_led_brightness"
         )

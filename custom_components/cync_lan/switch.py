@@ -35,6 +35,18 @@ if TYPE_CHECKING:
 PARALLEL_UPDATES = 0
 
 
+# Indicator-LED presentation: one form or the other, never both. All of these
+# entities write the same single atomic mesh command, so offering both a light
+# and the select/number/switch trio would put two UIs in a race over one piece
+# of hardware and let them disagree about its state.
+def _indicator_led_is_a_light(entry: ConfigEntry) -> bool:
+    from .const import CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT
+
+    return bool(
+        entry.options.get(CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT)
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -54,7 +66,10 @@ async def async_setup_entry(
         # gated on is_switch like the device's own primary switch/light
         # entity above (the indicator LED is a whole-device feature, see
         # select.py/number.py for its sibling mode/color/brightness entities).
-        entities.append(CyncLanIndicatorLedWifiBlinkSwitch(bridge, entry.entry_id, node))
+        if not _indicator_led_is_a_light(entry):
+            entities.append(
+                CyncLanIndicatorLedWifiBlinkSwitch(bridge, entry.entry_id, node)
+            )
         # MITM debug mode - only devices capable of their own direct TCP
         # connection can be put into MITM mode at all (see
         # CyncLanMitmModeSwitch's docstring); BTLE-mesh-only devices never
@@ -114,7 +129,9 @@ class CyncLanMultiColorGradientSwitch(CyncLanEntity, RestoreEntity, SwitchEntity
     _attr_entity_category = EntityCategory.CONFIG
     _attr_assumed_state = True
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(
             bridge, entry_id, node, unique_id_suffix="_multicolor_gradient_mode"
         )
@@ -197,7 +214,9 @@ class CyncLanGroupPowerSwitch(RestoreEntity, SwitchEntity):
 
 
 class CyncLanSwitch(CyncLanEntity, SwitchEntity):
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice", sub_id: int = 0) -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice", sub_id: int = 0
+    ) -> None:
         super().__init__(bridge, entry_id, node, sub_id=sub_id)
         # entity-device-class (gold): outlet vs generic switch.
         self._attr_device_class = (
@@ -244,7 +263,9 @@ class CyncLanMitmModeSwitch(CyncLanEntity, SwitchEntity):
     _attr_entity_registry_enabled_default = "mitm_mode" not in DEFAULT_DISABLED_ENTITIES
     _attr_assumed_state = True
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_mitm_mode")
 
     @property
@@ -292,8 +313,12 @@ class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, SwitchEntity
     _attr_entity_category = EntityCategory.CONFIG
     _attr_assumed_state = True
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
-        super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_wifi_blink")
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_indicator_led_wifi_blink"
+        )
 
     @property
     def is_on(self) -> bool:
@@ -312,10 +337,14 @@ class CyncLanIndicatorLedWifiBlinkSwitch(CyncLanIndicatorLedEntity, SwitchEntity
         await self._restore_led_field("wifi_disconnect_blink", _parse)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._bridge.set_indicator_led_field(self._node, wifi_disconnect_blink=True)
+        await self._bridge.set_indicator_led_field(
+            self._node, wifi_disconnect_blink=True
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._bridge.set_indicator_led_field(self._node, wifi_disconnect_blink=False)
+        await self._bridge.set_indicator_led_field(
+            self._node, wifi_disconnect_blink=False
+        )
 
 
 class CyncLanScheduleSwitch(RestoreEntity, SwitchEntity):

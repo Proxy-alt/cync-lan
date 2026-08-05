@@ -25,5 +25,5 @@
     "cync-lan>=0.5.2",
     "pyyaml>=6.0.2"
   ],
-  "version": "2.7.0"
+  "version": "2.8.0"
 }

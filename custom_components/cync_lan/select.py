@@ -30,6 +30,18 @@ if TYPE_CHECKING:
 PARALLEL_UPDATES = 0
 
 
+# Indicator-LED presentation: one form or the other, never both. All of these
+# entities write the same single atomic mesh command, so offering both a light
+# and the select/number/switch trio would put two UIs in a race over one piece
+# of hardware and let them disagree about its state.
+def _indicator_led_is_a_light(entry: ConfigEntry) -> bool:
+    from .const import CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT
+
+    return bool(
+        entry.options.get(CONF_INDICATOR_LED_AS_LIGHT, DEFAULT_INDICATOR_LED_AS_LIGHT)
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -39,8 +51,12 @@ async def async_setup_entry(
     for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
-        entities.append(CyncLanIndicatorLedModeSelect(bridge, entry.entry_id, node))
-        entities.append(CyncLanIndicatorLedColorSelect(bridge, entry.entry_id, node))
+        if not _indicator_led_is_a_light(entry):
+            entities.append(CyncLanIndicatorLedModeSelect(bridge, entry.entry_id, node))
+        if not _indicator_led_is_a_light(entry):
+            entities.append(
+                CyncLanIndicatorLedColorSelect(bridge, entry.entry_id, node)
+            )
 
     if entry.options.get(CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL):
         for node in runtime_data.ncync_server.node_devices.values():
@@ -61,7 +77,9 @@ class CyncLanIndicatorLedModeSelect(CyncLanIndicatorLedEntity, SelectEntity):
     _attr_assumed_state = True
     _attr_options = list(LED_MODE_TO_INT)
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_mode")
 
     @property
@@ -84,8 +102,12 @@ class CyncLanIndicatorLedColorSelect(CyncLanIndicatorLedEntity, SelectEntity):
     _attr_assumed_state = True
     _attr_options = list(LED_COLOR_TO_INT)
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
-        super().__init__(bridge, entry_id, node, unique_id_suffix="_indicator_led_color")
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
+        super().__init__(
+            bridge, entry_id, node, unique_id_suffix="_indicator_led_color"
+        )
 
     @property
     def current_option(self) -> str:
@@ -120,7 +142,9 @@ class CyncLanDimmerLedModeSelect(CyncLanEntity, RestoreEntity, SelectEntity):
     _attr_assumed_state = True
     _attr_options = list(DIMMER_LED_MODES)
 
-    def __init__(self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice") -> None:
+    def __init__(
+        self, bridge: CyncLanBridge, entry_id: str, node: "CyncDevice"
+    ) -> None:
         super().__init__(bridge, entry_id, node, unique_id_suffix="_dimmer_led_mode")
         self._attr_current_option = "always_on"
 
