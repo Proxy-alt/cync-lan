@@ -1,0 +1,78 @@
+From: Proxy <mr.eli.pires@gmail.com>
+Subject: [PATCH BlueZ] shared/gatt-client: discover the CCC descriptor instead of assuming it
+
+discover_descs() skips descriptor discovery when a notify/indicate
+characteristic has exactly one descriptor handle, inserting a synthesized
+0x2902 into the database without ever querying the peer. The assumption
+follows Core Spec Vol 3, Part G, 3.3.1.1 - notify or indicate implies a CCC
+- but it is applied to hardware that does not honour that clause.
+
+On Telink TLSR825x based devices (GE Cync bulbs and switches) the only
+descriptor of the notify characteristic is a 0x2901 Characteristic User
+Description reading "Status". No CCC exists anywhere on the service. btmon
+shows FIND_INFORMATION_REQ issued for the descriptor slot following every
+other characteristic and never for this one: the only slot skipped is the
+one following the only characteristic declaring notify.
+
+StartNotify then writes 0100 into that text descriptor. The device leaves
+the Write Request unanswered - its own violation - the ATT transaction
+timeout expires 30 seconds later, and a connection that was carrying live
+notification traffic throughout is torn down. The client is handed
+UNLIKELY_ERROR, which never appeared on the wire. The synthesized
+descriptor is also written to the GATT cache, and regenerated there on
+every fresh discovery, so removing the device does not clear it.
+
+Removing the shortcut costs one round trip per notify characteristic per
+discovery and lets the peer answer for itself. Where a CCC genuinely
+exists, nothing changes. Where it does not, gatt_db_attribute_get_ccc()
+returns NULL, chrc->ccc_handle stays zero, and register_notify() already
+handles that case correctly - it completes the request and registers the
+handler locally without writing anything. Notifications are dispatched on
+a value handle match, so they continue to be delivered, and the link
+survives.
+
+Reported and reproduced on three units across two OUI families, one of
+which had never been connected before.
+
+---
+ src/shared/gatt-client.c | 19 -------------------
+ 1 file changed, 19 deletions(-)
+
+diff --git a/src/shared/gatt-client.c b/src/shared/gatt-client.c
+--- a/src/shared/gatt-client.c
++++ b/src/shared/gatt-client.c
+@@ -772,31 +772,12 @@
+ 			free(chrc_data);
+ 			continue;
+ 		}
+ 
+ 		desc_start = chrc_data->value_handle + 1;
+ 
+-		if (desc_start == chrc_data->end_handle &&
+-			(chrc_data->properties & BT_GATT_CHRC_PROP_NOTIFY ||
+-			 chrc_data->properties & BT_GATT_CHRC_PROP_INDICATE)) {
+-			bt_uuid_t ccc_uuid;
+-
+-			/* If there is only one descriptor that must be the CCC
+-			 * in case either notify or indicate are supported.
+-			 */
+-			bt_uuid16_create(&ccc_uuid,
+-					GATT_CLIENT_CHARAC_CFG_UUID);
+-			attr = gatt_db_insert_descriptor(client->db, desc_start,
+-							&ccc_uuid, 0, NULL,
+-							NULL, NULL);
+-			if (attr) {
+-				free(chrc_data);
+-				continue;
+-			}
+-		}
+-
+ 		/* Check if the start range is within characteristic range */
+ 		if (desc_start > chrc_data->end_handle) {
+ 			free(chrc_data);
+ 			continue;
+ 		}
+ 
+-- 
+2.51.0
+
