@@ -1,51 +1,54 @@
-# The characteristic declares Notify and has no CCCD
+# BlueZ writes notification-enable bytes into a text label
 
-**Status: confirmed on hardware, two independent ways.** CoreBluetooth's
-descriptor discovery reports no CCCD, and an on-air ATT capture under BlueZ
-shows the device never answering a write to the handle BlueZ assumes is one. The Telink notify
-characteristic (`...1911`) advertises the `notify` property and ships **no
-Client Characteristic Configuration Descriptor**. Its only descriptor is
-`0x2901`, Characteristic User Description.
+**Status: settled on hardware, three ways.** The Telink notify characteristic
+(`...1911`) declares the `notify` property and has **no CCCD**. The single
+descriptor it does have, at handle `0x0013`, is a **`0x2901` Characteristic
+User Description** whose value is the ASCII string `"Status"`.
 
-Per the Bluetooth Core specification, a characteristic with the Notify property
-**must** expose a CCCD (`0x2902`) — that descriptor is how a client subscribes.
-This firmware declares the capability and omits the mechanism.
+BlueZ reports that same handle as a `0x2902` CCCD and writes `0100` into it.
 
 ```
-[*] Properties: read,write,writeNoResp,notify
-[*] descriptor present: Characteristic User Description
-[!] setNotifyValue REFUSED after 0.87s: The attribute could not be found.
-
-*** LINK SURVIVED 60s after the CCCD write.
+BlueZ lists descriptor 00002902-0000-1000-8000-00805f9b34fb handle=0x0013
+READ handle=0x0013 -> OK 537461747573        # "Status"
+READ handle=0x0016 -> OK 436f6d6d616e64      # "Command"
 ```
 
-## Reconciling this with handle 0x0013
+On the air, that read is an ordinary successful ATT exchange:
 
-`ble_cccd_isolated_write_test.md` records a CCCD at **handle `0x0013`**,
-"confirmed twice" — once from a `bleak --gatt` dump and again as the notify
-characteristic's value handle `0x0012` plus one. If that descriptor exists,
-this finding cannot be right. It is the obvious objection and it deserves a
-direct answer.
+```
+TX->dev  READ_REQ 1300
+RX<-dev  READ_RSP 537461747573
+```
 
-The two observations reconcile, and the resolving evidence is already in that
-same document:
+The attribute is real, readable, and correctly typed by the device. Two stacks
+look at it and disagree about what it is:
 
-**A bare `ATT_Write_Request` to `0x0013` — no BlueZ, no subscribe wrapper, just
-bumble writing to the handle — got silence.** No Write Response, no Error
-Response. A real attribute answers a Write Request; the spec requires it. An
-ATT server with nothing matching that handle is exactly what produces no reply.
-That document called the silence "non-compliant behaviour on the device's part";
-the simpler reading is that there was nothing there to answer.
+| stack | what it calls handle 0x0013 | what it does |
+| :--- | :--- | :--- |
+| **CoreBluetooth** | `0x2901` Characteristic User Description | reports no CCCD, `setNotifyValue` fails cleanly, link survives |
+| **BlueZ** | `0x2902` CCCD | writes `0100` into it, gets silence, synthesises `UNLIKELY_ERROR` |
 
-**The `bleak --gatt` dump is not independent of BlueZ.** bleak on Linux does
-not do its own descriptor discovery — it reports the GATT table BlueZ hands it,
-and BlueZ populates a CCCD for any characteristic declaring `notify`. So
-`0x0013` is BlueZ's *inference* from the notify property, at the conventional
-value-handle-plus-one offset, rather than something read off the device.
+CoreBluetooth is reading the UUID the device declared. BlueZ is overriding it
+with an assumption: the characteristic says `notify`, therefore the handle
+after its value handle must be a CCCD.
 
-CoreBluetooth's enumeration is not an inference. `discoverDescriptors` issues a
-real ATT Find Information Request and reports what comes back. Three
-peripherals, three complete enumerations, one descriptor each.
+The capture shows BlueZ never checking. Its descriptor discovery issues
+`FIND_INFORMATION` for `0x0004`, `0x0016`, `0x0019` and `0x001c` - the slot
+after every *other* characteristic, each answered `0x2901` - and **skips
+`0x0013` entirely**, the one slot it had already decided about.
+
+## Why the handle exists but the descriptor does not
+
+`ble_cccd_isolated_write_test.md` records a CCCD at `0x0013` "confirmed twice",
+once from a `bleak --gatt` dump. That dump is **not independent of BlueZ** -
+bleak on Linux reports the GATT table BlueZ hands it, mislabel included. The
+handle is real; the *type* was never the device's claim.
+
+That also explains the silence when it is written. `0x2901` is a read-only text
+attribute, and `0100` is not a name. The device does not answer the write - it
+should return `WRITE_NOT_PERMITTED` and instead returns nothing, which is its
+own small non-compliance - but the write was never going to do anything even
+if acknowledged.
 
 ### Settled by capture: 0x0E is BlueZ's, not the device's
 
@@ -111,13 +114,13 @@ absent handle. The three stacks then diverge entirely on policy:
 
 | stack | what it does about the CCCD | outcome |
 | :--- | :--- | :--- |
-| **Android** | never writes it — `setCharacteristicNotification` is local-only | works |
-| **CoreBluetooth** | looks for it, does not find it, returns "the attribute could not be found" | **errors, keeps the link** |
-| **BlueZ** | mandates the write in `StartNotify`/`AcquireNotify`, has no way to skip it | **destroys the connection** |
+| **Android** | never writes one — `setCharacteristicNotification` is local-only | works |
+| **CoreBluetooth** | reads the declared UUID, finds no `0x2902`, fails the call | **errors, keeps the link** |
+| **BlueZ** | assumes one at value-handle-plus-one and writes into whatever is there | **synthesises an error, tears the link down** |
 
-So the failure was never about this device being hostile to subscription. It is
-about one stack treating a missing optional-in-practice descriptor as fatal to
-the connection, where the other two treat it as a failed operation.
+So the failure was never about this device being hostile to subscription. One
+stack invented a descriptor that was never declared, wrote into an unrelated
+attribute, and escalated the resulting silence into a destroyed connection.
 
 ## How notifications work at all, then
 
@@ -137,7 +140,7 @@ reason.
 
 Native CoreBluetooth, not bleak — the same API the vendor's own iOS app uses,
 so no translation layer can be blamed for the result. Swift, built as an app
-bundle, in `scripts/corebluetooth/`.
+bundle, in `scripts/corebluetooth/`, and the handle probe in `probes/`.
 
 Two hurdles worth recording, because both cost time:
 
@@ -169,9 +172,22 @@ authentication was performed, and an unauthenticated peer gets nothing.
 This is a considerably stronger argument than the one in the existing gist. The
 claim is no longer "BlueZ handles a refusal worse than other stacks" — it is:
 
-> The device is non-compliant in a specific, nameable way. Two of three major
-> BLE stacks tolerate it and keep working. BlueZ alone escalates a missing
-> descriptor into a destroyed connection, and offers no API to opt out.
+> The device declares a `notify` characteristic with no CCCD - which is
+> non-compliant. BlueZ responds by *assuming* a CCCD it never discovered,
+> writing notification-enable bytes into the `0x2901` text descriptor that
+> actually occupies that handle, and escalating the resulting silence into a
+> destroyed connection. Android and CoreBluetooth both keep working.
 
-`bleak-bumble` works for exactly this reason: as its own ATT client it never
-consults a CCCD it does not need, which is the same position Android is in.
+That is a sharper claim than "BlueZ handles the refusal badly", and it is
+falsifiable in one command: read handle `0x0013` and see a string.
+
+`bleak-bumble` works for the same reason Android does: as its own ATT client it
+never consults a descriptor it does not need.
+
+## What this does not excuse
+
+The device is still non-compliant - a characteristic declaring `notify` is
+required to expose a CCCD, and this one does not. BlueZ's assumption is a
+reasonable shortcut against compliant hardware. The bug is not the assumption;
+it is that BlueZ never verifies it, writes into whatever attribute is at that
+handle, and treats the outcome as fatal.
