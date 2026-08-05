@@ -41,7 +41,7 @@ one.
 
 | Document | What it covers |
 |---|---|
-| [`hardware_verification.md`](hardware_verification.md) | Of 27 experimental commands, one is confirmed against real hardware. This is what still needs testing, ordered by what a single test would resolve. **The most useful thing to read if you own Cync devices and want to help.** |
+| [`hardware_verification.md`](hardware_verification.md) | Of 27 experimental commands, two are confirmed against real hardware. This is what still needs testing, ordered by what a single test would resolve. **The most useful thing to read if you own Cync devices and want to help.** |
 | [`hub_envelope_ab_test.md`](hub_envelope_ab_test.md) | Whether hub commands carry a 7-byte routing prefix. Two envelopes, exact bytes for both, and a toggle to test them against real hardware. |
 | [`cloud_independence_research.md`](cloud_independence_research.md) | Could Cync's servers be replaced entirely? What is authenticated where, and what still depends on the cloud. |
 

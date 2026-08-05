@@ -1,9 +1,10 @@
 # Hardware verification status
 
-Of the 27 experimental commands this project implements, **one** has been
-confirmed against real hardware: `set_indicator_led`. The other 26 were built
-from decompiled source with a `cmd_code` predicted by the length formula in
-[mesh_opcodes.md](mesh_opcodes.md), and have never been observed working.
+Of the 27 experimental commands this project implements, **two** have been
+confirmed against real hardware: `set_indicator_led` and `identify`. The other
+25 were built from decompiled source with a `cmd_code` predicted by the length
+formula in [mesh_opcodes.md](mesh_opcodes.md), and have never been observed
+working.
 
 That is not 26 independent unknowns. Every command travels one of three
 dispatch families, and a single successful test tells you about its whole
@@ -13,7 +14,7 @@ family. **Four tests would resolve the status of all 26.**
 
 | # | Question | Cheapest test | Resolves |
 |---|---|---|---|
-| 1 | Is the `0x8E` mesh-relay envelope right? | **Identify** on any device | 12 commands |
+| 1 | ~~Is the `0x8E` mesh-relay envelope right?~~ | **Answered: yes.** Identify confirmed on an outlet | see Family 1 |
 | 2 | Is the hub-command envelope right? | **Delete scene**, or **Sync hub clock** | 11 commands |
 | 3 | Do query replies come back over the TCP relay at all? | **Hub clock** sensor | 5 queries |
 | 4 | Does the `0xE2` sub-command form work? | A light **transition** | 2 commands |
@@ -48,20 +49,22 @@ or set `custom_components.cync_lan` and `cync_lan` to `debug` in
 
 **If basic on/off does not work, stop.** Nothing below will mean anything.
 
-### Step 1 — Identify, on any device (2 min) → 12 commands
+### Step 1 — Identify — **done, it works**
 
-Press **Identify** on any device. Watch the device.
+Confirmed on an **outlet**. The `0x8E` envelope is right, on a second device
+class and a second sub-code, so Family 1's framing is no longer the open
+question - see that section.
 
-The cleanest signal available: a visible physical effect, on hardware you
-already have, from a command that cannot damage anything. Its family already
-contains the one confirmed command, so success is expected - and *failure*
-here would be the most surprising result in this document, because it would
-contradict that existing evidence.
+Kept here because it is still the right first step for anyone verifying their
+own hardware, and because the result should be reproduced rather than taken on
+one report: a visible physical effect, on hardware you already have, from a
+command that cannot damage anything.
 
-Note what it actually does. "Announce itself" is inferred from the class name,
-not observed.
+What it physically does is still worth writing down if you run it. "Announce
+itself" was inferred from the class name, and one confirmation that *something*
+happens is not a description of what.
 
-- **Works** → the `0x8E` envelope is right. Family 1 is credible; go to step 2.
+- **Works** → matches the existing result; go to step 2.
 - **Nothing** → the predicted `cmd_code` is wrong for the whole family,
   including the entities that already appear to work. Skip to step 3, which
   tests a different family, before concluding anything.
@@ -138,12 +141,26 @@ next poll, and see whether the reading moved to your Home Assistant time.
 
 ## Family 1 — `0x8E` mesh-relay
 
-One confirmed member, so the framing is probably right for all of them.
+**Two confirmed members, on two different device classes.** `set_indicator_led`
+was confirmed on a switch; `identify` has since been confirmed on an **outlet**.
+
+The second confirmation is worth more than a second tick. One member working
+could have meant that member's payload happened to be right; two members with
+different sub-codes (`0x06` and `0x03`), on different device classes, working
+through the same `XlinkCommandDelegate.DefaultImpls.c()` → `h()` dispatch, is
+evidence about the **envelope** rather than about either command. That was the
+open question this family existed to answer.
+
+It does not confirm the remaining ten individually. Each still carries its own
+sub-code and its own payload layout, and a wrong payload inside a right
+envelope fails silently the same way. What has changed is that a failure in
+this family is now most likely that command's own bytes rather than the
+framing everything shares.
 
 | Command | Sub | Needs | Status |
 |---|---|---|---|
 | `set_indicator_led` | `0x06` | any switch | **CONFIRMED** |
-| `identify` | `0x03` | any device | untested |
+| `identify` | `0x03` | any device | **CONFIRMED** (outlet) |
 | `set_dimmer_led_mode` | `0x62` | dimmer switch | untested |
 | `set_dimmer_led_brightness` | `0x63` | dimmer switch | untested |
 | `set_motion_sensor_settings` | `0x07` | motion sensor | untested |
