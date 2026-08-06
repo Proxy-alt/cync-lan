@@ -266,6 +266,31 @@ async def test_hub_envelope_flag_reaches_the_environment(hass, monkeypatch):
     assert os.environ["CYNC_HUB_ENVELOPE"] == "routed"
 
 
+async def test_cloud_passthrough_flag_reaches_the_environment(hass, monkeypatch):
+    """The relay is decided per accepted session from this variable, so the
+    option flipping it is the whole mechanism - see the library's
+    _cloud_passthrough_enabled."""
+    from custom_components.cync_lan.util import configure_environment
+
+    monkeypatch.delenv("CYNC_CLOUD_PASSTHROUGH", raising=False)
+    await configure_environment(hass, "u@e.com", "pw", cloud_passthrough=True)
+    assert os.environ["CYNC_CLOUD_PASSTHROUGH"] == "1"
+
+    await configure_environment(hass, "u@e.com", "pw", cloud_passthrough=False)
+    assert os.environ["CYNC_CLOUD_PASSTHROUGH"] == "0"
+
+
+async def test_cloud_passthrough_is_off_unless_asked_for(hass, monkeypatch):
+    """This one sends the user's traffic to the vendor. Defaulting it on -
+    or leaving a previously-set value standing when the option is off -
+    would be the integration doing the opposite of what it advertises."""
+    from custom_components.cync_lan.util import configure_environment
+
+    monkeypatch.setenv("CYNC_CLOUD_PASSTHROUGH", "1")
+    await configure_environment(hass, "u@e.com", "pw")
+    assert os.environ["CYNC_CLOUD_PASSTHROUGH"] == "0"
+
+
 async def test_hub_envelope_defaults_to_the_shipped_shape(hass, monkeypatch):
     """Default must stay the envelope that has shipped since 0.3.0 - the
     alternate one is an experiment, not a correction."""
@@ -274,6 +299,19 @@ async def test_hub_envelope_defaults_to_the_shipped_shape(hass, monkeypatch):
     monkeypatch.delenv("CYNC_HUB_ENVELOPE", raising=False)
     await configure_environment(hass, "u@e.com", "pw")
     assert os.environ["CYNC_HUB_ENVELOPE"] == "routed"
+
+
+def test_cloud_passthrough_support_detection_matches_installed_library():
+    """The guard must reflect the library actually installed. A wrong answer
+    here means someone turns passthrough on, nothing relays, and there is no
+    way to tell that from the cloud refusing their devices."""
+    import cync_lan.devices as core_devices
+
+    from custom_components.cync_lan.util import cloud_passthrough_supported
+
+    assert cloud_passthrough_supported() is hasattr(
+        core_devices, "_cloud_passthrough_enabled"
+    )
 
 
 def test_hub_envelope_support_detection_matches_installed_library():

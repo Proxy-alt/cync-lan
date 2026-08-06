@@ -37,6 +37,7 @@ from .bridge import CyncLanBridge
 from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_CAPTURE_FIRMWARE,
+    CONF_CLOUD_PASSTHROUGH,
     CONF_INDICATOR_LED_AS_LIGHT,
     CONF_CAPTURE_UNKNOWN_PACKETS,
     CONF_HUB_ENVELOPE_BARE,
@@ -44,6 +45,7 @@ from .const import (
     CONF_EXPORT_REFRESH_INTERVAL,
     CONF_LOCAL_PORT,
     DEFAULT_CAPTURE_FIRMWARE,
+    DEFAULT_CLOUD_PASSTHROUGH,
     DEFAULT_INDICATOR_LED_AS_LIGHT,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
     DEFAULT_HUB_ENVELOPE_BARE,
@@ -182,6 +184,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ),
         capture_firmware=entry.options.get(
             CONF_CAPTURE_FIRMWARE, DEFAULT_CAPTURE_FIRMWARE
+        ),
+        cloud_passthrough=entry.options.get(
+            CONF_CLOUD_PASSTHROUGH, DEFAULT_CLOUD_PASSTHROUGH
         ),
     )
     os.environ["CYNC_PORT"] = str(

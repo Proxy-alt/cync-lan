@@ -63,6 +63,7 @@
           "capture_unknown_packets": "Capture unrecognised packets to a log file (advanced) - writes the raw hex of anything connecting to the local port that isn't a Cync device. Use this to identify an unknown client; it is noisy, and needs a full Home Assistant restart to take effect, not just a reload.",
           "indicator_led_as_light": "Show the indicator ring as a light instead of separate controls",
           "capture_firmware": "Download firmware updates for inspection (never installs them)",
+          "cloud_passthrough": "Pass device traffic through to the Cync cloud (sends your traffic to the vendor)",
           "hub_envelope_bare": "Use the alternate \"bare\" hub envelope (experiment) - hub commands (scenes, schedules, automations, groups, hub queries) drop the 7-byte routing block, matching how the phone app builds them. Unproven on our wire. Turn this on only if hub commands do nothing with it off, then report which setting worked. Applies immediately, no restart needed."
         }
       },

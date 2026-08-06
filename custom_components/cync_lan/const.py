@@ -37,6 +37,12 @@ CONF_INDICATOR_LED_AS_LIGHT = "indicator_led_as_light"
 # experimental commands are on, because the hub family is entirely
 # experimental. See docs/hub_envelope_ab_test.md.
 CONF_HUB_ENVELOPE_BARE = "hub_envelope_bare"
+# Relay every device (and app) session on to the real Cync cloud while still
+# parsing and controlling locally. This reverses the integration's usual
+# promise - it deliberately sends traffic to the vendor - so it is off by
+# default and says so in its own label. See the library's
+# CyncTCPSession.enable_passthrough.
+CONF_CLOUD_PASSTHROUGH = "cloud_passthrough"
 
 DEFAULT_LOCAL_PORT = 23779
 DEFAULT_EXPORT_REFRESH_INTERVAL_HOURS = 24
@@ -47,6 +53,7 @@ DEFAULT_CAPTURE_UNKNOWN_PACKETS = False
 DEFAULT_CAPTURE_FIRMWARE = False
 DEFAULT_INDICATOR_LED_AS_LIGHT = False
 DEFAULT_HUB_ENVELOPE_BARE = False
+DEFAULT_CLOUD_PASSTHROUGH = False
 
 MANUFACTURER = "Savant"
 

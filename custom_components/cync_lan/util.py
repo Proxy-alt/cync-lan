@@ -73,6 +73,7 @@ async def configure_environment(
     capture_unknown_packets: bool = False,
     hub_envelope_bare: bool = False,
     capture_firmware: bool = False,
+    cloud_passthrough: bool = False,
 ) -> None:
     """Point the upstream package's env-var-driven config at this entry.
 
@@ -146,6 +147,13 @@ async def configure_environment(
     else:
         os.environ.pop("CYNC_FIRMWARE_CAPTURE_DIR", None)
 
+    # Cloud passthrough. Re-read per accepted session rather than cached at
+    # import (see the library's _cloud_passthrough_enabled), so this takes
+    # effect on a config-entry reload - but only for sessions opened after
+    # it, since a relay cannot join a stream whose handshake it missed. In
+    # practice that means devices pick it up as they reconnect.
+    os.environ["CYNC_CLOUD_PASSTHROUGH"] = "1" if cloud_passthrough else "0"
+
     os.environ["CYNC_MAX_TCP_CONN"] = str(
         max(wifi_device_count + _MAX_TCP_CONN_HEADROOM, _DEFAULT_MAX_TCP_CONN)
     )
@@ -195,6 +203,27 @@ def hub_envelope_supported() -> bool:
     except Exception:  # noqa: BLE001 - absence is the thing being tested
         return False
     return hasattr(_devices, "_hub_envelope_mode")
+
+
+def cloud_passthrough_supported() -> bool:
+    """Does the installed cync_lan honour CYNC_CLOUD_PASSTHROUGH?
+
+    Same hazard as hub_envelope_supported() and the same shape of answer:
+    the option writes an environment variable that releases before 0.9.0
+    simply ignore. Here the silent no-op is worse than a wrong experiment -
+    someone turning this on expects their devices to reach the cloud again,
+    and would have no way to tell "the relay is off" from "the relay is on
+    and the cloud is refusing them".
+
+    Lazy import for the reason given in configure_environment: cync_lan.const
+    reads its environment at import time, so nothing may import it at module
+    scope.
+    """
+    try:
+        from cync_lan import devices as _devices
+    except Exception:  # noqa: BLE001 - absence is the thing being tested
+        return False
+    return hasattr(_devices, "_cloud_passthrough_enabled")
 
 
 def get_cloud_api(hass: HomeAssistant) -> "CyncCloudAPI":

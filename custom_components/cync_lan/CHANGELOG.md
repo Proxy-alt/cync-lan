@@ -9,6 +9,43 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.9.0
+
+**New: cloud passthrough**, in Configure -> General settings. Every device
+session this server accepts is relayed on to the real Cync cloud from its
+first byte, while the integration goes on parsing that same traffic and
+controlling devices locally. Devices stay cloud-connected, so the vendor's
+app, its schedules and its firmware delivery keep working through a server
+that is also doing its own thing with everything it sees.
+
+**Understand what you are turning on.** With DNS redirection in place, this
+integration is normally the reason your devices never talk to the vendor
+again. This option deliberately undoes that: your device traffic - and, if
+the Cync app connects through this server too, your app traffic - goes to
+the vendor. That is the entire feature, not a side effect. Off by default,
+and the label in the options form says so rather than hiding it in a doc.
+
+Why you might want it anyway: firmware updates only arrive over the cloud
+connection, the Cync app stops being able to change anything once devices
+are redirected, and a passthrough is the only way to watch the vendor's own
+traffic against your own hardware - which is how most of the protocol in
+this repository was worked out in the first place.
+
+The relay is the same machinery behind the per-device "MITM mode" switch
+that has shipped disabled-by-default for a while. What was missing was a way
+to say "all of it", and a way to start relaying without the forced reconnect
+that switch needs - a session enabled at accept time has not read a byte
+yet, so the cloud sees the handshake from the beginning. See the library's
+0.9.0 notes.
+
+A cloud that cannot be reached is not fatal: the session logs and carries on
+in ordinary local-only mode.
+
+**Requires cync-lan 0.9.0 or newer.** Older releases ignore the variable
+this writes, which would look identical to the cloud refusing your devices,
+so the options flow checks and warns rather than letting that happen
+silently - the same guard the hub-envelope toggle uses.
+
 ### 2.8.0
 
 **New: the indicator ring as a light entity** — the thing

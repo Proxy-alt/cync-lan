@@ -33,6 +33,7 @@ from .const import (
     CONF_ACCOUNT_PASSWORD,
     CONF_ACCOUNT_USERNAME,
     CONF_CAPTURE_FIRMWARE,
+    CONF_CLOUD_PASSTHROUGH,
     CONF_CAPTURE_UNKNOWN_PACKETS,
     CONF_HUB_ENVELOPE_BARE,
     CONF_ENABLE_EXPERIMENTAL,
@@ -42,6 +43,7 @@ from .const import (
     CONF_INDICATOR_LED_AS_LIGHT,
     CONF_LOCAL_PORT,
     DEFAULT_CAPTURE_FIRMWARE,
+    DEFAULT_CLOUD_PASSTHROUGH,
     DEFAULT_CAPTURE_UNKNOWN_PACKETS,
     DEFAULT_HUB_ENVELOPE_BARE,
     DEFAULT_ENABLE_EXPERIMENTAL,
@@ -62,6 +64,7 @@ from .services import async_setup_services, push_automation_to_hardware
 from .util import (
     configure_environment,
     get_cloud_api,
+    cloud_passthrough_supported,
     hub_envelope_supported,
     refresh_cloud_export,
 )
@@ -458,6 +461,29 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                     "the original envelope. Upgrade cync-lan before recording "
                     "any result from this experiment"
                 )
+            # Applied here as well as in configure_environment, for the same
+            # reason as the envelope above: the library re-reads this per
+            # accepted session, so a device reconnecting between now and the
+            # end of the reload should already get the new answer. Reading
+            # os.environ instead would test the value the *previous* setup
+            # wrote, which is exactly backwards.
+            passthrough_on = bool(
+                user_input.get(
+                    CONF_CLOUD_PASSTHROUGH,
+                    self._config_entry.options.get(
+                        CONF_CLOUD_PASSTHROUGH, DEFAULT_CLOUD_PASSTHROUGH
+                    ),
+                )
+            )
+            os.environ["CYNC_CLOUD_PASSTHROUGH"] = "1" if passthrough_on else "0"
+            if passthrough_on and not cloud_passthrough_supported():
+                # Same trap as the envelope above, worse consequences - see
+                # cloud_passthrough_supported()'s docstring.
+                _LOGGER.warning(
+                    "Cloud passthrough was enabled, but the installed cync-lan "
+                    "library does not support it and will keep every session "
+                    "local. Upgrade cync-lan to 0.9.0 or newer"
+                )
             # Register or remove the experimental_* services to match the
             # toggle immediately. async_create_entry has already written
             # the new options by this point, so experimental_enabled()
@@ -537,6 +563,12 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                         CONF_CAPTURE_FIRMWARE,
                         default=current.get(
                             CONF_CAPTURE_FIRMWARE, DEFAULT_CAPTURE_FIRMWARE
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_CLOUD_PASSTHROUGH,
+                        default=current.get(
+                            CONF_CLOUD_PASSTHROUGH, DEFAULT_CLOUD_PASSTHROUGH
                         ),
                     ): bool,
                     vol.Required(
