@@ -9,6 +9,24 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.9.1
+
+**Requires cync-lan 0.9.2.** 2.9.0 shipped cloud passthrough against a library
+release with two bugs in that exact path, both found by new end-to-end tests
+that drive the server over a real socket rather than a mocked one:
+
+- `stop_proxy()` caught `Exception` around an `await` on a task it had just
+  cancelled, and `asyncio.CancelledError` has not been an `Exception` since
+  Python 3.8. It raised straight back out and skipped the rest of its own
+  teardown - the cloud connection stayed open, the watcher kept running, and
+  the caller's shutdown was cancelled with it.
+- `start_proxy()` read `self.node.id` to name a task, before the device has
+  identified itself. Because it was only a name, the failure read as "failed
+  to start MITM" and quietly fell back to local-only.
+
+No change to this integration's own code. If you have passthrough switched on,
+this is the version to be on.
+
 ### 2.9.0
 
 **New: cloud passthrough**, in Configure -> General settings. Every device
