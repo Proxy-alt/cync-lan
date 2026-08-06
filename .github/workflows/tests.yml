@@ -36,17 +36,31 @@ jobs:
 
       - run: python -m pip install --upgrade pip
       # Retry: this repo releases cync-lan and this integration back to back,
-      # and PyPI's simple index can lag the publish API by a few minutes. A
-      # just-released pin then resolves locally but not on a fresh runner,
-      # which has produced three spurious red builds.
+      # and PyPI's simple index (what pip reads) lags the publish API (what a
+      # human checks) by minutes, served from a CDN. A just-released pin then
+      # resolves locally but not on a fresh runner.
+      #
+      # Was five 30s attempts, which covers a normal lag but not a slow one -
+      # 2.9.1 burned all five and went red with nothing wrong. Backs off
+      # instead: 15s, 30s, 60s, then 60s a side, ~10 minutes total. The early
+      # attempts stay quick so the common case (index already warm) costs
+      # nothing, and the tail is long enough that a genuinely bad pin is what
+      # a failure means.
       - name: Install dependencies
         run: |
-          for attempt in 1 2 3 4 5; do
+          delays="15 30 60 60 60 60 60 60 60 60 60"
+          attempt=0
+          for delay in $delays; do
+            attempt=$((attempt + 1))
             pip install -r requirements_test.txt && exit 0
-            echo "attempt $attempt failed; the index may not have the "\
-                 "just-published cync-lan yet - waiting 30s"
-            sleep 30
+            echo "attempt $attempt failed; the simple index may not have the"
+            echo "just-published cync-lan yet - waiting ${delay}s"
+            sleep "$delay"
           done
+          # One last try, so the final wait is not wasted.
+          pip install -r requirements_test.txt && exit 0
+          echo "still unresolvable after ~10 minutes - treat this as a real"
+          echo "dependency problem, not propagation"
           exit 1
 
       - name: Run tests
