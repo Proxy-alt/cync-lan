@@ -78,7 +78,16 @@ def test_capability_exception_assertions():
 
 @pytest.mark.enable_socket
 @pytest.mark.asyncio
-async def test_all_12_mock_server_api_endpoints():
+async def test_all_12_mock_server_api_endpoints(socket_enabled):
+    # `socket_enabled` is pytest_homeassistant_custom_component's fixture,
+    # and it is the one that matters here. The enable_socket marker above is
+    # pytest-socket's, and phcc does not consult it: its own autouse cleanup
+    # asserts `not HASocketBlockedError.instances` at teardown, so a blocked
+    # socket fails the test even after the marker "allowed" it. This mock
+    # cloud server binds a real aiohttp TestServer, so it needs the fixture.
+    #
+    # Local runs passed without it, which is why this went unnoticed - the
+    # failure only ever appeared in CI, on the same pinned phcc 0.13.347.
     """Test all 12 REST API endpoints extracted from Cloud.java & Environment.java."""
     server = mock_srv.MockCyncServer()
     async with TestClient(TestServer(server.app)) as client:

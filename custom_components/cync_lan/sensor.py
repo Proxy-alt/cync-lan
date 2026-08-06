@@ -361,7 +361,7 @@ class CyncLanLastFirmwareSensor(SensorEntity):
         )
 
     @property
-    def _capture(self) -> Optional[dict]:
+    def _capture(self) -> Optional[dict[str, Any]]:
         try:
             from cync_lan.cloud_api import CyncCloudAPI
 

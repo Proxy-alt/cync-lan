@@ -15,7 +15,7 @@ pytest-homeassistant-custom-component==0.13.347
 # manifest.json's "requirements", installed so the suite exercises the real
 # published package rather than a stub. Keep in step with manifest.json when
 # either moves.
-cync-lan==0.4.0
+cync-lan==0.9.1
 # Deliberately a range, unlike the rest: Home Assistant pins PyYAML itself
 # (==6.0.3 as of 2026.7.3), so an exact pin here would fight it on every HA
 # bump. This mirrors manifest.json's own bound and lets HA decide.

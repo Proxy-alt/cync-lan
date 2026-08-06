@@ -41,10 +41,14 @@ yet, so the cloud sees the handshake from the beginning. See the library's
 A cloud that cannot be reached is not fatal: the session logs and carries on
 in ordinary local-only mode.
 
-**Requires cync-lan 0.9.0 or newer.** Older releases ignore the variable
+**Requires cync-lan 0.9.1 or newer.** Older releases ignore the variable
 this writes, which would look identical to the cloud refusing your devices,
 so the options flow checks and warns rather than letting that happen
-silently - the same guard the hub-envelope toggle uses.
+silently - the same guard the hub-envelope toggle uses. (0.9.0 carries the
+feature; 0.9.1 adds the type annotations this repository's `mypy` job needs,
+and `requirements_test.txt` moves with it - it had been pinned at 0.4.0
+while the manifest asked for far newer, so CI was exercising a library the
+integration declared it could not work with.)
 
 ### 2.8.0
 

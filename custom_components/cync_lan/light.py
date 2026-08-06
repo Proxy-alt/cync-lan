@@ -89,7 +89,7 @@ async def async_setup_entry(
 ) -> None:
     runtime_data = entry.runtime_data
     bridge = runtime_data.bridge
-    entities = []
+    entities: list[LightEntity] = []
     light_dev_ids = []
     for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
@@ -491,12 +491,12 @@ class CyncLanIndicatorLedLight(CyncLanIndicatorLedEntity, LightEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._led.mode != "always_off"
+        return bool(self._led.mode != "always_off")
 
     @property
     def brightness(self) -> int:
         # The ring is 0-100; HA lights are 0-255.
-        return round(max(0, min(100, self._led.brightness)) * 255 / 100)
+        return int(round(max(0, min(100, self._led.brightness)) * 255 / 100))
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:
