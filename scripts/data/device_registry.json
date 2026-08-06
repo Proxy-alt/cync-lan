@@ -1,0 +1,968 @@
+{
+  "1": {
+    "id": 1,
+    "class_name": "CLifeA19Gen1Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "17": {
+    "id": 17,
+    "class_name": "CLifeA19Gen2GoogleBundle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "18": {
+    "id": 18,
+    "class_name": "CLifeA19Gen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "24": {
+    "id": 24,
+    "class_name": "CLifeA19Gen2MadeForGoogleCECTier2",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "9": {
+    "id": 9,
+    "class_name": "CLifeA19Gen2StandaloneCECTier2",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "27": {
+    "id": 27,
+    "class_name": "CLifeA19TCOGen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "13": {
+    "id": 13,
+    "class_name": "CLifeA19TCOGen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "82": {
+    "id": 82,
+    "class_name": "CLifeBR30Gen1Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "5": {
+    "id": 5,
+    "class_name": "CSleepA19Gen1Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "19": {
+    "id": 19,
+    "class_name": "CSleepA19Gen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "25": {
+    "id": 25,
+    "class_name": "CSleepA19Gen2MadeForGoogleCECTier2",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "10": {
+    "id": 10,
+    "class_name": "CSleepA19Gen2StandaloneCECTier2",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "28": {
+    "id": 28,
+    "class_name": "CSleepA19TCOGen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "14": {
+    "id": 14,
+    "class_name": "CSleepA19TCOGen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "20": {
+    "id": 20,
+    "class_name": "CSleepBR30Gen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "26": {
+    "id": 26,
+    "class_name": "CSleepBR30Gen2MadeForGoogleCECTier2",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "83": {
+    "id": 83,
+    "class_name": "CSleepBR30Gen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "11": {
+    "id": 11,
+    "class_name": "CSleepBR30Gen2StandaloneCECTier2",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "29": {
+    "id": 29,
+    "class_name": "CSleepBR30TCOGen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "15": {
+    "id": 15,
+    "class_name": "CSleepBR30TCOGen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "240": {
+    "id": 240,
+    "class_name": "CameraIndoorGen1",
+    "product_id": "1607d4bd031000011607d4bd0310b404",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "131": {
+    "id": 131,
+    "class_name": "DirectConnectFullColorBulbA19",
+    "product_id": "1607d2bc852a00011607d2bc852a8601",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "132": {
+    "id": 132,
+    "class_name": "DirectConnectFullColorBulbBR30",
+    "product_id": "1607d2bc852a00011607d2bc852a8601",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "133": {
+    "id": 133,
+    "class_name": "DirectConnectFullColorLightStrip",
+    "product_id": "1607d2bc852a00011607d2bc852a8601",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "128": {
+    "id": 128,
+    "class_name": "DirectConnectSoftWhiteBulbA19",
+    "product_id": "1607d2bc852800011607d2bc85283801",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "129": {
+    "id": 129,
+    "class_name": "DirectConnectTunableWhiteBulbA19",
+    "product_id": "1607d2bc852800011607d2bc85283801",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "130": {
+    "id": 130,
+    "class_name": "DirectConnectTunableWhiteBulbBR30",
+    "product_id": "1607d2bc852800011607d2bc85283801",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "81": {
+    "id": 81,
+    "class_name": "FanSpeedSwitchGen1",
+    "product_id": "1607d4bc854300011607d4bc85436201",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "121": {
+    "id": 121,
+    "class_name": "FanSpeedSwitchGen2",
+    "product_id": "1607d2c83ad500011607d2c83ad5a447",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "53": {
+    "id": 53,
+    "class_name": "FourWireSwitchCircleGen1",
+    "product_id": "160fa2b7b2df03e9160fa2b7b2dffe01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "38": {
+    "id": 38,
+    "class_name": "FourWireSwitchCircleGen2",
+    "product_id": "1607d4c4098400011607d4c40984d008",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "118": {
+    "id": 118,
+    "class_name": "FourWireSwitchCircleGen3",
+    "product_id": "1607d2c83ad400011607d2c83ad41802",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "63": {
+    "id": 63,
+    "class_name": "FourWireSwitchCircleTCOGen1",
+    "product_id": "162afaba213f03e9162afaba213f0e01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "48": {
+    "id": 48,
+    "class_name": "FourWireSwitchDimmerGen1",
+    "product_id": "160fa2b48e5b03e9160fa2b48e5b8a01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "36": {
+    "id": 36,
+    "class_name": "FourWireSwitchDimmerGen2",
+    "product_id": "1607d4c4098400011607d4c40984d008",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "116": {
+    "id": 116,
+    "class_name": "FourWireSwitchDimmerGen3",
+    "product_id": "1607d2c83ad400011607d2c83ad41802",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "124": {
+    "id": 124,
+    "class_name": "FourWireSwitchKeypadDimmerGen1",
+    "product_id": "1607d2cbd28000011607d2cbd2808203",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "49": {
+    "id": 49,
+    "class_name": "FourWireSwitchMotionSensingDimmerGen1",
+    "product_id": "160fa2b48e5b03e9160fa2b48e5b8a01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "37": {
+    "id": 37,
+    "class_name": "FourWireSwitchMotionSensingDimmerGen2",
+    "product_id": "1607d4c4098400011607d4c40984d008",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "117": {
+    "id": 117,
+    "class_name": "FourWireSwitchMotionSensingDimmerGen3",
+    "product_id": "1607d2c83ad400011607d2c83ad41802",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "125": {
+    "id": 125,
+    "class_name": "FourWireSwitchPaddleDimmerGen1",
+    "product_id": "1607d2cbd28000011607d2cbd2808203",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "51": {
+    "id": 51,
+    "class_name": "FourWireSwitchPaddleGen1",
+    "product_id": "160fa2b7b2a403e9160fa2b7b2a43e01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "39": {
+    "id": 39,
+    "class_name": "FourWireSwitchPaddleGen2",
+    "product_id": "1607d4c4098400011607d4c40984d008",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "119": {
+    "id": 119,
+    "class_name": "FourWireSwitchPaddleGen3",
+    "product_id": "1607d2c83ad400011607d2c83ad41802",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "61": {
+    "id": 61,
+    "class_name": "FourWireSwitchPaddleTCOGen1",
+    "product_id": "162afaba213a03e9162afaba213a7a01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "52": {
+    "id": 52,
+    "class_name": "FourWireSwitchToggleGen1",
+    "product_id": "160fa2b7b2d703e9160fa2b7b2d7dc01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "40": {
+    "id": 40,
+    "class_name": "FourWireSwitchToggleGen2",
+    "product_id": "1607d4c4098400011607d4c40984d008",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "120": {
+    "id": 120,
+    "class_name": "FourWireSwitchToggleGen3",
+    "product_id": "1607d2c83ad400011607d2c83ad41802",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "62": {
+    "id": 62,
+    "class_name": "FourWireSwitchToggleTCOGen1",
+    "product_id": "162afaba213d03e9162afaba213d6e01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "21": {
+    "id": 21,
+    "class_name": "FullColorA19Gen1MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "6": {
+    "id": 6,
+    "class_name": "FullColorA19Gen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "31": {
+    "id": 31,
+    "class_name": "FullColorA19TCOGen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "30": {
+    "id": 30,
+    "class_name": "FullColorA19TCOGen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "22": {
+    "id": 22,
+    "class_name": "FullColorBR30Gen1MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "7": {
+    "id": 7,
+    "class_name": "FullColorBR30Gen1Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "33": {
+    "id": 33,
+    "class_name": "FullColorBR30TCOGen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "32": {
+    "id": 32,
+    "class_name": "FullColorBR30TCOGen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "23": {
+    "id": 23,
+    "class_name": "FullColorStripGen1MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "8": {
+    "id": 8,
+    "class_name": "FullColorStripGen1Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "35": {
+    "id": 35,
+    "class_name": "FullColorStripTCOGen2MadeForGoogle",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "34": {
+    "id": 34,
+    "class_name": "FullColorStripTCOGen2Standalone",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "55": {
+    "id": 55,
+    "class_name": "NoNeutralSwitchGen1Dimmer",
+    "product_id": "160042baac4403e9160042baac448801",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "56": {
+    "id": 56,
+    "class_name": "NoNeutralSwitchGen1MotionSensingDimmer",
+    "product_id": "160042baac4803e9160042baac48d801",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "59": {
+    "id": 59,
+    "class_name": "NoNeutralSwitchGen1SwitchCircle",
+    "product_id": "160042baac4a03e9160042baac4a3401",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "57": {
+    "id": 57,
+    "class_name": "NoNeutralSwitchGen1SwitchPaddle",
+    "product_id": "160042baac4903e9160042baac49d001",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "58": {
+    "id": 58,
+    "class_name": "NoNeutralSwitchGen1SwitchToggle",
+    "product_id": "160042baac4903e9160042baac496201",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "64": {
+    "id": 64,
+    "class_name": "PlugGen1",
+    "product_id": "160fa2b7b2a403e9160fa2b7b2a4fc01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "66": {
+    "id": 66,
+    "class_name": "PlugGen2",
+    "product_id": "1607d4bc854200011607d4bc85423a01",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "67": {
+    "id": 67,
+    "class_name": "PlugOutdoorGen1",
+    "product_id": "1607d2bc854400011607d2bc85442201",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "69": {
+    "id": 69,
+    "class_name": "PlugOutdoorGen2",
+    "product_id": "1607d2c4438f00011607d2c4438f8c07",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "111": {
+    "id": 111,
+    "class_name": "PlugOutdoorGen3",
+    "product_id": "1607d2c83ad500011607d2c83ad5281d",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "65": {
+    "id": 65,
+    "class_name": "PlugTCOGen2",
+    "product_id": "162afaba216b03e9162afaba216bb601",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "137": {
+    "id": 137,
+    "class_name": "SingleChipFullColorBulbA19",
+    "product_id": "1607d2bf51b700011607d2bf51b70002",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "182": {
+    "id": 182,
+    "class_name": "SingleChipFullColorBulbA19ClearSpiralGen1",
+    "product_id": "1607d2c645ac00011607d2c645acc20a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "171": {
+    "id": 171,
+    "class_name": "SingleChipFullColorBulbA19Gen3",
+    "product_id": "1607d2c645ac00011607d2c645acc20a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "105": {
+    "id": 105,
+    "class_name": "SingleChipFullColorBulbA21Gen2",
+    "product_id": "1607d2c83ad200011607d2c83ad24003",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "101": {
+    "id": 101,
+    "class_name": "SingleChipFullColorBulbBCGen1",
+    "product_id": "1607d2c83ad000011607d2c83ad0501b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "102": {
+    "id": 102,
+    "class_name": "SingleChipFullColorBulbBMGen1",
+    "product_id": "1607d2c83ad000011607d2c83ad0501b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "138": {
+    "id": 138,
+    "class_name": "SingleChipFullColorBulbBR30",
+    "product_id": "1607d2bf51b700011607d2bf51b70002",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "173": {
+    "id": 173,
+    "class_name": "SingleChipFullColorBulbBR30Gen3",
+    "product_id": "1607d2c645ac00011607d2c645acc20a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "147": {
+    "id": 147,
+    "class_name": "SingleChipFullColorBulbG25Gen1",
+    "product_id": "1607d4c236b500011607d4c236b5c608",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "98": {
+    "id": 98,
+    "class_name": "SingleChipFullColorBulbG25Gen2",
+    "product_id": "1607d2c83ad000011607d2c83ad0501b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "104": {
+    "id": 104,
+    "class_name": "SingleChipFullColorBulbPAR38OutdoorGen2",
+    "product_id": "1607d2c83ad200011607d2c83ad24003",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "146": {
+    "id": 146,
+    "class_name": "SingleChipFullColorBulbST19Gen1",
+    "product_id": "1607d4c236b500011607d4c236b5c608",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "97": {
+    "id": 97,
+    "class_name": "SingleChipFullColorBulbST19Gen2",
+    "product_id": "1607d2c83ad000011607d2c83ad0501b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "155": {
+    "id": 155,
+    "class_name": "SingleChipFullColorDynamicEffectsBulbA19",
+    "product_id": "1607d4c236b900011607d4c236b92e0c",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "157": {
+    "id": 157,
+    "class_name": "SingleChipFullColorDynamicEffectsBulbBR30",
+    "product_id": "1607d4c236b900011607d4c236b92e0c",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "168": {
+    "id": 168,
+    "class_name": "SingleChipFullColorDynamicEffectsHexagonLightTileGen1",
+    "product_id": "1607d4c5215300011607d4c521531607",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "166": {
+    "id": 166,
+    "class_name": "SingleChipFullColorDynamicEffectsNeonLightStrip10ftGen1",
+    "product_id": "1607d2c2f4ac00011607d2c2f4ac5c0a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "167": {
+    "id": 167,
+    "class_name": "SingleChipFullColorDynamicEffectsNeonLightStrip16ftGen1",
+    "product_id": "1607d2c2f4ac00011607d2c2f4ac5c0a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "71": {
+    "id": 71,
+    "class_name": "SingleChipFullColorIndoorPremiumLightStrip16ftGen3",
+    "product_id": "1607d4cbaddd00011607d4cbaddd3c14",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "72": {
+    "id": 72,
+    "class_name": "SingleChipFullColorIndoorPremiumLightStrip32ftGen3",
+    "product_id": "1607d4cbaddd00011607d4cbaddd3c14",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "158": {
+    "id": 158,
+    "class_name": "SingleChipFullColorIndoorPremiumLightStripGen2",
+    "product_id": "1607d2c2f4ac00011607d2c2f4ac5c0a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "110": {
+    "id": 110,
+    "class_name": "SingleChipFullColorIndoorValueLightStrip16ftGen3",
+    "product_id": "1607d2c83ad300011607d2c83ad37803",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "123": {
+    "id": 123,
+    "class_name": "SingleChipFullColorIndoorValueLightStrip32ftGen3",
+    "product_id": "1607d2c83ad300011607d2c83ad37803",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "75": {
+    "id": 75,
+    "class_name": "SingleChipFullColorOutdoorCafeLights24ftGen1",
+    "product_id": "1607d4cbaddd00011607d4cbaddd3c14",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "76": {
+    "id": 76,
+    "class_name": "SingleChipFullColorOutdoorCafeLights48ftGen1",
+    "product_id": "1607d4cbaddd00011607d4cbaddd3c14",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "73": {
+    "id": 73,
+    "class_name": "SingleChipFullColorOutdoorNeonLightStrip16ft",
+    "product_id": "1607d4cbaddd00011607d4cbaddd3c14",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "74": {
+    "id": 74,
+    "class_name": "SingleChipFullColorOutdoorNeonLightStrip32ft",
+    "product_id": "1607d4cbaddd00011607d4cbaddd3c14",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "141": {
+    "id": 141,
+    "class_name": "SingleChipFullColorOutdoorPremiumLightStrip16ftGen2",
+    "product_id": "1607d2c2f4ac00011607d2c2f4ac5c0a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "159": {
+    "id": 159,
+    "class_name": "SingleChipFullColorOutdoorPremiumLightStrip32ftGen2",
+    "product_id": "1607d2c2f4ac00011607d2c2f4ac5c0a",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "46": {
+    "id": 46,
+    "class_name": "SingleChipFullColorRecessedCanRetrofitFixture6InchGen1",
+    "product_id": "1607d2c6d44600011607d2c6d4465408",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "47": {
+    "id": 47,
+    "class_name": "SingleChipFullColorRecessedCanRetrofitFixture6InchGen1NonMatter",
+    "product_id": "1607d2c6d44600011607d2c6d4465408",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "41": {
+    "id": 41,
+    "class_name": "SingleChipFullColorUnderCabinetBarFixture12InchGen1",
+    "product_id": "1607d2c6d44600011607d2c6d4465408",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "42": {
+    "id": 42,
+    "class_name": "SingleChipFullColorUnderCabinetBarFixture18InchGen1",
+    "product_id": "1607d2c6d44600011607d2c6d4465408",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "43": {
+    "id": 43,
+    "class_name": "SingleChipFullColorUnderCabinetBarFixture24InchGen1",
+    "product_id": "1607d2c6d44600011607d2c6d4465408",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "44": {
+    "id": 44,
+    "class_name": "SingleChipFullColorUnderCabinetPuckFixtureGen1",
+    "product_id": "1607d2c6d44600011607d2c6d4465408",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "142": {
+    "id": 142,
+    "class_name": "SingleChipFullColorWafer4InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "68": {
+    "id": 68,
+    "class_name": "SingleChipPlug",
+    "product_id": "1607d4bf51b800011607d4bf51b84207",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "107": {
+    "id": 107,
+    "class_name": "SingleChipRevealFullColorBulbA19Gen2",
+    "product_id": "1607d2c83ad100011607d2c83ad1580c",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "156": {
+    "id": 156,
+    "class_name": "SingleChipRevealFullColorBulbA21",
+    "product_id": "1607d4c236b800011607d4c236b85c03",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "109": {
+    "id": 109,
+    "class_name": "SingleChipRevealFullColorBulbA21Gen2",
+    "product_id": "1607d2c83ad100011607d2c83ad1580c",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "154": {
+    "id": 154,
+    "class_name": "SingleChipRevealFullColorBulbBR30",
+    "product_id": "1607d4c236b800011607d4c236b85c03",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "108": {
+    "id": 108,
+    "class_name": "SingleChipRevealFullColorBulbBR30Gen2",
+    "product_id": "1607d2c83ad100011607d2c83ad1580c",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "162": {
+    "id": 162,
+    "class_name": "SingleChipRevealFullColorGimbalWafer4InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "165": {
+    "id": 165,
+    "class_name": "SingleChipRevealFullColorHighLumenWafer6InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "181": {
+    "id": 181,
+    "class_name": "SingleChipRevealFullColorHighLumenWafer6InchGen2",
+    "product_id": "1607d2c83acf00011607d2c83acf360b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "177": {
+    "id": 177,
+    "class_name": "SingleChipRevealFullColorWafer2InchGen2",
+    "product_id": "1607d2c83acf00011607d2c83acf360b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "169": {
+    "id": 169,
+    "class_name": "SingleChipRevealFullColorWafer4InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "170": {
+    "id": 170,
+    "class_name": "SingleChipRevealFullColorWafer6InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "175": {
+    "id": 175,
+    "class_name": "SingleChipRevealFullColorWafer6InchGen2",
+    "product_id": "1607d2c83acf00011607d2c83acf360b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "103": {
+    "id": 103,
+    "class_name": "SingleChipRevealSoftWhiteBulbA19Gen2",
+    "product_id": "1607d2c83ad100011607d2c83ad1580c",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "134": {
+    "id": 134,
+    "class_name": "SingleChipSoftWhiteA19",
+    "product_id": "1607d4bf51b300011607d4bf51b36803",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "150": {
+    "id": 150,
+    "class_name": "SingleChipSoftWhiteBulbBCGen1",
+    "product_id": "1607d4c236b500011607d4c236b5c608",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "151": {
+    "id": 151,
+    "class_name": "SingleChipSoftWhiteBulbBMGen1",
+    "product_id": "1607d4c236b500011607d4c236b5c608",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "100": {
+    "id": 100,
+    "class_name": "SingleChipSoftWhiteBulbG25Gen2",
+    "product_id": "1607d2c83ad000011607d2c83ad0501b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "99": {
+    "id": 99,
+    "class_name": "SingleChipSoftWhiteBulbST19Gen2",
+    "product_id": "1607d2c83ad000011607d2c83ad0501b",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "135": {
+    "id": 135,
+    "class_name": "SingleChipTunableWhiteA19",
+    "product_id": "1607d4bf51b300011607d4bf51b36803",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "136": {
+    "id": 136,
+    "class_name": "SingleChipTunableWhiteBR30",
+    "product_id": "1607d4bf51b300011607d4bf51b36803",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "144": {
+    "id": 144,
+    "class_name": "SingleChipTunableWhiteWafer4InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "145": {
+    "id": 145,
+    "class_name": "SingleChipTunableWhiteWafer6InchGen1",
+    "product_id": "1607d4c236b300011607d4c236b34405",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "80": {
+    "id": 80,
+    "class_name": "SolGen1Standalone",
+    "product_id": "160fa6b2279f03e9160fa6b2279f4801",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "122": {
+    "id": 122,
+    "class_name": "ThermostatGen2",
+    "product_id": "1607d2c83ad600011607d2c83ad62a30",
+    "ota_type": 1,
+    "is_wire_free": false
+  },
+  "96": {
+    "id": 96,
+    "class_name": "WireFreeMotionSensor",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "114": {
+    "id": 114,
+    "class_name": "WireFreeSmartRemoteDimmer",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "115": {
+    "id": 115,
+    "class_name": "WireFreeSmartRemoteDimmerPlusColorController",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "112": {
+    "id": 112,
+    "class_name": "WireFreeSmartSwitchDimmer",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": false
+  },
+  "113": {
+    "id": 113,
+    "class_name": "WireFreeSmartSwitchDimmerPlusColorController",
+    "product_id": "1607d2ad150cb2001607d2ad150cb201",
+    "ota_type": 2,
+    "is_wire_free": true
+  }
+}

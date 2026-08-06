@@ -15,4 +15,11 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 scripts/.cync_lan_cache/
-scripts/data/
+scripts/data/*
+# ...except the extracted device-type registry, which is test data rather
+# than a scratch artifact: tests/test_virtual_devices.py asserts 138 types
+# load, and with the directory wholly ignored that file never reached CI, so
+# load_device_registry() returned {} and the test asserted 0 >= 135 on every
+# run since it was written. It passes locally only because the generated
+# file happens to be sitting on the developer's disk.
+!scripts/data/device_registry.json
