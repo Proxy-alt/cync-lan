@@ -9,6 +9,38 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.10.0
+
+**End-to-end tests through the whole stack**, in `test_e2e_device.py`: a real
+`nCyncServer` on an ephemeral port, real platform setup so entities are
+genuinely created, and a real Cync device connected over TLS - the library's
+own `cync_lan.testing.VirtualCyncDevice`, shipped in 0.10.0 so both
+repositories drive the same simulator instead of two copies that drift.
+
+Every other test here mocks `nCyncServer`, which is right for what they check
+but leaves the seam this integration actually *is* - Home Assistant's entity
+model on one side, a device on a socket on the other - with nothing covering
+it. In between sit the config parse, entity construction, the bridge,
+`send_command`'s framing and the broadcast pool.
+
+`light.turn_on` now has a test that reads what arrives on the socket and
+asserts the `0x73` control packet carries `11 02 01 00 00`, the payload
+`set_power` builds. Verified by mutation: make `set_power` ignore its state
+argument and the turn-on test fails while turn-off still passes, which is the
+discrimination that makes it worth having.
+
+One thing worth knowing if you write more of these: setup goes through
+`hass.config_entries.async_setup()` rather than calling `async_setup_entry()`
+directly, as the rest of the suite does. A direct call leaves the entry in
+`NOT_LOADED`, `async_forward_entry_setups` refuses to run from that state, and
+no entities are ever created - so a test written the usual way silently checks
+nothing.
+
+**What this does not do** is tell you a bulb turns on. The simulator is built
+from the library's own understanding of the protocol, so a pass means the stack
+agrees with itself. `docs/hardware_verification.md` is still the only record of
+what hardware has confirmed.
+
 ### 2.9.1
 
 **Requires cync-lan 0.9.2.** 2.9.0 shipped cloud passthrough against a library
