@@ -192,7 +192,17 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 api = get_cloud_api(self.hass)
-                ok = await api.send_otp(int(user_input["otp_code"]))
+                # The code goes to the library as the string the user typed.
+                # It used to be cast with int() here, which silently drops a
+                # leading zero - int("012345") is 12345, so roughly one code
+                # in ten arrived five digits long and the vendor rejected it
+                # as invalid. The user retypes the same correct code and it
+                # fails again, every time, with no way to tell why.
+                # cync-lan 0.10.1 keeps codes as strings end to end (see
+                # Proxy-alt/cync-lan-lib#1, reported by @baudneo); casting
+                # here would have destroyed the zero before the library ever
+                # saw it, so the fix is only complete with both halves.
+                ok = await api.send_otp(user_input["otp_code"].strip())
                 if not ok:
                     raise InvalidOtp
             except (InvalidOtp, ValueError):

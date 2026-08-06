@@ -9,6 +9,28 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.10.1
+
+**An OTP starting with `0` could never complete setup.** The flow collects the
+code as a string and then cast it with `int()` before handing it over, so
+`012345` went out as `12345`; the vendor rejected five digits as invalid, and
+retyping the same correct code failed identically every time with nothing to
+suggest why. Roughly one code in ten starts with a zero.
+
+Found while merging @baudneo's
+[cync-lan-lib#1](https://github.com/Proxy-alt/cync-lan-lib/pull/1) - he flagged
+the same bug in the library, and fixing it there (0.10.1, which this now
+requires) only helps if this end stops destroying the zero first. Both halves
+were needed.
+
+While covering it, `test_otp_step_cannot_connect` turned out to assert
+`invalid_otp` - the opposite of its own name. It passed only because
+`int("not-a-number")` raised `ValueError` before `send_otp` was ever reached,
+so the mocked error it exists to test was never exercised. Corrected, and the
+`invalid_otp` path it had been accidentally covering now has a test of its own.
+
+`requirements_test.txt` tracks the manifest exactly again.
+
 ### 2.10.0
 
 **End-to-end tests through the whole stack**, in `test_e2e_device.py`: a real

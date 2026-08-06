@@ -329,6 +329,30 @@ async def test_otp_step_cannot_connect(hass, mock_cloud_api):
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"otp_code": "not-a-number"}
     )
+    # Asserted invalid_otp until the int() cast came out of async_step_otp,
+    # which is the opposite of what this test is named for. It only ever
+    # passed because int("not-a-number") raised ValueError before send_otp
+    # was reached - so the mocked RuntimeError, the thing under test, was
+    # never actually exercised. With the cast gone the call happens, the
+    # error surfaces, and the name is finally true.
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_otp_step_invalid_code_is_reported_as_invalid(hass, mock_cloud_api):
+    """The invalid_otp path, which the test above was accidentally covering.
+
+    A non-numeric code is now the library's to reject (cync-lan 0.10.1 checks
+    isdigit and returns False) rather than something a cast throws on here.
+    """
+    result = await _start_user_step(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"account_username": "user@example.com", "account_password": "hunter2"},
+    )
+    mock_cloud_api.send_otp = AsyncMock(return_value=False)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"otp_code": "not-a-number"}
+    )
     assert result["errors"] == {"base": "invalid_otp"}
 
 
@@ -954,3 +978,60 @@ async def test_hub_envelope_choice_applies_without_a_restart(
     )
     await hass.async_block_till_done()
     assert os.environ["CYNC_HUB_ENVELOPE"] == "bare"
+
+
+async def test_an_otp_with_a_leading_zero_reaches_the_api_intact(hass):
+    """Roughly one code in ten starts with a zero, and this flow used to cast
+    the string it collected with int() before handing it over - so 012345 went
+    out as 12345, the vendor rejected five digits as invalid, and retyping the
+    same correct code failed identically every time.
+
+    Reported against the library by @baudneo (Proxy-alt/cync-lan-lib#1); the
+    library keeps codes as strings from 0.10.1, but that only helps if this
+    end stops destroying the zero first.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from custom_components.cync_lan.config_flow import CyncLanConfigFlow
+
+    flow = CyncLanConfigFlow()
+    flow.hass = hass
+    api = AsyncMock()
+    api.send_otp = AsyncMock(return_value=True)
+    with (
+        patch(
+            "custom_components.cync_lan.config_flow.get_cloud_api", return_value=api
+        ),
+        patch.object(
+            CyncLanConfigFlow, "_finish_export", AsyncMock(return_value={"type": "ok"})
+        ),
+    ):
+        await flow.async_step_otp({"otp_code": "012345"})
+
+    api.send_otp.assert_awaited_once_with("012345")
+
+
+async def test_an_otp_is_passed_as_a_string_not_an_int(hass):
+    """The type matters on its own: an int cannot carry a leading zero at all,
+    so a passing test here is what stops the cast coming back."""
+    from unittest.mock import AsyncMock, patch
+
+    from custom_components.cync_lan.config_flow import CyncLanConfigFlow
+
+    flow = CyncLanConfigFlow()
+    flow.hass = hass
+    api = AsyncMock()
+    api.send_otp = AsyncMock(return_value=True)
+    with (
+        patch(
+            "custom_components.cync_lan.config_flow.get_cloud_api", return_value=api
+        ),
+        patch.object(
+            CyncLanConfigFlow, "_finish_export", AsyncMock(return_value={"type": "ok"})
+        ),
+    ):
+        await flow.async_step_otp({"otp_code": " 654321 "})
+
+    sent = api.send_otp.await_args.args[0]
+    assert isinstance(sent, str), f"sent as {type(sent).__name__}"
+    assert sent == "654321", "surrounding whitespace should be trimmed, not cast away"
