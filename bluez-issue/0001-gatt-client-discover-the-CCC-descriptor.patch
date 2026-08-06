@@ -1,4 +1,4 @@
-From: Proxy <mr.eli.pires@gmail.com>
+From: Proxy <proxy-alt@proxy-alt.dev>
 Subject: [PATCH BlueZ] shared/gatt-client: discover the CCC descriptor instead of assuming it
 
 discover_descs() skips descriptor discovery when a notify/indicate
@@ -33,6 +33,8 @@ survives.
 
 Reported and reproduced on three units across two OUI families, one of
 which had never been connected before.
+
+Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
 
 ---
  src/shared/gatt-client.c | 19 -------------------
