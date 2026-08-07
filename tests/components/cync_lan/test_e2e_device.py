@@ -27,6 +27,8 @@ import socket
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant import config_entries
+from homeassistant.exceptions import ConfigEntryNotReady
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.cync_lan.const import (
@@ -66,6 +68,13 @@ def _free_port() -> int:
     pass port 0 - would mean the code under test no longer chooses its own
     port, which is part of what this is checking.
     """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _dead_port() -> int:
+    """A port with nothing behind it, for "the cloud is unreachable"."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
@@ -123,6 +132,12 @@ def tls_env(tmp_path, monkeypatch):
     monkeypatch.setenv("CYNC_CONFIG_DIR", str(tmp_path))
     monkeypatch.setenv("CYNC_BASE_DIR", str(tmp_path))
     monkeypatch.setenv("CYNC_CLOUD_PASSTHROUGH", "0")
+    # Pin the cloud at a dead local port. CYNC_CLOUD_IP defaults to the real
+    # vendor address, so any test that turns passthrough on would otherwise
+    # open a TCP connection to GE from CI. Tests that want a working relay
+    # override this with a FakeCloud port.
+    monkeypatch.setenv("CYNC_CLOUD_IP", "127.0.0.1")
+    monkeypatch.setenv("CYNC_CLOUD_PORT", str(_dead_port()))
 
 
 async def _setup(hass, entry, port: int):
@@ -269,3 +284,177 @@ async def test_setup_survives_a_device_that_never_connects(
         assert entry.runtime_data.ncync_server.get_dev_tcp_pool_sync() == []
     finally:
         await _teardown(hass, entry)
+
+
+# ---------------------------------------------------------------------------
+# Every option combination, and a few that should never have been written
+# ---------------------------------------------------------------------------
+
+# The boolean options the options flow can write. Their product is 256 cases;
+# each is a real entry setup against a real server, ~0.2s, so the whole matrix
+# costs about a minute. Worth it: cloud_passthrough shipped in a state that
+# disabled every device in a live house, and no combination test existed to
+# notice that one flag changed whether the integration worked at all.
+BOOLEAN_OPTIONS = (
+    "enable_light_groups",
+    "hide_group_members",
+    "enable_experimental",
+    "capture_unknown_packets",
+    "capture_firmware",
+    "indicator_led_as_light",
+    "hub_envelope_bare",
+    "cloud_passthrough",
+)
+
+
+def _combinations():
+    for bits in range(1 << len(BOOLEAN_OPTIONS)):
+        yield {
+            name: bool(bits >> i & 1) for i, name in enumerate(BOOLEAN_OPTIONS)
+        }
+
+
+def _combination_id(options: dict) -> str:
+    on = [n for n, v in options.items() if v]
+    return "+".join(on) if on else "all-off"
+
+
+@pytest.mark.parametrize(
+    "extra_options",
+    list(_combinations()),
+    ids=[_combination_id(c) for c in _combinations()],
+)
+async def test_every_option_combination_sets_up_and_unloads(
+    hass, entry, tls_env, socket_enabled, extra_options
+):
+    """No combination may break setup, lose the entities, or fail to unload.
+
+    Deliberately the cheap invariant rather than a full device exchange -
+    running the wire assertions 256 times would cost minutes to re-prove one
+    thing. What this catches is an option that changes whether the
+    integration functions at all, which is exactly what cloud_passthrough did.
+    """
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, **extra_options}
+    )
+    port = _free_port()
+    await _setup(hass, entry, port)
+    try:
+        assert entry.runtime_data.ncync_server.running is True
+        assert hass.states.get("light.office_lamp") is not None, (
+            f"{_combination_id(extra_options)} produced no light entity"
+        )
+    finally:
+        await _teardown(hass, entry)
+    assert entry.state is not config_entries.ConfigEntryState.SETUP_ERROR
+
+
+@pytest.mark.parametrize("passthrough", [False, True])
+async def test_a_command_reaches_the_device_with_passthrough_either_way(
+    hass, entry, tls_env, socket_enabled, tmp_path, monkeypatch, passthrough
+):
+    """The regression, at the layer a user actually experiences it.
+
+    With passthrough on, cync-lan relays to the cloud AND keeps controlling.
+    It shipped doing only the first, so every light stopped responding while
+    the option was enabled - and the whole suite stayed green, because no
+    test ever turned the option on and then tried to switch something.
+    """
+    from cync_lan.testing import FakeCloud, write_self_signed
+
+    VirtualCyncDevice, build_23_auth = _simulator()
+    cert_dir = tmp_path / "fake-cloud"
+    cert_dir.mkdir(exist_ok=True)
+    certs = write_self_signed(cert_dir)
+
+    async with FakeCloud(*certs) as cloud:
+        if passthrough:
+            # monkeypatch, not os.environ directly: a bare assignment outlives
+            # the test and leaves passthrough enabled for everything that runs
+            # afterwards, pointed at a FakeCloud port that is closed by then.
+            # That is how this file went from 271 green in isolation to 17
+            # failures in the full suite.
+            monkeypatch.setenv("CYNC_CLOUD_PASSTHROUGH", "1")
+            monkeypatch.setenv("CYNC_CLOUD_PORT", str(cloud.port))
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, "cloud_passthrough": passthrough}
+        )
+        port = _free_port()
+        await _setup(hass, entry, port)
+        try:
+            async with VirtualCyncDevice("127.0.0.1", port) as device:
+                await device.send(build_23_auth())
+                if passthrough:
+                    # The cloud answers the handshake, not us.
+                    assert await cloud.wait_for_bytes(1), (
+                        "nothing reached the cloud; sessions="
+                        f"{list(entry.runtime_data.ncync_server.tcp_connections)}"
+                    )
+                else:
+                    assert (await device.read_packet())[0] == 0x28
+                    assert await device.read_until(0xA3) is not None
+                await hass.async_block_till_done()
+
+                await hass.services.async_call(
+                    "light", "turn_on", {"entity_id": "light.office_lamp"},
+                    blocking=True,
+                )
+                control = await device.read_until(0x73, timeout=5.0)
+                assert control is not None, (
+                    f"no command reached the device (passthrough={passthrough})"
+                )
+                assert b"\x11\x02\x01\x00\x00" in control
+        finally:
+            await _teardown(hass, entry)
+
+
+@pytest.mark.parametrize(
+    "bad_options",
+    [
+        pytest.param({}, id="no-options-at-all"),
+        pytest.param({"export_refresh_interval": -5}, id="negative-refresh"),
+        pytest.param({"export_refresh_interval": 0}, id="zero-refresh"),
+        pytest.param({"cloud_passthrough": "yes"}, id="string-for-bool"),
+        pytest.param({"cloud_passthrough": None}, id="none-for-bool"),
+        pytest.param({"indicator_led_as_light": 1}, id="int-for-bool"),
+        pytest.param({"local_port": -1}, id="negative-port"),
+        pytest.param({"local_port": 70000}, id="port-out-of-range"),
+        pytest.param({"an_option_from_the_future": True}, id="unknown-key"),
+    ],
+)
+async def test_malformed_options_fail_cleanly_or_not_at_all(
+    hass, entry, tls_env, socket_enabled, bad_options
+):
+    """Options are not always what the options flow wrote.
+
+    A downgrade after a newer version stored a key, a hand-edited
+    .storage/core.config_entries, a schema change between releases - all of
+    these reach async_setup_entry as values nothing validated. The contract
+    is narrow on purpose: either the entry sets up, or it fails in a way Home
+    Assistant understands. What must not happen is an arbitrary exception
+    escaping setup, because that is what leaves an entry wedged with no
+    entities and a traceback the user cannot act on.
+    """
+    hass.config_entries.async_update_entry(entry, options=dict(bad_options))
+    port = _free_port()
+    try:
+        with (
+            patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", entry.runtime_config_path),
+            patch("cync_lan.server.CYNC_SRV_PORT", port),
+            patch("cync_lan.server.CYNC_SRV_HOST", "127.0.0.1"),
+            patch("custom_components.cync_lan.util.refresh_cloud_export", AsyncMock()),
+            patch("custom_components.cync_lan.refresh_cloud_export", AsyncMock()),
+        ):
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+    except ConfigEntryNotReady:
+        return  # a retry HA knows how to schedule
+    finally:
+        await _teardown(hass, entry)
+
+    assert entry.state in (
+        config_entries.ConfigEntryState.LOADED,
+        config_entries.ConfigEntryState.NOT_LOADED,
+        config_entries.ConfigEntryState.SETUP_RETRY,
+        config_entries.ConfigEntryState.SETUP_ERROR,
+    ), entry.state

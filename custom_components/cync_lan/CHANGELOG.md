@@ -9,6 +9,51 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.10.2
+
+**Requires cync-lan 0.10.3**, which fixes two ways cloud passthrough broke
+devices. 2.9.0 shipped the option reusing the library's `mitm_mode` flag, and
+that flag means "relay to the cloud *and* stay off the wire" - correct for the
+per-device capture switch it was written for, wrong for an option whose whole
+point is to keep working. Reported from a live install where nothing could be
+switched on while it was enabled. If you have passthrough on, update; until you
+do, turning the option off restores control immediately.
+
+**The e2e suite now runs every option combination.** All 256 products of the
+eight boolean options set the entry up against a real server and assert the
+entities exist and the entry unloads - about two minutes, which is the cost of
+noticing that a single flag changes whether the integration works at all.
+
+Being straight about what that matrix does and does not do: it asserts setup
+and entities, so it would **not** have caught this bug. The test that does is
+`test_a_command_reaches_the_device_with_passthrough_either_way`, which turns
+the option on and then switches a light. Verified by mutation - revert the
+library fix and that case fails while all 256 matrix cases stay green. Breadth
+and depth are different tests and it is worth not confusing them.
+
+**Malformed options are covered too**, because options are not always what the
+options flow wrote - a downgrade after a newer version stored a key, a
+hand-edited `.storage`, a schema change between releases. Nine cases: missing
+options entirely, a string and a `None` where a boolean belongs, negative and
+zero intervals, out-of-range ports, an unknown key from the future. The
+contract is narrow on purpose: set up, or fail in a way Home Assistant
+understands. An arbitrary exception escaping setup is what leaves an entry
+wedged with no entities and a traceback nobody can act on.
+
+**The matrix found a real bug on its first outing**, and not the kind it was
+aimed at. With passthrough on, an unwritable capture-log directory made the
+library refuse *every* device connection - `mkdir` on a path frozen at import
+to `/root/cync-lan/config`, an `OSError` escaping through `start_tasks`, and
+`_register_new_connection` swallowing it without registering the session. That
+is the state a Home Assistant container is actually in. Fixed in cync-lan
+0.10.3; the matrix surfaced it because running any test file before the e2e
+file leaves that import-time default in place.
+
+**Tests can no longer dial the vendor.** `CYNC_CLOUD_IP` defaults to the real
+Cync address, so any test enabling passthrough would have opened a connection
+to GE from CI. The fixture now pins the cloud to a dead local port, and tests
+wanting a working relay point at a `FakeCloud` instead.
+
 ### 2.10.1
 
 **An OTP starting with `0` could never complete setup.** The flow collects the

@@ -72,6 +72,11 @@ class _FakeBridgeDevice:
     def __init__(self):
         self.ready_to_control = True
         self.mitm_mode = False
+        # Mirrors CyncTCPSession.observe_only, which the broadcast loop reads
+        # to decide whether to stay off the wire. mitm_mode alone used to mean
+        # both "relay to the cloud" and "send nothing"; cloud passthrough sets
+        # the first without the second, which is why they are separate now.
+        self.passthrough = False
         self.ip_address = "127.0.0.1"
         self.queue_id = b"\x00\x01\x02\x03"
         self.node = None
@@ -79,6 +84,10 @@ class _FakeBridgeDevice:
         self.messages.control = {}
         self._ctrl_byte = 0
         self.written = []
+
+    @property
+    def observe_only(self) -> bool:
+        return self.mitm_mode and not self.passthrough
 
     def get_ctrl_msg_id_bytes(self):
         self._ctrl_byte = (self._ctrl_byte + 1) % 256
