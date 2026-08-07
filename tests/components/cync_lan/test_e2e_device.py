@@ -120,8 +120,14 @@ def entry(hass, tmp_path):
 
 
 @pytest.fixture
-def tls_env(tmp_path, monkeypatch):
+def tls_env(tmp_path, monkeypatch, socket_enabled):
     """Point the server's cert/key somewhere writable.
+
+    Depends on `socket_enabled` deliberately, even though nothing here needs a
+    socket for its own sake: `_dead_port()` below opens one to find a free
+    port, and fixtures resolve in signature order. Without this the port probe
+    ran while pytest-homeassistant-custom-component still had sockets blocked,
+    which passed locally and failed in CI with "the test opens sockets".
 
     It generates a self-signed pair when they are missing, which is the same
     path a fresh HACS install takes - so this exercises that too rather than
