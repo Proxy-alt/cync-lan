@@ -34,6 +34,7 @@ survives.
 Reported and reproduced on three units across two OUI families, one of
 which had never been connected before.
 
+Fixes: https://github.com/bluez/bluez/issues/2383
 Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
 
 ---
