@@ -5,6 +5,14 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, KeysView
 
+from cync_lan.classify import (
+    DEFAULT_MAX_KELVIN,
+    DEFAULT_MIN_KELVIN,
+    LightFeatures,
+    cync_to_kelvin,
+    kelvin_to_cync,
+)
+
 from homeassistant.components.group.light import LightGroup
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -237,6 +245,22 @@ def _apply_group_member_visibility(
                 registry.async_update_entity(entity_id, hidden_by=None)
 
 
+# The device reports this in the temperature field to mean "I am in RGB mode
+# right now" - color_mode below reads it for exactly that. It is not a
+# temperature and must never be scaled as one.
+RGB_MODE_SENTINEL = 254
+
+
+def _kelvin_features(node: "CyncDevice") -> LightFeatures:
+    """The node's kelvin range, in the shape the shared converter wants."""
+    characteristics = getattr(node.metadata, "characteristics", None)
+    return LightFeatures(
+        color_temp=True,
+        min_kelvin=getattr(characteristics, "min_kelvin", None) or None,
+        max_kelvin=getattr(characteristics, "max_kelvin", None) or None,
+    )
+
+
 class CyncLanLight(CyncLanEntity, LightEntity):
     _attr_name = None  # has-entity-name: device name is the entity name
 
@@ -256,15 +280,15 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         self._supported_color_modes: set[ColorMode] = modes
         self._attr_supported_color_modes = modes
         self._attr_color_mode = next(iter(modes))
-        if node.metadata and node.metadata.characteristics:
-            if node.metadata.characteristics.min_kelvin:
-                self._attr_min_color_temp_kelvin = (
-                    node.metadata.characteristics.min_kelvin
-                )
-            if node.metadata.characteristics.max_kelvin:
-                self._attr_max_color_temp_kelvin = (
-                    node.metadata.characteristics.max_kelvin
-                )
+        # Advertised range and conversion range come from the same place, so
+        # they cannot disagree. They did: a device declaring no max_kelvin
+        # kept Home Assistant's own default of 6535 here while the converter
+        # scaled against 7000, so the top of the user's slider mapped to 90
+        # rather than 100 and a device reporting 100 read back above the
+        # maximum this entity claims to support.
+        kelvin = _kelvin_features(node)
+        self._attr_min_color_temp_kelvin = kelvin.min_kelvin or DEFAULT_MIN_KELVIN
+        self._attr_max_color_temp_kelvin = kelvin.max_kelvin or DEFAULT_MAX_KELVIN
 
     @property
     def is_on(self) -> bool | None:
@@ -290,7 +314,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
         if ColorMode.RGB in modes and ColorMode.COLOR_TEMP in modes:
             state = self._entity_state()
             if state is not None:
-                if state.temperature == 254:
+                if state.temperature == RGB_MODE_SENTINEL:
                     return ColorMode.RGB
                 if 0 <= state.temperature <= 100:
                     return ColorMode.COLOR_TEMP
@@ -305,10 +329,20 @@ class CyncLanLight(CyncLanEntity, LightEntity):
 
     @property
     def color_temp_kelvin(self) -> int | None:
+        """Cync reports 0-100 on the wire whatever the bulb's real range is,
+        so this has to convert - it used to hand the raw 0-100 back as if it
+        were kelvin, which put every colour-temperature reading far below the
+        min_color_temp_kelvin this same class advertises."""
         state = self._entity_state()
         if not state or not self._node.supports_temperature:
             return None
-        return state.temperature or None
+        if state.temperature is None:
+            return None
+        # 254 is the device's "I am in RGB mode" sentinel, not a temperature;
+        # color_mode reads it for exactly that, and it must not be scaled.
+        if state.temperature == RGB_MODE_SENTINEL:
+            return None
+        return cync_to_kelvin(state.temperature, _kelvin_features(self._node))
 
     @property
     def rgb_color(self) -> tuple[int, int, int] | None:
@@ -329,7 +363,16 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             r, g, b = kwargs[ATTR_RGB_COLOR]
             await self._node.set_rgb(r, g, b)
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
-            await self._node.set_temperature(kwargs[ATTR_COLOR_TEMP_KELVIN])
+            # set_temperature validates 0-100 and refuses anything larger, so
+            # passing HA's kelvin straight through logged "Invalid
+            # temperature! must be 0-100" and sent nothing at all - colour
+            # temperature simply did not work. The MQTT add-on has always
+            # converted (kelvin2cync); this never did.
+            await self._node.set_temperature(
+                kelvin_to_cync(
+                    kwargs[ATTR_COLOR_TEMP_KELVIN], _kelvin_features(self._node)
+                )
+            )
         if ATTR_EFFECT in kwargs:
             await self._node.set_light_effect(kwargs[ATTR_EFFECT])
         bri_pct = (

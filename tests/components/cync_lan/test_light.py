@@ -212,15 +212,44 @@ async def test_color_temp_kelvin_none_when_unsupported(hass):
     assert entity.color_temp_kelvin is None
 
 
-async def test_color_temp_kelvin_reads_through_when_supported(hass):
+async def test_color_temp_kelvin_is_converted_not_read_through(hass):
+    """It used to read through, which is what the name of this test said and
+    what the code did. The device reports 0-100 on the wire whatever the
+    bulb's real range is, so handing that back as kelvin reported every
+    light at a colour temperature far below the min_color_temp_kelvin this
+    same entity advertises."""
     from cync_lan.structs import EntityState
 
     node = _fake_node(supports_temperature=True)
     bridge = CyncLanBridge(hass, "entry1")
     entity = CyncLanLight(bridge, "entry1", node)
     assert entity.color_temp_kelvin is None  # no state yet
-    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=3000))
-    assert entity.color_temp_kelvin == 3000
+
+    # 50 on the wire is the middle of the device's range.
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=50))
+    kelvin = entity.color_temp_kelvin
+    assert kelvin is not None
+    assert entity.min_color_temp_kelvin <= kelvin <= entity.max_color_temp_kelvin, (
+        f"{kelvin}K is outside the range this entity advertises"
+    )
+
+    # The ends map to the ends.
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=0))
+    assert entity.color_temp_kelvin == entity.min_color_temp_kelvin
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=100))
+    assert entity.color_temp_kelvin == entity.max_color_temp_kelvin
+
+
+async def test_the_rgb_sentinel_is_not_reported_as_a_temperature(hass):
+    """254 means "in RGB mode", not 254 on the scale - scaling it would
+    report a bogus colour temperature while the bulb is showing colour."""
+    from cync_lan.structs import EntityState
+
+    node = _fake_node(supports_temperature=True)
+    bridge = CyncLanBridge(hass, "entry1")
+    entity = CyncLanLight(bridge, "entry1", node)
+    await bridge.parse_entity_state(EntityState(name="x", dev_id=5, temperature=254))
+    assert entity.color_temp_kelvin is None
 
 
 async def test_rgb_color_none_when_unsupported(hass):
@@ -262,7 +291,24 @@ async def test_turn_on_with_color_temp_kelvin():
     entity = CyncLanLight(bridge, "entry1", node)
 
     await entity.async_turn_on(color_temp_kelvin=4000)
-    node.set_temperature.assert_awaited_with(4000)
+    # Not 4000: set_temperature validates 0-100 and refuses anything larger,
+    # so the old pass-through logged an error and sent no packet at all.
+    sent = node.set_temperature.await_args.args[0]
+    assert 0 <= sent <= 100, f"{sent} would be refused by set_temperature"
+
+
+async def test_every_kelvin_the_entity_advertises_reaches_the_wire():
+    """The range HA offers the user has to be one the device will accept -
+    the whole span, not just the ends."""
+    node = _fake_node(supports_temperature=True)
+    entity = CyncLanLight(MagicMock(), "entry1", node)
+
+    lo, hi = entity.min_color_temp_kelvin, entity.max_color_temp_kelvin
+    for kelvin in range(lo, hi + 1, max(1, (hi - lo) // 20)):
+        node.set_temperature.reset_mock()
+        await entity.async_turn_on(color_temp_kelvin=kelvin)
+        sent = node.set_temperature.await_args.args[0]
+        assert 0 <= sent <= 100, f"{kelvin}K -> {sent}, which the wire rejects"
 
 
 async def test_color_mode_static_when_only_one_mode_supported(hass):

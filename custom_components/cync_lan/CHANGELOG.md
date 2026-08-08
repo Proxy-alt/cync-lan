@@ -9,6 +9,43 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.13.0
+
+**Colour temperature never worked. It does now.**
+
+Cync devices speak a 0-100 scale on the wire, whatever the bulb's real kelvin
+range is. This integration passed Home Assistant's kelvin value straight to
+the device, and the library refuses anything above 100 - so every colour
+temperature you set was rejected with "Invalid temperature! must be 0-100"
+and no packet was ever sent. Moving the slider did nothing, silently, unless
+you were reading the debug log.
+
+Reading was wrong in the same way: the raw 0-100 came back as if it were
+kelvin, so a bulb sitting at mid-white reported something like "50 K" -
+far below the minimum this integration itself advertises.
+
+Both directions convert now. The MQTT add-on has always done this with its
+own `kelvin2cync`/`cync2kelvin`; the conversion now lives in the library so
+there is one implementation rather than one-and-a-missing-one.
+
+Two smaller things came with it:
+
+- The advertised range and the conversion range now come from the same
+  place. A device declaring no maximum kept Home Assistant's default of
+  6535 K while the conversion scaled against 7000, so the top of the slider
+  mapped to 90 rather than 100.
+- The device's 254 "in RGB mode" marker is no longer reported as a colour
+  temperature while a bulb is showing colour.
+
+How it survived: the test asserted `set_temperature(4000)` - the exact
+pass-through that fails - and another was named
+`test_color_temp_kelvin_reads_through_when_supported`, pinning the read side
+just as literally. Both now check that whatever reaches the wire is inside
+the range the wire accepts, across the whole span the entity advertises
+rather than at one point.
+
+**Requires cync-lan 0.13.0.**
+
 ### 2.12.0
 
 **Two experimental entities that had never appeared for anyone now do.** The
