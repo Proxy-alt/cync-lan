@@ -9,6 +9,31 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.11.0
+
+**Requires cync-lan 0.11.0.** No behaviour changes here - this is the
+integration side of a library change that makes it safe to install `cync_lan`
+and `cync_ble` together.
+
+The library's cloud client used to be a process-wide singleton, so
+`CyncCloudAPI()` anywhere in Home Assistant returned whichever integration
+built one first, along with its token and its config directory. That is
+invisible with one integration installed and quietly wrong with two: the
+second one authenticated as the first one's account, wrote to the first one's
+directory, and reported the resulting token failure to its own user as "could
+not reach the Cync cloud API."
+
+This integration genuinely does want one client per process - the firmware
+sensor reads what the server's periodic check captured - so both call sites
+now ask for it by name via `CyncCloudAPI.shared()` instead of relying on
+construction to do it silently. The version floor is a hard requirement
+rather than a preference: `shared()` does not exist in 0.10.4, so an install
+that somehow kept the older library would fail at the call rather than
+misbehave.
+
+Nothing to do on upgrade, and nothing changes about how this integration
+behaves on its own.
+
 ### 2.10.3
 
 **Requires cync-lan 0.10.4**, which fixes a third way cloud passthrough went

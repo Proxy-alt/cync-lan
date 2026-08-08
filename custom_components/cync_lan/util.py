@@ -229,15 +229,24 @@ def cloud_passthrough_supported() -> bool:
 def get_cloud_api(hass: HomeAssistant) -> "CyncCloudAPI":
     """inject-websession (platinum): construct CyncCloudAPI with Home
     Assistant's shared aiohttp session instead of letting it create (and
-    leak, if never explicitly closed) its own. CyncCloudAPI is a singleton
-    that only overwrites its session when one is explicitly passed (see its
-    __init__ docstring), so every call site should go through this helper
-    rather than constructing it bare.
+    leak, if never explicitly closed) its own.
+
+    `shared()` rather than `CyncCloudAPI()`: this integration genuinely
+    wants one client per process, because the firmware-capture sensor reads
+    state the server's periodic check writes, and two token refreshes racing
+    for the same cache file help nobody.
+
+    That used to be what bare construction did, via a `__new__` singleton in
+    the library. It stopped being the default in cync-lan 0.11.0, because
+    the same implicit sharing reached across *integrations*: a second one
+    calling `CyncCloudAPI()` got this integration's client, token and all.
+    Sharing is now asked for by name, which is why this helper exists and
+    why call sites should keep going through it.
     """
     from cync_lan.cloud_api import CyncCloudAPI
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-    return CyncCloudAPI(session=async_get_clientsession(hass))
+    return CyncCloudAPI.shared(session=async_get_clientsession(hass))
 
 
 async def refresh_cloud_export(hass: HomeAssistant) -> bool:

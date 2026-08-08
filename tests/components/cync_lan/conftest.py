@@ -36,6 +36,12 @@ def mock_cloud_api():
     real network calls happen."""
     with patch("cync_lan.cloud_api.CyncCloudAPI") as mock_cls:
         instance = mock_cls.return_value
+        # cync-lan 0.11.0 stopped making CyncCloudAPI a singleton, so the
+        # integration asks for the process-wide client by name. Point
+        # shared() at the same mock the tests configure, so the fixture
+        # describes one client however production reaches for it - a
+        # MagicMock would otherwise satisfy every call and assert nothing.
+        mock_cls.shared.return_value = instance
         instance._check_session = AsyncMock(return_value=None)
         instance.check_token = AsyncMock(return_value=False)
         instance.request_otp = AsyncMock(return_value=True)

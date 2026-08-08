@@ -118,9 +118,14 @@ def test_single_group_uses_ungrouped_translation_key():
     bridge = MagicMock()
     node = _fake_node()
     entity = CyncLanMotionScheduleSensor(
-        bridge, "entry1", node,
-        group_id=1, group_name="Utility Room", slot_name="daytime",
-        slot=_DAYTIME_SLOT, disambiguate=False,
+        bridge,
+        "entry1",
+        node,
+        group_id=1,
+        group_name="Utility Room",
+        slot_name="daytime",
+        slot=_DAYTIME_SLOT,
+        disambiguate=False,
     )
     assert entity.translation_key == "sensor_schedule_slot"
     assert entity._attr_translation_placeholders == {"slot": "Daytime"}
@@ -130,13 +135,19 @@ def test_multi_group_uses_grouped_translation_key_with_group_name():
     bridge = MagicMock()
     node = _fake_node()
     entity = CyncLanMotionScheduleSensor(
-        bridge, "entry1", node,
-        group_id=1, group_name="Utility Room", slot_name="daytime",
-        slot=_DAYTIME_SLOT, disambiguate=True,
+        bridge,
+        "entry1",
+        node,
+        group_id=1,
+        group_name="Utility Room",
+        slot_name="daytime",
+        slot=_DAYTIME_SLOT,
+        disambiguate=True,
     )
     assert entity.translation_key == "sensor_schedule_slot_grouped"
     assert entity._attr_translation_placeholders == {
-        "slot": "Daytime", "group_name": "Utility Room",
+        "slot": "Daytime",
+        "group_name": "Utility Room",
     }
 
 
@@ -144,9 +155,14 @@ def test_native_value_formats_enabled_slot_as_time_range():
     bridge = MagicMock()
     node = _fake_node()
     entity = CyncLanMotionScheduleSensor(
-        bridge, "entry1", node,
-        group_id=1, group_name="Utility Room", slot_name="daytime",
-        slot=_DAYTIME_SLOT, disambiguate=False,
+        bridge,
+        "entry1",
+        node,
+        group_id=1,
+        group_name="Utility Room",
+        slot_name="daytime",
+        slot=_DAYTIME_SLOT,
+        disambiguate=False,
     )
     assert entity.native_value == "06:00–08:59"
 
@@ -155,9 +171,14 @@ def test_native_value_disabled_slot():
     bridge = MagicMock()
     node = _fake_node()
     entity = CyncLanMotionScheduleSensor(
-        bridge, "entry1", node,
-        group_id=1, group_name="Utility Room", slot_name="sleep",
-        slot=_DISABLED_SLOT, disambiguate=False,
+        bridge,
+        "entry1",
+        node,
+        group_id=1,
+        group_name="Utility Room",
+        slot_name="sleep",
+        slot=_DISABLED_SLOT,
+        disambiguate=False,
     )
     assert entity.native_value == "Disabled"
 
@@ -166,9 +187,14 @@ def test_extra_state_attributes_exposes_slot_detail():
     bridge = MagicMock()
     node = _fake_node()
     entity = CyncLanMotionScheduleSensor(
-        bridge, "entry1", node,
-        group_id=32770, group_name="Utility Room", slot_name="daytime",
-        slot=_DAYTIME_SLOT, disambiguate=False,
+        bridge,
+        "entry1",
+        node,
+        group_id=32770,
+        group_name="Utility Room",
+        slot_name="daytime",
+        slot=_DAYTIME_SLOT,
+        disambiguate=False,
     )
     assert entity.extra_state_attributes == {
         "mode": "simple",
@@ -186,9 +212,14 @@ def test_entity_category_is_diagnostic():
     bridge = MagicMock()
     node = _fake_node()
     entity = CyncLanMotionScheduleSensor(
-        bridge, "entry1", node,
-        group_id=1, group_name="Utility Room", slot_name="daytime",
-        slot=_DAYTIME_SLOT, disambiguate=False,
+        bridge,
+        "entry1",
+        node,
+        group_id=1,
+        group_name="Utility Room",
+        slot_name="daytime",
+        slot=_DAYTIME_SLOT,
+        disambiguate=False,
     )
     assert entity.entity_category == "diagnostic"
 
@@ -404,7 +435,9 @@ async def test_hub_query_sensors_follow_the_experimental_gate(hass, experimental
     )
 
     added = []
-    await async_setup_entry(hass, _query_entry(hass, experimental), lambda e: added.extend(e))
+    await async_setup_entry(
+        hass, _query_entry(hass, experimental), lambda e: added.extend(e)
+    )
 
     present = any(
         isinstance(e, (CyncLanHubFirmwareSensor, CyncLanHubClockSensor)) for e in added
@@ -418,7 +451,13 @@ async def test_hub_firmware_sensor_reports_version_and_attributes(hass):
     sensor = CyncLanHubFirmwareSensor("entry1")
     with patch(
         "cync_lan.devices.query_hub_info",
-        new=AsyncMock(return_value={"firmware_version": "1.2.3", "mac": "AABB", "setup_code": "X1"}),
+        new=AsyncMock(
+            return_value={
+                "firmware_version": "1.2.3",
+                "mac": "AABB",
+                "setup_code": "X1",
+            }
+        ),
     ):
         await sensor.async_update()
 
@@ -452,7 +491,9 @@ async def test_hub_query_sensors_keep_their_value_on_timeout(hass):
     sensor = CyncLanHubFirmwareSensor("entry1")
     with patch(
         "cync_lan.devices.query_hub_info",
-        new=AsyncMock(return_value={"firmware_version": "1.2.3", "mac": "A", "setup_code": "B"}),
+        new=AsyncMock(
+            return_value={"firmware_version": "1.2.3", "mac": "A", "setup_code": "B"}
+        ),
     ):
         await sensor.async_update()
     with patch("cync_lan.devices.query_hub_info", new=AsyncMock(return_value=None)):
@@ -487,12 +528,12 @@ async def test_hub_query_sensor_refreshes_on_its_own_interval(hass):
     )
 
     sensor = CyncLanHubClockSensor("entry1")
-    with patch(
-        "custom_components.cync_lan.sensor.async_track_time_interval"
-    ) as track:
-        with patch.object(sensor, "hass", hass, create=True), patch.object(
-            sensor, "async_on_remove", MagicMock(), create=True
-        ), patch.object(sensor, "_async_refresh", AsyncMock()):
+    with patch("custom_components.cync_lan.sensor.async_track_time_interval") as track:
+        with (
+            patch.object(sensor, "hass", hass, create=True),
+            patch.object(sensor, "async_on_remove", MagicMock(), create=True),
+            patch.object(sensor, "_async_refresh", AsyncMock()),
+        ):
             await sensor.async_added_to_hass()
 
     assert track.call_count == 1
@@ -514,10 +555,8 @@ def test_last_firmware_sensor_reports_nothing_before_a_release_lands():
     """Months of "None" is the expected steady state, not a fault - GE
     publishes rarely. It must not look broken while waiting."""
     sensor = _firmware_sensor()
-    with patch(
-        "cync_lan.cloud_api.CyncCloudAPI"
-    ) as api:
-        api.return_value.last_firmware_capture = None
+    with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
+        api.shared.return_value.last_firmware_capture = None
         assert sensor.native_value is None
         assert sensor.extra_state_attributes == {"captured": False}
 
@@ -539,7 +578,7 @@ def test_last_firmware_sensor_reports_the_version_so_state_changes_once():
         "url": "https://example.invalid/fw.bin",
     }
     with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
-        api.return_value.last_firmware_capture = capture
+        api.shared.return_value.last_firmware_capture = capture
         assert sensor.native_value == "1234"
         attrs = sensor.extra_state_attributes
         assert attrs["captured"] is True
@@ -553,7 +592,7 @@ def test_last_firmware_sensor_surfaces_a_verification_mismatch():
     not something to hide behind a happy-looking state."""
     sensor = _firmware_sensor()
     with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
-        api.return_value.last_firmware_capture = {
+        api.shared.return_value.last_firmware_capture = {
             "target_version": "9",
             "md5_matches": False,
             "size_matches": False,
@@ -565,7 +604,9 @@ def test_last_firmware_sensor_surfaces_a_verification_mismatch():
 def test_last_firmware_sensor_survives_the_library_being_unavailable():
     """A diagnostic must never take setup down with it."""
     sensor = _firmware_sensor()
-    with patch("cync_lan.cloud_api.CyncCloudAPI", side_effect=RuntimeError("boom")):
+    with patch(
+        "cync_lan.cloud_api.CyncCloudAPI.shared", side_effect=RuntimeError("boom")
+    ):
         assert sensor.native_value is None
         assert sensor.extra_state_attributes == {"captured": False}
 
@@ -594,9 +635,7 @@ async def test_firmware_sensor_absent_unless_capture_is_enabled(hass):
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("CYNC_FIRMWARE_CAPTURE_DIR", None)
         await sensor_mod.async_setup_entry(hass, entry, lambda e: added.extend(e))
-    assert not any(
-        type(e).__name__ == "CyncLanLastFirmwareSensor" for e in added
-    )
+    assert not any(type(e).__name__ == "CyncLanLastFirmwareSensor" for e in added)
 
     added.clear()
     with patch.dict(os.environ, {"CYNC_FIRMWARE_CAPTURE_DIR": "/share/fw"}):

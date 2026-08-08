@@ -43,8 +43,9 @@ def _mock_server(running_after_start=True):
 @pytest.fixture(autouse=True)
 def _fast_bind_poll():
     """Shrink the bind-wait loop so tests don't burn the real timeout."""
-    with patch("custom_components.cync_lan._BIND_POLL_INTERVAL", 0.001), patch(
-        "custom_components.cync_lan._BIND_TIMEOUT", 0.05
+    with (
+        patch("custom_components.cync_lan._BIND_POLL_INTERVAL", 0.001),
+        patch("custom_components.cync_lan._BIND_TIMEOUT", 0.05),
     ):
         yield
 
@@ -68,11 +69,14 @@ async def test_setup_entry_success(hass, tmp_path):
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=True)
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -96,15 +100,19 @@ async def test_setup_entry_wires_unknown_device_callback_to_immediate_refresh(
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=True)
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
-    ), patch(
-        "custom_components.cync_lan._refresh_export_and_reload_if_changed",
-        new=AsyncMock(),
-    ) as mock_refresh:
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.cync_lan._refresh_export_and_reload_if_changed",
+            new=AsyncMock(),
+        ) as mock_refresh,
+    ):
         from custom_components.cync_lan import async_setup_entry
 
         await async_setup_entry(hass, entry)
@@ -124,9 +132,11 @@ async def test_setup_entry_bind_timeout_raises_not_ready(hass, tmp_path):
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=False)  # never binds
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})):
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+    ):
         from custom_components.cync_lan import async_setup_entry
 
         with pytest.raises(ConfigEntryNotReady):
@@ -175,7 +185,9 @@ async def test_no_devices_check_creates_issue_when_nothing_connected(hass):
 
     await _check_and_report_no_devices(hass, entry, server)
 
-    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"no_devices_connected_{entry.entry_id}")
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"no_devices_connected_{entry.entry_id}"
+    )
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.WARNING
     assert issue.is_fixable is False
@@ -258,11 +270,14 @@ async def test_setup_entry_schedules_no_devices_check(hass, tmp_path):
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=True)
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -292,9 +307,14 @@ async def test_refresh_no_mtime_change_does_nothing(hass, tmp_path):
     entry.runtime_data = MagicMock()
     entry.runtime_data.ncync_server.node_devices = {1: MagicMock()}
 
-    with patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls, patch(
-        "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
-    ) as mock_reload:
+    with (
+        patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls,
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
+        ) as mock_reload,
+    ):
+        # 0.11.0: the integration asks for the shared client by name.
+        mock_api_cls.shared.return_value = mock_api_cls.return_value
         mock_api_cls.return_value.check_token = AsyncMock(return_value=True)
         mock_api_cls.return_value.export_config_file = AsyncMock(return_value=True)
         await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)
@@ -323,11 +343,17 @@ async def test_refresh_removed_device_deletes_from_registry_without_reload(
     async def _touch_mtime():
         cfg_file.write_text("devices: {1: {}}")  # different content -> new mtime
 
-    with patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls, patch(
-        "cync_lan.utils.parse_config", new=AsyncMock(return_value={1: MagicMock()})
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
-    ) as mock_reload:
+    with (
+        patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls,
+        patch(
+            "cync_lan.utils.parse_config", new=AsyncMock(return_value={1: MagicMock()})
+        ),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
+        ) as mock_reload,
+    ):
+        # 0.11.0: the integration asks for the shared client by name.
+        mock_api_cls.shared.return_value = mock_api_cls.return_value
         mock_api_cls.return_value.check_token = AsyncMock(return_value=True)
         mock_api_cls.return_value.export_config_file = AsyncMock(
             side_effect=_touch_mtime
@@ -353,12 +379,18 @@ async def test_refresh_added_device_triggers_reload(hass, tmp_path):
     async def _touch_mtime():
         cfg_file.write_text("devices: {1: {}, 2: {}}")
 
-    with patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls, patch(
-        "cync_lan.utils.parse_config",
-        new=AsyncMock(return_value={1: MagicMock(), 2: MagicMock()}),
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
-    ) as mock_reload:
+    with (
+        patch("cync_lan.cloud_api.CyncCloudAPI") as mock_api_cls,
+        patch(
+            "cync_lan.utils.parse_config",
+            new=AsyncMock(return_value={1: MagicMock(), 2: MagicMock()}),
+        ),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_reload", new=AsyncMock()
+        ) as mock_reload,
+    ):
+        # 0.11.0: the integration asks for the shared client by name.
+        mock_api_cls.shared.return_value = mock_api_cls.return_value
         mock_api_cls.return_value.check_token = AsyncMock(return_value=True)
         mock_api_cls.return_value.export_config_file = AsyncMock(
             side_effect=_touch_mtime
@@ -377,14 +409,19 @@ async def test_refresh_swallows_exceptions(hass, tmp_path):
     entry.add_to_hass(hass)
     entry.runtime_data = MagicMock()
 
+    # Patch shared() rather than the class: a side_effect on the constructor
+    # no longer reaches the integration, which asks for the process-wide
+    # client instead of building one.
     with patch(
-        "cync_lan.cloud_api.CyncCloudAPI",
+        "cync_lan.cloud_api.CyncCloudAPI.shared",
         side_effect=RuntimeError("cloud unreachable"),
     ):
         await _refresh_export_and_reload_if_changed(hass, entry, cfg_file)  # no raise
 
 
-async def test_setup_entry_parses_groups_even_when_light_groups_disabled(hass, tmp_path):
+async def test_setup_entry_parses_groups_even_when_light_groups_disabled(
+    hass, tmp_path
+):
     """parse_groups() is NOT gated behind CONF_ENABLE_LIGHT_GROUPS - that
     option only controls whether light.py creates group *entities*. Group
     data itself (device_ids, and now also per-group motion-sensor
@@ -398,13 +435,17 @@ async def test_setup_entry_parses_groups_even_when_light_groups_disabled(hass, t
 
     server = _mock_server(running_after_start=True)
     fake_groups = {1: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}}
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "cync_lan.utils.parse_groups", new=AsyncMock(return_value=fake_groups)
-    ) as mock_parse_groups, patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "cync_lan.utils.parse_groups", new=AsyncMock(return_value=fake_groups)
+        ) as mock_parse_groups,
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -423,15 +464,18 @@ async def test_setup_entry_parses_scenes_and_schedules(hass, tmp_path):
     server = _mock_server(running_after_start=True)
     fake_scenes = {3: {"name": "Movie Night"}}
     fake_schedules = {7: {"name": "Morning", "scene_id": 3, "enabled": True}}
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "cync_lan.utils.parse_scenes", new=AsyncMock(return_value=fake_scenes)
-    ), patch(
-        "cync_lan.utils.parse_schedules", new=AsyncMock(return_value=fake_schedules)
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch("cync_lan.utils.parse_scenes", new=AsyncMock(return_value=fake_scenes)),
+        patch(
+            "cync_lan.utils.parse_schedules", new=AsyncMock(return_value=fake_schedules)
+        ),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -450,14 +494,18 @@ async def test_setup_entry_scene_parse_failure_does_not_block_setup(hass, tmp_pa
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=True)
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "cync_lan.utils.parse_scenes",
-        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "cync_lan.utils.parse_scenes",
+            new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+        ),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -476,14 +524,18 @@ async def test_setup_entry_schedule_parse_failure_does_not_block_setup(hass, tmp
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=True)
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "cync_lan.utils.parse_schedules",
-        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "cync_lan.utils.parse_schedules",
+            new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+        ),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -503,13 +555,15 @@ async def test_setup_entry_parses_groups_when_enabled(hass, tmp_path):
 
     server = _mock_server(running_after_start=True)
     fake_groups = {32770: {"name": "Kitchen", "device_ids": [1], "is_subgroup": False}}
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "cync_lan.utils.parse_groups", new=AsyncMock(return_value=fake_groups)
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch("cync_lan.utils.parse_groups", new=AsyncMock(return_value=fake_groups)),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 
@@ -529,14 +583,18 @@ async def test_setup_entry_group_parse_failure_does_not_block_setup(hass, tmp_pa
     entry.add_to_hass(hass)
 
     server = _mock_server(running_after_start=True)
-    with patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)), patch(
-        "cync_lan.server.nCyncServer", return_value=server
-    ), patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})), patch(
-        "cync_lan.utils.parse_groups",
-        new=AsyncMock(side_effect=RuntimeError("bad yaml")),
-    ), patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
-        new=AsyncMock(return_value=True),
+    with (
+        patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", str(cfg_file)),
+        patch("cync_lan.server.nCyncServer", return_value=server),
+        patch("cync_lan.utils.parse_config", new=AsyncMock(return_value={})),
+        patch(
+            "cync_lan.utils.parse_groups",
+            new=AsyncMock(side_effect=RuntimeError("bad yaml")),
+        ),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         from custom_components.cync_lan import async_setup_entry
 

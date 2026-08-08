@@ -365,7 +365,13 @@ class CyncLanLastFirmwareSensor(SensorEntity):
         try:
             from cync_lan.cloud_api import CyncCloudAPI
 
-            return CyncCloudAPI().last_firmware_capture
+            # shared(), not CyncCloudAPI(): this reads what the server's
+            # periodic firmware check captured, so it has to be the same
+            # client that did the capturing. Bare construction returned that
+            # client until cync-lan 0.11.0 and now returns a fresh one, whose
+            # last_firmware_capture is always None - the sensor would have
+            # read empty forever without saying anything was wrong.
+            return CyncCloudAPI.shared().last_firmware_capture
         except Exception:  # noqa: BLE001 - a diagnostic must not break setup
             return None
 
