@@ -9,6 +9,28 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.11.1
+
+**Requires cync-lan 0.11.1**, which stops a cloud outage from leaving your
+devices unacknowledged.
+
+Only relevant with cloud passthrough switched on. If the Cync cloud went away
+*after* your devices had connected - vendor outage, your internet dropping,
+DNS changing under you - the integration went on treating the cloud as the
+thing that answers your devices, and nothing answered them. Commands still
+went out, so lights still responded; what stopped was every acknowledgement
+underneath. The visible symptom would have been devices that mostly work but
+drop off and reconnect more than they should, which is easy to blame on the
+mesh or the Wi-Fi.
+
+A session now returns to ordinary local operation when it loses the cloud,
+and picks passthrough back up by itself once the cloud is reachable again.
+Nothing to change, and the per-device MITM capture switch is deliberately
+unaffected - silence is what that switch is for.
+
+The version floor is what delivers it: an install already holding 0.11.0
+satisfies the old requirement and would never pull the fix on its own.
+
 ### 2.11.0
 
 **Requires cync-lan 0.11.0.** No behaviour changes here - this is the
