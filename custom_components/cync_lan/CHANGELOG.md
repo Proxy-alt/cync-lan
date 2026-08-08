@@ -9,6 +9,30 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.10.3
+
+**Requires cync-lan 0.10.4**, which fixes a third way cloud passthrough went
+quiet - this one after 2.10.2 was supposed to have settled it, and only after a
+device reconnects to the cloud.
+
+The library flag that means "relay but keep controlling" was cleared whenever
+the proxy stopped, leaving the flag that means "relay and stay silent" set. The
+reconnect path and the idle-connection watcher both stop and restart the proxy
+as ordinary business, so a session went silent on its first cloud reconnect and
+stayed that way until Home Assistant restarted.
+
+Unlike the 2.9.0 version of this bug, it does not switch the house off. Commands
+go out over two randomly chosen device connections, so one is lost only when
+both draws happen to be silent ones. On the install this was found on, 21 of 46
+connections were affected, which is about one command in five doing nothing -
+close enough to flaky hardware or a weak mesh to be worth saying plainly: if
+you have cloud passthrough on and have been blaming your lights, this was
+probably us.
+
+The version floor is why this release exists. 0.10.4 fixes it, but a Home
+Assistant install that already has 0.10.3 satisfies the old `>=0.10.3`
+requirement and never upgrades on its own.
+
 ### 2.10.2
 
 **Requires cync-lan 0.10.3**, which fixes two ways cloud passthrough broke
