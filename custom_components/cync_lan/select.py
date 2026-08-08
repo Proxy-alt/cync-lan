@@ -63,7 +63,8 @@ async def async_setup_entry(
             if node.metadata is None or not node.metadata.supported:
                 continue
             # The level bar exists on dimmers, not on binary switches.
-            if node.is_dimmable and not node.is_light:
+            # Same unsatisfiable condition as number.py's - never created.
+            if node.is_dimmer_switch:
                 entities.append(
                     CyncLanDimmerLedModeSelect(bridge, entry.entry_id, node)
                 )

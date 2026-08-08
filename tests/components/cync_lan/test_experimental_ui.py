@@ -454,14 +454,43 @@ async def test_segment_count_restores_its_assumed_state(hass):
 # ---------------------------------------------------------------------------
 
 
-def _dimmer(dev_id=5, *, dimmable=True, is_light=False):
+def _dimmer(dev_id=5, *, dimmable=True):
+    """A dimmer switch, as one can actually exist.
+
+    This used to set `is_dimmable=True, is_light=False`, which no device
+    type in the map can be: a dimmable switch has is_light True by the
+    carve-out that keeps it on the light platform, and is_dimmable was gated
+    to LIGHT-classified types. The entities below were guarded by
+    `is_dimmable and not is_light`, so this fixture was the only "device"
+    in existence that satisfied them - the test proved the gate worked using
+    a device that cannot be bought.
+
+    Both sides are now the one question that was meant, is_dimmer_switch,
+    and test_dimmer_fixture_describes_a_real_device_type keeps this honest.
+    """
     node = _node(dev_id)
+    node.is_dimmer_switch = dimmable
     node.is_dimmable = dimmable
-    node.is_light = is_light
+    node.is_light = True
     node.supports_rgb = False
     node.set_dimmer_led_mode = AsyncMock()
     node.set_dimmer_led_brightness = AsyncMock()
     return node
+
+
+def test_dimmer_fixture_describes_a_real_device_type():
+    """The fixture above must match some type in the map, or the tests using
+    it prove nothing about any device a user owns."""
+    from cync_lan import classify
+    from cync_lan.metadata.model_info import device_type_map
+
+    real = [t for t in device_type_map if classify.is_dimmer_switch(t)]
+    assert real, "no device type is a dimmer switch; the fixture is fiction"
+    for dev_type in real:
+        # exactly the shape _dimmer() fabricates
+        assert classify.is_dimmer_switch(dev_type) is True
+        assert classify.is_dimmable(dev_type) is True
+        assert classify.is_light(dev_type) is True
 
 
 @pytest.mark.parametrize("experimental", [False, True])

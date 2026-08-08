@@ -60,7 +60,14 @@ async def async_setup_entry(
                     CyncLanMultiColorSegmentCount(bridge, entry.entry_id, node)
                 )
             # The level bar exists on dimmer switches, not binary ones.
-            if node.is_dimmable and not node.is_light:
+            #
+            # This asked `is_dimmable and not is_light`, which no device
+            # type could satisfy: is_dimmable was gated to LIGHT-classified
+            # types, and a dimmable switch has is_light True by the
+            # carve-out that keeps it on the light platform. So this entity
+            # was never created, for anyone. is_dimmer_switch is the
+            # question that was meant - see cync_lan.classify.
+            if node.is_dimmer_switch:
                 entities.append(
                     CyncLanDimmerLedBrightness(bridge, entry.entry_id, node)
                 )

@@ -320,7 +320,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose 5% hardware minimum dimming floor for dimmer switches and plugs."""
-        if not self._node.is_light and self._node.is_dimmable:
+        if self._node.is_dimmer_switch:
             return {"min_brightness_pct": 5}
         return None
 
@@ -337,7 +337,7 @@ class CyncLanLight(CyncLanEntity, LightEntity):
             if ATTR_BRIGHTNESS in kwargs
             else None
         )
-        min_floor = 5 if (not self._node.is_light and self._node.is_dimmable) else 1
+        min_floor = 5 if self._node.is_dimmer_switch else 1
         if ATTR_TRANSITION in kwargs:
             # EXPERIMENTAL (see set_fine_brightness's docstring, predicted
             # cmd_code): the fine-brightness wire command always carries a

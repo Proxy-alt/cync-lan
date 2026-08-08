@@ -9,6 +9,35 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.12.0
+
+**Two experimental entities that had never appeared for anyone now do.** The
+dimmer-LED level bar (a number entity) and the dimmer-LED mode selector were
+both created only for a device satisfying `is_dimmable and not is_light` -
+and no device type can. Dimmable switches deliberately report `is_light` True
+so they land on the light platform and keep their brightness slider, while
+`is_dimmable` was gated to LIGHT-classified types, so the two halves of that
+condition excluded each other. Checked against all 157 known device types:
+zero matches.
+
+If you have a Cync dimmer switch with experimental features on, you should
+see those two controls for the first time. They remain experimental - the
+command shape behind them is predicted, not confirmed on hardware.
+
+The condition now asks `is_dimmer_switch`, which means what the comment
+beside it always claimed ("the level bar exists on dimmer switches, not
+binary ones") and matches 11 real device types.
+
+Worth saying how it survived: the test covering these entities built its
+device with `is_dimmable=True, is_light=False` - a combination no real device
+can have. The gate was proven to work using a device that cannot be bought.
+That fixture now describes a real dimmer switch, and a new test asserts it
+still matches something in the device map.
+
+**Requires cync-lan 0.12.0**, where the classification logic both this
+integration and `cync_ble` need now lives in one place instead of two copies
+that had already drifted apart on 13 device types.
+
 ### 2.11.1
 
 **Requires cync-lan 0.11.1**, which stops a cloud outage from leaving your
