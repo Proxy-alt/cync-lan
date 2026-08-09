@@ -9,6 +9,31 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.13.1
+
+**Requires cync-lan 0.16.0.** No behaviour change here - this is the
+integration side of a library fix, plus the test that should have caught it.
+
+The library read its listening port from a constant frozen when
+`cync_lan.const` was first imported. This integration works around that
+deliberately: it sets `CYNC_PORT` from your `local_port` option *before*
+importing anything from `cync_lan`, with a comment in `__init__.py` saying
+why. Correct, and load-bearing on nothing but sequencing - the moment
+another integration in the same Home Assistant imports the library first,
+the workaround stops being available.
+
+The library reads that setting at use time now, so the ordering no longer
+matters.
+
+The end-to-end tests were reaching past the option to patch the constant
+directly, which is why nothing here noticed. They go through `local_port`
+now, which means the path from the option to the socket is actually covered
+for the first time. They also bind an ephemeral port and read back what the
+OS assigned, rather than probing for a free one and binding it a moment
+later - a race the helper's own docstring described as "possible in
+principle and has not been observed", and which running 256 option
+combinations in sequence duly observed.
+
 ### 2.13.0
 
 **Colour temperature never worked. It does now.**

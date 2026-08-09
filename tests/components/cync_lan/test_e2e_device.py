@@ -60,19 +60,6 @@ exported_homes:
 """
 
 
-def _free_port() -> int:
-    """Ask the OS for a port, then let it go.
-
-    The server binds it a moment later. A race is possible in principle and
-    has not been observed; the alternative - patching asyncio.start_server to
-    pass port 0 - would mean the code under test no longer chooses its own
-    port, which is part of what this is checking.
-    """
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
 def _dead_port() -> int:
     """A port with nothing behind it, for "the cloud is unreachable"."""
     with socket.socket() as probe:
@@ -146,7 +133,7 @@ def tls_env(tmp_path, monkeypatch, socket_enabled):
     monkeypatch.setenv("CYNC_CLOUD_PORT", str(_dead_port()))
 
 
-async def _setup(hass, entry, port: int):
+async def _setup(hass, entry) -> int:
     """Set the entry up through Home Assistant, with only the cloud stubbed.
 
     Deliberately not a direct `async_setup_entry(hass, entry)` call, which is
@@ -156,15 +143,28 @@ async def _setup(hass, entry, port: int):
     config_entries is the difference between testing setup and testing the
     integration.
     """
+    # `local_port: 0` goes through the option, which is how a real install
+    # sets it - __init__ puts it in the environment and the server reads it
+    # from there. This used to patch `cync_lan.server.CYNC_SRV_PORT`, the
+    # constant that was the read site while it was frozen at import; the
+    # server reads through g.env now, so that patch would be inert.
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, "local_port": 0}
+    )
     with (
         patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", entry.runtime_config_path),
-        patch("cync_lan.server.CYNC_SRV_PORT", port),
-        patch("cync_lan.server.CYNC_SRV_HOST", "127.0.0.1"),
         patch("custom_components.cync_lan.util.refresh_cloud_export", AsyncMock()),
         patch("custom_components.cync_lan.refresh_cloud_export", AsyncMock()),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
         await hass.async_block_till_done()
+
+    # Whatever the OS handed out. Asking for a specific free port and binding
+    # it a moment later is a race - _free_port's docstring said as much, and
+    # running 256 option combinations in sequence finally hit it. Binding 0
+    # and reading back cannot collide.
+    server = entry.runtime_data.ncync_server
+    return server._server.sockets[0].getsockname()[1]
 
 
 async def _teardown(hass, entry):
@@ -186,8 +186,7 @@ async def test_a_device_on_a_real_socket_reaches_the_entity_layer(
     the connected device is registered as a live session (so the listener and
     the handshake ran).
     """
-    port = _free_port()
-    await _setup(hass, entry, port)
+    port = await _setup(hass, entry)
     server = entry.runtime_data.ncync_server
     try:
         assert server.running is True
@@ -218,8 +217,7 @@ async def test_turn_on_puts_a_real_command_on_the_wire(
     whole frame keeps this a test of the path, not a golden-bytes fixture that
     breaks every time a message counter moves.
     """
-    port = _free_port()
-    await _setup(hass, entry, port)
+    port = await _setup(hass, entry)
     try:
         VirtualCyncDevice, build_23_auth = _simulator()
 
@@ -253,8 +251,7 @@ async def test_turn_on_puts_a_real_command_on_the_wire(
 async def test_turn_off_sends_the_off_state(hass, entry, tls_env, socket_enabled):
     """The same path with the state byte flipped - cheap, and it catches a
     hardcoded 0x01 that a turn_on-only test would happily accept."""
-    port = _free_port()
-    await _setup(hass, entry, port)
+    port = await _setup(hass, entry)
     try:
         VirtualCyncDevice, build_23_auth = _simulator()
 
@@ -283,8 +280,7 @@ async def test_setup_survives_a_device_that_never_connects(
     yet would leave a working integration with nothing in it, and a device
     that joins ten minutes later would have nowhere to report to.
     """
-    port = _free_port()
-    await _setup(hass, entry, port)
+    await _setup(hass, entry)
     try:
         assert hass.states.get("light.office_lamp") is not None
         assert entry.runtime_data.ncync_server.get_dev_tcp_pool_sync() == []
@@ -343,8 +339,7 @@ async def test_every_option_combination_sets_up_and_unloads(
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, **extra_options}
     )
-    port = _free_port()
-    await _setup(hass, entry, port)
+    await _setup(hass, entry)
     try:
         assert entry.runtime_data.ncync_server.running is True
         assert hass.states.get("light.office_lamp") is not None, (
@@ -385,8 +380,7 @@ async def test_a_command_reaches_the_device_with_passthrough_either_way(
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, "cloud_passthrough": passthrough}
         )
-        port = _free_port()
-        await _setup(hass, entry, port)
+        port = await _setup(hass, entry)
         try:
             async with VirtualCyncDevice("127.0.0.1", port) as device:
                 await device.send(build_23_auth())
@@ -442,12 +436,9 @@ async def test_malformed_options_fail_cleanly_or_not_at_all(
     entities and a traceback the user cannot act on.
     """
     hass.config_entries.async_update_entry(entry, options=dict(bad_options))
-    port = _free_port()
     try:
         with (
             patch("cync_lan.const.CYNC_CONFIG_FILE_PATH", entry.runtime_config_path),
-            patch("cync_lan.server.CYNC_SRV_PORT", port),
-            patch("cync_lan.server.CYNC_SRV_HOST", "127.0.0.1"),
             patch("custom_components.cync_lan.util.refresh_cloud_export", AsyncMock()),
             patch("custom_components.cync_lan.refresh_cloud_export", AsyncMock()),
         ):
