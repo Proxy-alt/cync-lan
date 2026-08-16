@@ -160,30 +160,30 @@ copy in [`cync-lan-lib`](https://github.com/Proxy-alt/cync-lan-lib)), so any
 
 This repository is a fork of
 [baudneo/cync-lan](https://github.com/baudneo/cync-lan), which did the
-substantial async rewrite this continues from. Upstream stopped receiving
-updates at `0.0.6b16`; everything from `0.0.6b17` onward exists only here,
-including:
+substantial async rewrite this continues from and remains actively
+maintained. This fork diverged to pursue a different focus - a native
+Home Assistant integration - rather than any claim that upstream is
+unmaintained or defective; earlier wording here implied otherwise and was
+wrong to publish without checking it upstream first.
 
-- **This Home Assistant integration**, which does not exist upstream at all.
-  Not an add-on or an MQTT bridge - a real `custom_component` with its own
-  config flow, entities and services.
-- **Real motion-sensor support**: the standalone accessory and the
+What's specific to this fork:
+
+- **A native Home Assistant integration**: a real `custom_component` with
+  its own config flow, entities and services, rather than an add-on or MQTT
+  bridge.
+- **Motion-sensor support**: the standalone accessory and the
   battery-powered "Wireless Switch" both appear as `occupancy` binary
   sensors, and models with a built-in sensor get a second entity for it.
-- **54 previously-unrecognised device types**, plus corrected
-  classification (light vs switch, dimmable vs not) for several wired
-  switch types that were simply wrong.
-- **Real data-loss and crash fixes** found via a new unsupported-device
-  debug capture: silently dropped status updates on certain packet
-  variants, a TCP framing bug that discarded an entire read on one
-  misaligned byte, and a crash that could permanently kill MQTT.
 - **The protocol code split into a reusable
-  [`cync-lan`](https://pypi.org/project/cync-lan/) library**, so all
-  consumers share one implementation instead of vendoring copies that drift.
-- **Substantially expanded protocol documentation** in
+  [`cync-lan`](https://pypi.org/project/cync-lan/) library**, shared by
+  this integration and the
+  [`cync-lan-mqtt`](https://github.com/Proxy-alt/cync-lan-mqtt) add-on
+  instead of each vendoring its own copy.
+- **Expanded protocol documentation** in
   [`docs/mesh_opcodes.md`](docs/mesh_opcodes.md), reverse-engineered from
   the decompiled Android app, with explicit confidence markers.
-- **Test suites and CI where there were none**, across all three branches.
+- **Test suites and CI**, across all three repos - upstream currently has
+  neither.
 
 See [`custom_components/cync_lan/CHANGELOG.md`](./custom_components/cync_lan/CHANGELOG.md)
 for this integration's history and [CHANGELOG.md](./CHANGELOG.md) for the
