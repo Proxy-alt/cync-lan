@@ -55,12 +55,18 @@ def _node(dev_id: int, *, rgb: bool = True, motion: bool = False) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def _platform_entry(hass, *, experimental: bool, nodes=None, groups=None):
+def _platform_entry(
+    hass, *, experimental: bool, nodes=None, groups=None, enable_light_groups=False
+):
     from custom_components.cync_lan.bridge import CyncLanBridge
+    from custom_components.cync_lan.const import CONF_ENABLE_LIGHT_GROUPS
 
     entry = MagicMock()
     entry.entry_id = "entry1"
-    entry.options = {CONF_ENABLE_EXPERIMENTAL: experimental}
+    entry.options = {
+        CONF_ENABLE_EXPERIMENTAL: experimental,
+        CONF_ENABLE_LIGHT_GROUPS: enable_light_groups,
+    }
     entry.runtime_data = SimpleNamespace(
         bridge=CyncLanBridge(hass, "entry1"),
         ncync_server=SimpleNamespace(node_devices=nodes or {}),
@@ -69,6 +75,29 @@ def _platform_entry(hass, *, experimental: bool, nodes=None, groups=None):
         schedules={},
     )
     return entry
+
+
+def _switch_node(dev_id: int) -> MagicMock:
+    """A switch-domain node (is_light=False) - unlike _node() above, which
+    is a light-domain fixture and therefore never eligible for
+    CyncLanSwitchGroup (see async_add_switch_groups' has_light_member
+    check)."""
+    node = MagicMock(id=dev_id)
+    node.name = f"Switch {dev_id}"
+    node.mac = "AA:BB:CC:DD:EE:FF"
+    node.wifi_mac = "11:22:33:44:55:66"
+    node.bt_only = False
+    node.metadata = MagicMock(supported=True)
+    node.metadata.model_string = "Model"
+    node.is_light = False
+    node.is_switch = True
+    node.is_fan_controller = False
+    node.is_plug = False
+    node.has_wifi = True
+    node.has_multi_entities = False
+    node.entities = None
+    node.set_power = AsyncMock()
+    return node
 
 
 @pytest.mark.parametrize("experimental", [False, True])
@@ -95,25 +124,6 @@ async def test_multicolor_entities_follow_the_gate(hass, experimental):
     assert has_number is experimental
 
 
-@pytest.mark.parametrize("experimental", [False, True])
-async def test_group_power_switch_follows_the_gate(hass, experimental):
-    from custom_components.cync_lan.switch import (
-        CyncLanGroupPowerSwitch,
-        async_setup_entry as switch_setup,
-    )
-
-    entry = _platform_entry(
-        hass,
-        experimental=experimental,
-        groups={32770: {"name": "Kitchen", "device_ids": [5]}},
-    )
-
-    added: list = []
-    await switch_setup(hass, entry, lambda e: added.extend(e))
-
-    assert any(isinstance(e, CyncLanGroupPowerSwitch) for e in added) is experimental
-
-
 async def test_multicolor_entities_only_for_colour_capable_devices(hass):
     from custom_components.cync_lan.switch import async_setup_entry as switch_setup
 
@@ -128,18 +138,52 @@ async def test_multicolor_entities_only_for_colour_capable_devices(hass):
     assert not any(isinstance(e, CyncLanMultiColorGradientSwitch) for e in added)
 
 
-async def test_group_power_switch_sends_the_group_command(hass):
-    from custom_components.cync_lan.switch import CyncLanGroupPowerSwitch
+async def test_switch_group_sends_the_group_command_when_experimental(hass):
+    """Replaces the old standalone group-power switch: with the
+    experimental option on, CyncLanSwitchGroup addresses the group's own
+    MeshAddress directly on turn_on/turn_off instead of fanning out to
+    member switches."""
+    from custom_components.cync_lan.switch import CyncLanSwitchGroup
 
-    switch = CyncLanGroupPowerSwitch("entry1", 32770, "Kitchen")
-    switch.hass = hass
-    switch.async_write_ha_state = MagicMock()
+    group = CyncLanSwitchGroup(
+        "entry1_group_32770",
+        "Kitchen",
+        ["switch.a"],
+        group_id=32770,
+        use_group_command=True,
+    )
+    group.hass = hass
 
     with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
-        await switch.async_turn_on()
-
+        await group.async_turn_on()
     mock.assert_awaited_once_with(32770, 1)
-    assert switch.is_on is True
+
+    with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
+        await group.async_turn_off()
+    mock.assert_awaited_once_with(32770, 0)
+
+
+async def test_switch_group_fans_out_when_not_experimental(hass):
+    """Without the experimental option, CyncLanSwitchGroup must behave like
+    a plain HA switch group - fanning out to members - and never touch
+    set_group_power."""
+    from custom_components.cync_lan.switch import CyncLanSwitchGroup
+
+    group = CyncLanSwitchGroup(
+        "entry1_group_32770",
+        "Kitchen",
+        ["switch.a"],
+        group_id=32770,
+        use_group_command=False,
+    )
+    group.hass = MagicMock()
+    group.hass.services.async_call = AsyncMock()
+
+    with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
+        await group.async_turn_on()
+
+    mock.assert_not_called()
+    group.hass.services.async_call.assert_awaited_once()
 
 
 async def test_multicolor_gradient_switch_sends_and_assumes_state(hass):
@@ -570,42 +614,24 @@ async def test_dimmer_led_brightness_sends_and_assumes_state(hass):
     assert entity.native_value == 40
 
 
-async def test_group_power_switches_are_named_per_group(hass):
-    """Each group's switch must carry its own name.
+async def test_switch_group_names_come_from_the_group_directly(hass):
+    """Unlike the old bridge-attached group-power switch (which needed
+    has_entity_name + translation_key placeholders to avoid every group
+    rendering as "Cync LAN Bridge"), CyncLanSwitchGroup is a standalone HA
+    GroupEntity that takes its name straight from the constructor - see
+    test_switch.py's full-pipeline group tests for per-group naming through
+    async_setup_entry/async_add_switch_groups."""
+    from custom_components.cync_lan.switch import CyncLanSwitchGroup
 
-    translation_key naming only applies when has_entity_name is set. Without
-    it Entity.name stays None and Home Assistant falls back to the device
-    name, so every group's switch renders identically as "Cync LAN Bridge" -
-    which is what a real install reported.
-    """
-    from custom_components.cync_lan.switch import (
-        CyncLanGroupPowerSwitch,
-        async_setup_entry as switch_setup,
+    kitchen = CyncLanSwitchGroup(
+        "entry1_group_32770", "Kitchen", ["switch.a"], group_id=32770,
+        use_group_command=False,
     )
-
-    entry = _platform_entry(
-        hass,
-        experimental=True,
-        groups={
-            32770: {"name": "Kitchen", "device_ids": [5]},
-            32771: {"name": "Hallway", "device_ids": [5]},
-        },
+    hallway = CyncLanSwitchGroup(
+        "entry1_group_32771", "Hallway", ["switch.b"], group_id=32771,
+        use_group_command=False,
     )
-    added: list = []
-    await switch_setup(hass, entry, lambda e: added.extend(e))
-
-    switches = [e for e in added if isinstance(e, CyncLanGroupPowerSwitch)]
-    assert len(switches) == 2
-    for sw in switches:
-        assert sw._attr_has_entity_name is True, (
-            "without has_entity_name the group name is dropped and every "
-            "switch falls back to the bridge device's name"
-        )
-        assert sw.translation_key == "group_power"
-
-    # The distinguishing part has to differ per group, or they render alike.
-    placeholders = [sw._attr_translation_placeholders["group_name"] for sw in switches]
-    assert sorted(placeholders) == ["Hallway", "Kitchen"]
+    assert {kitchen.name, hallway.name} == {"Kitchen", "Hallway"}
 
 
 def test_no_entity_declares_a_translated_name_it_cannot_use():

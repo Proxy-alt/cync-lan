@@ -57,9 +57,9 @@
         "data": {
           "local_port": "Local TCP port (devices must be redirected here via DNS)",
           "export_refresh_interval": "Hours between automatic device-list refreshes (0 to disable)",
-          "enable_light_groups": "Create light group entities for Cync device groups",
-          "hide_group_members": "Hide each group's individual member lights from dashboards",
-          "enable_experimental": "Enable experimental commands (advanced) - adds the experimental_* actions for scenes, schedules, motion-sensor tuning and mesh queries. Their wire format is predicted, not confirmed against real hardware; they may do nothing, or something unintended.",
+          "enable_light_groups": "Create one aggregate entity per Cync device group ('Living Room', etc.) - a light group if its members are lights, a switch group if they're all switches",
+          "hide_group_members": "Hide each group's individual member entities from dashboards",
+          "enable_experimental": "Enable experimental commands (advanced) - adds the experimental_* actions for scenes, schedules, motion-sensor tuning and mesh queries. Their wire format is predicted, not confirmed against real hardware; they may do nothing, or something unintended. Also switches group entities from controlling each member individually to a single command addressed to the whole group, unconfirmed against real hardware.",
           "capture_unknown_packets": "Capture unrecognised packets to a log file (advanced) - writes the raw hex of anything connecting to the local port that isn't a Cync device. Use this to identify an unknown client; it is noisy, and needs a full Home Assistant restart to take effect, not just a reload.",
           "indicator_led_as_light": "Show the indicator ring as a light instead of separate controls",
           "capture_firmware": "Download firmware updates for inspection (never installs them)",
@@ -234,9 +234,6 @@
       },
       "multicolor_gradient_mode": {
         "name": "MultiColor gradient mode"
-      },
-      "group_power": {
-        "name": "{group_name} power"
       }
     },
     "sensor": {

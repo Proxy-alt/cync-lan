@@ -129,6 +129,12 @@ class CyncLanRuntimeData:
     # light.async_add_light_groups().
     light_add_entities: Optional[AddEntitiesCallback] = None
     created_light_group_ids: Optional[set[int]] = None  # group_ids already added
+    # Same as the pair above, for switch.py's CyncLanSwitchGroup - a group
+    # whose members are all switch-domain (no light-domain member) gets its
+    # aggregate entity there instead of from light.py. See
+    # switch.async_add_switch_groups().
+    switch_add_entities: Optional[AddEntitiesCallback] = None
+    created_switch_group_ids: Optional[set[int]] = None  # group_ids already added
 
 
 def _import_cync_lan_symbols() -> tuple[

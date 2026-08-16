@@ -9,11 +9,14 @@ from homeassistant.exceptions import HomeAssistantError
 import pytest
 
 from custom_components.cync_lan.bridge import CyncLanBridge
+from custom_components.cync_lan.const import DOMAIN
 from custom_components.cync_lan.switch import (
     CyncLanIndicatorLedWifiBlinkSwitch,
     CyncLanMitmModeSwitch,
     CyncLanScheduleSwitch,
     CyncLanSwitch,
+    CyncLanSwitchGroup,
+    async_add_switch_groups,
     async_setup_entry,
 )
 
@@ -420,3 +423,234 @@ async def test_schedule_switch_restores_last_state(hass):
         await entity.async_added_to_hass()
 
     assert entity.is_on is False
+
+
+# ---------------------------------------------------------------------------
+# switch groups - mirrors test_light.py's own group test suite. A group only
+# gets its aggregate entity here when none of its members are light-domain
+# (see async_add_switch_groups' docstring) - light.py owns pure-light and
+# mixed groups.
+# ---------------------------------------------------------------------------
+
+
+def _make_group_entry(entry_id: str, **options):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    return MockConfigEntry(
+        domain=DOMAIN,
+        entry_id=entry_id,
+        unique_id="user@example.com",
+        options=options,
+    )
+
+
+async def test_switch_groups_disabled_by_default_creates_no_group_entities(hass):
+    g = SimpleNamespace()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = _make_group_entry("entry1")  # enable_light_groups defaults to False
+    entry.add_to_hass(hass)
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=g.ncync_server,
+        schedules={},
+        groups={1: {"name": "Garage", "device_ids": [1], "is_subgroup": False}},
+    )
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert not any(isinstance(e, CyncLanSwitchGroup) for e in added)
+
+
+async def test_switch_groups_created_when_enabled_with_registered_members(hass):
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    g = SimpleNamespace()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    # Simulate the individual CyncLanSwitch entities for dev_ids 1 and 2
+    # already being registered, as they would be from this same platform's
+    # own earlier async_add_entities call in a real HA setup.
+    registry = er.async_get(hass)
+    e1 = registry.async_get_or_create(Platform.SWITCH, DOMAIN, "entry1_1", config_entry=entry)
+    e2 = registry.async_get_or_create(Platform.SWITCH, DOMAIN, "entry1_2", config_entry=entry)
+
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=g.ncync_server,
+        schedules={},
+        groups={32770: {"name": "Garage", "device_ids": [1, 2], "is_subgroup": False}},
+    )
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    groups = [e for e in added if isinstance(e, CyncLanSwitchGroup)]
+    assert len(groups) == 1
+    assert groups[0].name == "Garage"
+    assert groups[0].unique_id == "entry1_group_32770"
+    assert set(groups[0]._entity_ids) == {e1.entity_id, e2.entity_id}
+
+
+async def test_switch_group_skipped_when_a_member_is_light_domain(hass):
+    """A group with even one light-domain member is light.py's to own (see
+    CyncLanLightGroup) - it must not also get a switch-domain aggregate
+    here, mixed or not."""
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    light_node = _fake_node(id=1, is_light=True, is_switch=False)
+    switch_node = _fake_node(id=2, is_light=False, is_switch=True)
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.SWITCH, DOMAIN, "entry1_2", config_entry=entry)
+
+    entry.runtime_data = MagicMock(
+        bridge=CyncLanBridge(hass, "entry1"),
+        ncync_server=SimpleNamespace(node_devices={1: light_node, 2: switch_node}),
+        schedules={},
+        groups={32770: {"name": "Mixed Room", "device_ids": [1, 2], "is_subgroup": False}},
+    )
+
+    added = []
+    await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    assert not any(isinstance(e, CyncLanSwitchGroup) for e in added)
+
+
+async def test_add_switch_groups_noop_when_platform_not_set_up(hass):
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+    entry.runtime_data = SimpleNamespace(
+        switch_add_entities=None,
+        ncync_server=SimpleNamespace(node_devices={}),
+        groups={1: {"name": "Garage", "device_ids": [1], "is_subgroup": False}},
+        created_switch_group_ids=set(),
+    )
+
+    await async_add_switch_groups(hass, entry)  # must not raise
+
+
+async def test_add_switch_groups_creates_group_and_tracks_it(hass):
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.SWITCH, DOMAIN, "entry1_1", config_entry=entry)
+
+    switch_node = _fake_node(id=1, is_light=False, is_switch=True)
+    added = []
+    entry.runtime_data = SimpleNamespace(
+        switch_add_entities=lambda entities: added.extend(entities),
+        ncync_server=SimpleNamespace(node_devices={1: switch_node}),
+        groups={32770: {"name": "Garage", "device_ids": [1], "is_subgroup": False}},
+        created_switch_group_ids=set(),
+    )
+
+    await async_add_switch_groups(hass, entry)
+
+    assert len(added) == 1
+    assert isinstance(added[0], CyncLanSwitchGroup)
+    assert entry.runtime_data.created_switch_group_ids == {32770}
+
+
+async def test_add_switch_groups_skips_groups_already_created(hass):
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.SWITCH, DOMAIN, "entry1_1", config_entry=entry)
+
+    switch_node = _fake_node(id=1, is_light=False, is_switch=True)
+    added = []
+    entry.runtime_data = SimpleNamespace(
+        switch_add_entities=lambda entities: added.extend(entities),
+        ncync_server=SimpleNamespace(node_devices={1: switch_node}),
+        groups={1: {"name": "Garage", "device_ids": [1], "is_subgroup": False}},
+        created_switch_group_ids={1},
+    )
+
+    await async_add_switch_groups(hass, entry)
+
+    assert added == []
+
+
+async def test_add_switch_groups_hides_members_when_enabled(hass):
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _make_group_entry("entry1", enable_light_groups=True)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(Platform.SWITCH, DOMAIN, "entry1_1", config_entry=entry)
+
+    switch_node = _fake_node(id=1, is_light=False, is_switch=True)
+    entry.runtime_data = SimpleNamespace(
+        switch_add_entities=lambda entities: None,
+        ncync_server=SimpleNamespace(node_devices={1: switch_node}),
+        groups={1: {"name": "Garage", "device_ids": [1], "is_subgroup": False}},
+        created_switch_group_ids=set(),
+    )
+
+    await async_add_switch_groups(hass, entry, hide_members=True)
+
+    reg_entry = registry.async_get(
+        registry.async_get_entity_id(Platform.SWITCH, DOMAIN, "entry1_1")
+    )
+    assert reg_entry.hidden_by is er.RegistryEntryHider.INTEGRATION
+
+
+async def test_switch_group_uses_or_based_mode():
+    group = CyncLanSwitchGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["switch.a", "switch.b"],
+        group_id=1,
+        use_group_command=False,
+    )
+    assert group.mode is any
+
+
+def test_switch_group_uses_icon_translation_not_static_icon():
+    group = CyncLanSwitchGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["switch.a", "switch.b"],
+        group_id=1,
+        use_group_command=False,
+    )
+    assert group.translation_key == "cync_switch_group"
+    assert group.icon is None
+    assert group.name == "Test Group"  # _attr_name still wins, unaffected
+
+
+def test_icons_json_switch_group_entry():
+    import json
+    from pathlib import Path
+
+    icons = json.loads(
+        (
+            Path(__file__).parents[3] / "custom_components/cync_lan/icons.json"
+        ).read_text()
+    )
+    entry = icons["entity"]["switch"]["cync_switch_group"]
+    assert entry["default"] == "mdi:toggle-switch-variant"
+    assert entry["state"]["off"] == "mdi:toggle-switch-variant-off"
+    assert entry["state"]["unavailable"] == "mdi:toggle-switch-variant-off"

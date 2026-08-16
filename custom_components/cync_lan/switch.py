@@ -10,11 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components.group.switch import SwitchGroup
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -22,12 +24,17 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .bridge import CyncLanBridge
 from .const import (
     CONF_ENABLE_EXPERIMENTAL,
+    CONF_ENABLE_LIGHT_GROUPS,
+    CONF_HIDE_GROUP_MEMBERS,
     DEFAULT_DISABLED_ENTITIES,
     DEFAULT_ENABLE_EXPERIMENTAL,
+    DEFAULT_ENABLE_LIGHT_GROUPS,
+    DEFAULT_HIDE_GROUP_MEMBERS,
     DOMAIN,
     MANUFACTURER,
 )
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
+from .groups import apply_group_member_visibility, wait_for_member_entities
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
@@ -53,6 +60,7 @@ async def async_setup_entry(
     runtime_data = entry.runtime_data
     bridge = runtime_data.bridge
     entities: list[SwitchEntity] = []
+    switch_dev_ids: list[int] = []
     for node in runtime_data.ncync_server.node_devices.values():
         if node.metadata is None or not node.metadata.supported:
             continue
@@ -62,6 +70,7 @@ async def async_setup_entry(
                     entities.append(CyncLanSwitch(bridge, entry.entry_id, node, sub_id))
             else:
                 entities.append(CyncLanSwitch(bridge, entry.entry_id, node))
+            switch_dev_ids.append(node.id)
         # Indicator-LED "blink on WiFi disconnect" - a config entity, not
         # gated on is_switch like the device's own primary switch/light
         # entity above (the indicator LED is a whole-device feature, see
@@ -101,14 +110,121 @@ async def async_setup_entry(
                 entities.append(
                     CyncLanMultiColorGradientSwitch(bridge, entry.entry_id, node)
                 )
-        for group_id, group in (runtime_data.groups or {}).items():
-            entities.append(
-                CyncLanGroupPowerSwitch(
-                    entry.entry_id, group_id, group.get("name") or f"Group {group_id}"
-                )
-            )
 
     async_add_entities(entities)
+
+    # Stashed so switch groups can be (re)applied later - e.g. from the
+    # options flow when the user enables/refreshes them - without a full
+    # entry reload. See async_add_switch_groups() below.
+    entry.runtime_data.switch_add_entities = async_add_entities
+    entry.runtime_data.created_switch_group_ids = set()
+
+    if not entry.options.get(CONF_ENABLE_LIGHT_GROUPS, DEFAULT_ENABLE_LIGHT_GROUPS):
+        return
+    if not entry.runtime_data.groups:
+        return
+
+    # See wait_for_member_entities' docstring for why this polls instead of
+    # hass.async_block_till_done().
+    registry = er.async_get(hass)
+    await wait_for_member_entities(
+        hass, registry, Platform.SWITCH, entry.entry_id, switch_dev_ids
+    )
+
+    await async_add_switch_groups(hass, entry)
+
+
+async def async_add_switch_groups(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    hide_members: bool | None = None,
+    use_group_command: bool | None = None,
+) -> None:
+    """Create and add any switch-group entities that don't exist yet, and
+    apply each eligible group's member-visibility state.
+
+    A group only gets its aggregate entity here when *none* of its members
+    are light-domain devices - light.py's async_add_light_groups already
+    owns pure-light and mixed groups (see CyncLanLightGroup's docstring for
+    why a mixed group isn't split across both domains). Classification
+    reads node.is_light straight from runtime_data rather than the light
+    platform's own registered entities, so this doesn't depend on load
+    order between the two platforms.
+
+    Callable both from this platform's own async_setup_entry and directly
+    from the options flow, same reload-avoidance and staleness reasoning as
+    light.async_add_light_groups - see that function's docstring, including
+    for hide_members and use_group_command's None-falls-back-to-entry.options
+    default.
+    """
+    runtime_data = entry.runtime_data
+    add_entities = runtime_data.switch_add_entities
+    if add_entities is None:
+        return
+    groups = runtime_data.groups or {}
+    if not groups:
+        return
+
+    node_devices = runtime_data.ncync_server.node_devices
+
+    def _has_light_member(group: dict[str, Any]) -> bool:
+        return any(
+            (node := node_devices.get(dev_id)) is not None
+            and node.metadata is not None
+            and node.metadata.supported
+            and node.is_light
+            for dev_id in group.get("device_ids", [])
+        )
+
+    switch_only_groups = {
+        group_id: group
+        for group_id, group in groups.items()
+        if not _has_light_member(group)
+    }
+    if not switch_only_groups:
+        return
+
+    registry = er.async_get(hass)
+    already_created = runtime_data.created_switch_group_ids
+    if use_group_command is None:
+        use_group_command = entry.options.get(
+            CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+        )
+    group_entities = []
+    for group_id, group in switch_only_groups.items():
+        if group_id in already_created:
+            continue
+        member_entity_ids = []
+        for dev_id in group.get("device_ids", []):
+            unique_id = f"{entry.entry_id}_{dev_id}"
+            entity_id = registry.async_get_entity_id(Platform.SWITCH, DOMAIN, unique_id)
+            if entity_id is not None:
+                member_entity_ids.append(entity_id)
+        if not member_entity_ids:
+            # Group has no members that ended up as switch entities here
+            # (e.g. devices this account no longer has) - nothing to
+            # aggregate.
+            continue
+        group_entities.append(
+            CyncLanSwitchGroup(
+                unique_id=f"{entry.entry_id}_group_{group_id}",
+                name=group.get("name") or f"Group {group_id}",
+                entity_ids=member_entity_ids,
+                group_id=group_id,
+                use_group_command=use_group_command,
+            )
+        )
+        already_created.add(group_id)
+    if group_entities:
+        add_entities(group_entities)
+
+    if hide_members is None:
+        hide_members = entry.options.get(
+            CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
+        )
+    apply_group_member_visibility(
+        registry, Platform.SWITCH, entry.entry_id, switch_only_groups, hide_members
+    )
 
 
 class CyncLanMultiColorGradientSwitch(CyncLanEntity, RestoreEntity, SwitchEntity):
@@ -155,62 +271,73 @@ class CyncLanMultiColorGradientSwitch(CyncLanEntity, RestoreEntity, SwitchEntity
         self.async_write_ha_state()
 
 
-class CyncLanGroupPowerSwitch(RestoreEntity, SwitchEntity):
-    """Turn a whole Cync device group on or off in one mesh command,
-    replacing experimental_set_group_power and its numeric group_id.
+class CyncLanSwitchGroup(SwitchGroup):
+    """A Cync device group ("Garage", etc.) exposed as an aggregate switch
+    entity, for groups whose members are all switch-domain devices (wired
+    switches/plugs, no light-domain member - see async_add_switch_groups).
+    Built entirely on Home Assistant's own built-in group-switch
+    implementation, mirroring light.py's CyncLanLightGroup exactly:
 
-    Distinct from light.py's CyncLanLightGroup, which is Home Assistant's
-    own group helper fanning out one service call per member. This sends a
-    single command addressed to the group's own MeshAddress, which is the
-    thing that has never been confirmed to work against real firmware - see
-    docs/mesh_opcodes.md's "Groups control". Kept as a separate,
-    experimental-only entity for exactly that reason: if it silently does
-    nothing, the working per-member path is still there.
+    - async_turn_on/async_turn_off forward to every member via the
+      standard switch.turn_on/switch.turn_off services - unless the
+      experimental option is on, see below.
+    - is_on is OR-based across members (SwitchGroup's `mode` parameter,
+      left at its default/falsy - `any`, not `all`).
 
-    Home-wide, so it lives on the bridge device. Assumed state - a group
-    has no state of its own to read back.
+    No _attr_device_info: like CyncLanLightGroup, this is a virtual
+    aggregate, not tied to a physical device.
+
+    **Experimental direct-group-command override.** By default, turning
+    this on/off issues one command per member device via the fanout above -
+    the confirmed-working path. When the experimental option is on, a
+    single command addresses the group's own MeshAddress directly instead
+    (cync_lan.devices.set_group_power) - unconfirmed against real firmware,
+    which is exactly why it's opt-in. This replaces the old standalone
+    group-power switch entity, which did the same thing but as a separate,
+    bridge-attached control disconnected from the room's actual switch
+    entity; folding it in here means there's one group control per room,
+    not two disagreeing ones.
+
+    icon-translations (gold): translation_key drives icons.json's
+    entity.switch.cync_switch_group block, giving "off" a proper
+    mdi:toggle-switch-variant-off instead of the "on" icon at all times -
+    same reasoning as CyncLanLightGroup's own icon-translations note. Safe
+    to set translation_key here despite _attr_name also being set below
+    (via SwitchGroup.__init__, from the `name` constructor argument) -
+    Entity._name_internal checks _attr_name first and never falls through
+    to translation_key for naming, so this only affects icon resolution,
+    not the group's display name (e.g. "Garage").
     """
 
-    _attr_should_poll = False
-    _attr_assumed_state = True
-    # Required for translation_key naming to apply at all. Without it the
-    # "{group_name} power" string is never used, Entity.name stays None, and
-    # every one of these falls back to the device name - so a home with six
-    # groups showed six switches all called "Cync LAN Bridge". Every other
-    # bridge-attached entity either sets this or sets _attr_name directly;
-    # this class did neither.
-    _attr_has_entity_name = True
-    _attr_translation_key = "group_power"
+    _attr_translation_key = "cync_switch_group"
 
-    def __init__(self, entry_id: str, group_id: int, name: str) -> None:
+    def __init__(
+        self,
+        unique_id: str,
+        name: str,
+        entity_ids: list[str],
+        group_id: int,
+        use_group_command: bool,
+    ) -> None:
+        super().__init__(unique_id, name, entity_ids, mode=False)
         self._group_id = group_id
-        self._attr_unique_id = f"{entry_id}_group_power_{group_id}"
-        self._attr_translation_placeholders = {"group_name": name}
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer=MANUFACTURER,
-            name="Cync LAN Bridge",
-        )
-        self._attr_is_on = False
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state in ("on", "off"):
-            self._attr_is_on = last_state.state == "on"
+        self._use_group_command = use_group_command
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._set(True)
+        if self._use_group_command:
+            from cync_lan.devices import set_group_power
+
+            await set_group_power(self._group_id, 1)
+            return
+        await super().async_turn_on(**kwargs)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._set(False)
+        if self._use_group_command:
+            from cync_lan.devices import set_group_power
 
-    async def _set(self, on: bool) -> None:
-        from cync_lan.devices import set_group_power
-
-        await set_group_power(self._group_id, 1 if on else 0)
-        self._attr_is_on = on
-        self.async_write_ha_state()
+            await set_group_power(self._group_id, 0)
+            return
+        await super().async_turn_off(**kwargs)
 
 
 class CyncLanSwitch(CyncLanEntity, SwitchEntity):

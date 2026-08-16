@@ -111,8 +111,8 @@ Services → Cync LAN → Configure**:
 |---|---|---|
 | Local TCP port | The port the listener binds to. Must match whatever you redirect Cync's DNS traffic to. | `23779` |
 | Export refresh interval (hours) | How often to silently re-check your Cync account for newly added devices and reload if the device list changed. `0` disables automatic refresh. | `24` |
-| Create light group entities | Expose each Cync device group ("Living Room", etc.) as an aggregate `light` entity, built on Home Assistant's own group-light implementation. | Off |
-| Hide group members | When light groups are enabled, hide each group's individual member lights from dashboards (they still exist and still work, just out of the way). | Off |
+| Create light group entities | Expose each Cync device group ("Living Room", etc.) as one aggregate entity, built on Home Assistant's own group-light/group-switch implementation - a `light` if the group's members are lights, a `switch` if they're all switches. | Off |
+| Hide group members | When groups are enabled, hide each group's individual member entities from dashboards (they still exist and still work, just out of the way). | Off |
 
 Account email/password are collected once during setup and are not exposed
 as an ongoing configuration parameter - use the reauthentication flow
@@ -146,18 +146,26 @@ Supported entity types in this integration specifically:
 
 - **Light** - on/off, brightness, color temperature, RGB color, and effects,
   depending on what the specific device model supports.
-- **Light (group)** - one aggregate entity per Cync device group ("Living
-  Room", etc.), opt-in via the "Create light group entities" configuration
-  parameter above. Reads as on if any member is on, and mirrors Home
-  Assistant's own built-in group-light behavior for brightness/color
-  averaging. Adding or removing a device from a group's own Cync-side
-  membership is available via the `cync_lan.experimental_set_group_membership`
-  service; setting a whole group's power in one command (without going
-  through HA's per-member group behavior) is
-  `cync_lan.experimental_set_group_power`. Both are EXPERIMENTAL - see
-  [Known limitations](#known-limitations).
+- **Light (group)** - one aggregate `light` entity per Cync device group
+  ("Living Room", etc.) whose members are lights, opt-in via the "Create
+  light group entities" configuration parameter above. Reads as on if any
+  member is on, and mirrors Home Assistant's own built-in group-light
+  behavior for brightness/color averaging - each turn_on/turn_off issues one
+  command per member device. Adding or removing a device from a group's own
+  Cync-side membership is available via the
+  `cync_lan.experimental_set_group_membership` service. With "Enable
+  experimental commands" also on, a plain on/off (no brightness/color/etc.)
+  instead sends one command straight to the group's own mesh address
+  (replacing the old standalone group-power switch) - EXPERIMENTAL, see
+  [Known limitations](#known-limitations). Attribute-carrying calls always
+  use the per-member fanout regardless.
 - **Switch** - binary on/off switches and outlets/plugs (shown with the
   `outlet` device class where applicable).
+- **Switch (group)** - the same aggregate-entity behavior as Light (group)
+  above, but for a Cync device group whose members are *all* switches (no
+  light-domain member) - a room with a mix of lights and switches gets a
+  Light (group) entity instead, covering just its light members. Built on
+  Home Assistant's own group-switch behavior.
 - **Fan** - fan controller switches, with percentage and preset-speed control.
 - **Binary sensor** - standalone motion/occupancy sensor accessories, and a
   secondary motion entity on light/switch models with a built-in occupancy
@@ -305,7 +313,7 @@ and have nothing to read back.
 | Indicator LED mode / colour / brightness / wifi blink | Entities on each device |
 | Activate a scene | Scene entities |
 | Enable/disable a schedule | Switch per schedule |
-| Group power | Switch per group |
+| Group power | The group's own Light (group)/Switch (group) entity, not a separate control |
 | MultiColor gradient mode | Switch per colour-capable device |
 | MultiColor segment count | Number per colour-capable device |
 | Motion-sensor sensitivity/timing | Configure -> Edit motion sensor settings |
@@ -528,11 +536,16 @@ cleaned up with `cync_lan.experimental_delete_scene`/
   integration intercepts, or is BLE-specific, hasn't been confirmed against
   real hardware yet - a timeout returns a clear error rather than silently
   hanging. See the parent project's `docs/cync_automations.md`.
-- **Light groups are a virtual HA construct, not a Cync-side concept for
-  most commands.** `experimental_set_group_power` targets a group's real
-  Cync mesh address, but the light group *entity* itself is built entirely
-  on Home Assistant's own group-light helper - turning it on/off issues one
-  command per member device, not a single group-wide command.
+- **Light/Switch group entities are virtual HA constructs, not a Cync-side
+  concept, by default.** They're built on Home Assistant's own
+  group-light/group-switch helpers - turning one on/off issues one command
+  per member device, not a single group-wide command, unless "Enable
+  experimental commands" is also on (see above), in which case a plain
+  on/off addresses the group's real Cync mesh address directly instead -
+  unconfirmed against real firmware, which is why it's opt-in.
+  Attribute-carrying light calls (brightness/color/etc.) always use the
+  per-member fanout regardless of that option, since the mesh-address
+  command carries no such data.
 - **MultiColor services are 3 raw wire primitives, not a full custom-scheme
   builder.** `set_multicolor_gradient_mode`/`set_multicolor_segment_count`/
   `set_multicolor_segments` are confirmed individually, but this integration

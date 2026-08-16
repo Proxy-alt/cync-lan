@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.cync_lan.bridge import CyncLanBridge
 from custom_components.cync_lan.const import DOMAIN
@@ -363,7 +363,13 @@ async def test_turn_on_with_effect():
 def test_light_group_uses_or_based_mode():
     """The group's on/off state must be True if ANY member is on (LightGroup's
     `mode` defaults to `any`, not `all`, when constructed with mode=False)."""
-    group = CyncLanLightGroup("entry1_group_1", "Test Group", ["light.a", "light.b"])
+    group = CyncLanLightGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["light.a", "light.b"],
+        group_id=1,
+        use_group_command=False,
+    )
     assert group.mode is any
 
 
@@ -375,10 +381,73 @@ def test_light_group_uses_icon_translation_not_static_icon():
     string assertions, since Entity.icon only ever returns _attr_icon/
     entity_description.icon, never a translation-resolved value (that
     resolution happens in the frontend)."""
-    group = CyncLanLightGroup("entry1_group_1", "Test Group", ["light.a", "light.b"])
+    group = CyncLanLightGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["light.a", "light.b"],
+        group_id=1,
+        use_group_command=False,
+    )
     assert group.translation_key == "cync_light_group"
     assert group.icon is None
     assert group.name == "Test Group"  # _attr_name still wins, unaffected
+
+
+async def test_light_group_plain_on_off_uses_direct_group_command_when_experimental():
+    """Replaces the old standalone CyncLanGroupPowerSwitch: a plain on/off
+    (no kwargs) on the group entity itself sends one command straight to
+    the group's MeshAddress when the experimental option is on, instead of
+    LightGroup's default per-member fanout."""
+    group = CyncLanLightGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["light.a", "light.b"],
+        group_id=32770,
+        use_group_command=True,
+    )
+
+    with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
+        await group.async_turn_on()
+    mock.assert_awaited_once_with(32770, 1)
+
+    with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
+        await group.async_turn_off()
+    mock.assert_awaited_once_with(32770, 0)
+
+
+async def test_light_group_attribute_calls_still_fan_out_when_experimental():
+    """A call carrying attributes (brightness, colour, etc.) can't be
+    expressed by the group-address command, which is a bare on/off - so it
+    must always fall back to the per-member fanout, even with the
+    experimental option on."""
+    group = CyncLanLightGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["light.a", "light.b"],
+        group_id=32770,
+        use_group_command=True,
+    )
+    group.hass = MagicMock()
+    group.hass.services.async_call = AsyncMock()
+
+    with patch("cync_lan.devices.set_group_power", new=AsyncMock()) as mock:
+        await group.async_turn_on(brightness=128)
+
+    mock.assert_not_called()
+    group.hass.services.async_call.assert_awaited_once()
+
+
+def test_light_group_defaults_to_fanout_when_not_experimental():
+    """use_group_command=False (the default when the experimental option is
+    off) must never touch set_group_power, even for a plain on/off."""
+    group = CyncLanLightGroup(
+        "entry1_group_1",
+        "Test Group",
+        ["light.a", "light.b"],
+        group_id=32770,
+        use_group_command=False,
+    )
+    assert group._use_group_command is False
 
 
 def test_icons_json_light_group_entry():
@@ -505,7 +574,7 @@ async def test_groups_created_with_real_entity_platform_add_entities(hass):
     work - fine in this lightweight test environment, but on a real HA
     install with many integrations still settling during startup it took
     over 60 seconds and tripped HA's own "platform setup is taking too
-    long" warning. Replaced with _wait_for_light_entities(), a bounded
+    long" warning. Replaced with wait_for_member_entities(), a bounded
     poll for just these specific entities. This test is still valuable as
     end-to-end coverage of the real entity-platform/registry-resolution
     path (which found and fixed the entity_id-vs-unique_id assumption bug

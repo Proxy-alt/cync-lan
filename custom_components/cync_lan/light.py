@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any, KeysView
 
 from cync_lan.classify import (
@@ -30,9 +29,11 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_ENABLE_EXPERIMENTAL,
     CONF_ENABLE_LIGHT_GROUPS,
     CONF_INDICATOR_LED_AS_LIGHT,
     CONF_HIDE_GROUP_MEMBERS,
+    DEFAULT_ENABLE_EXPERIMENTAL,
     DEFAULT_ENABLE_LIGHT_GROUPS,
     DEFAULT_HIDE_GROUP_MEMBERS,
     DEFAULT_INDICATOR_LED_AS_LIGHT,
@@ -40,6 +41,7 @@ from .const import (
 )
 from .bridge import CyncLanBridge
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
+from .groups import apply_group_member_visibility, wait_for_member_entities
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
@@ -50,46 +52,6 @@ if TYPE_CHECKING:
 # protocol handles command serialization per bridge itself, so entities
 # don't need to be limited to N-at-a-time from HA's side.
 PARALLEL_UPDATES = 0
-
-_ENTITY_REGISTRATION_POLL_INTERVAL = 0.1
-_ENTITY_REGISTRATION_TIMEOUT = 5.0
-
-
-async def _wait_for_light_entities(
-    hass: HomeAssistant,
-    registry: er.EntityRegistry,
-    entry_id: str,
-    dev_ids: list[int],
-) -> None:
-    """Poll the entity registry until every light entity just scheduled by
-    async_add_entities() above has actually been registered, or a short
-    timeout elapses.
-
-    async_add_entities() only *schedules* registration as a background
-    task (EntityPlatform._async_schedule_add_entities_for_entry) - it does
-    not complete before returning. A previous version of this function
-    waited on hass.async_block_till_done() instead, which waits for every
-    hass-tracked background task process-wide, not just this platform's
-    own scheduled work - on a real HA install with many integrations
-    still settling during startup, that took over 60 seconds and tripped
-    HA's own "Setup of platform cync_lan is taking longer than 60
-    seconds" warning. Polling just for these specific entities resolves
-    as soon as they're actually ready without waiting on anything
-    unrelated, and the timeout keeps this from hanging indefinitely if
-    one somehow never registers - the caller's own registry lookups
-    already tolerate a missing entity by skipping that group member.
-    """
-    if not dev_ids:
-        return
-    deadline = hass.loop.time() + _ENTITY_REGISTRATION_TIMEOUT
-    while hass.loop.time() < deadline:
-        if all(
-            registry.async_get_entity_id(Platform.LIGHT, DOMAIN, f"{entry_id}_{dev_id}")
-            is not None
-            for dev_id in dev_ids
-        ):
-            return
-        await asyncio.sleep(_ENTITY_REGISTRATION_POLL_INTERVAL)
 
 
 async def async_setup_entry(
@@ -137,17 +99,22 @@ async def async_setup_entry(
     # requires the individual lights above to actually be registered first
     # - and async_add_entities() only *schedules* that registration as a
     # background task, it does not complete it before returning. See
-    # _wait_for_light_entities' docstring for why this polls instead of
+    # wait_for_member_entities' docstring for why this polls instead of
     # using hass.async_block_till_done() (the original fix, which caused
     # its own real-world regression: platform setup taking 60+ seconds).
     registry = er.async_get(hass)
-    await _wait_for_light_entities(hass, registry, entry.entry_id, light_dev_ids)
+    await wait_for_member_entities(
+        hass, registry, Platform.LIGHT, entry.entry_id, light_dev_ids
+    )
 
     await async_add_light_groups(hass, entry)
 
 
 async def async_add_light_groups(
-    hass: HomeAssistant, entry: ConfigEntry, hide_members: bool | None = None
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    hide_members: bool | None = None,
+    use_group_command: bool | None = None,
 ) -> None:
     """Create and add any light-group entities that don't exist yet, and
     apply each group's member-visibility state.
@@ -161,10 +128,11 @@ async def async_add_light_groups(
     Callers are responsible for checking CONF_ENABLE_LIGHT_GROUPS
     themselves before calling this - the options flow calls it before its
     own entry.options update actually lands, so entry.options here could
-    read stale for that caller. hide_members has the same staleness
-    problem: pass it explicitly (from the just-submitted form data) when
-    calling from there; left as None it falls back to entry.options,
-    correct for the async_setup_entry caller where options are current.
+    read stale for that caller. hide_members and use_group_command have the
+    same staleness problem: pass them explicitly (from the just-submitted
+    form data) when calling from there; left as None they fall back to
+    entry.options, correct for the async_setup_entry caller where options
+    are current.
     """
     runtime_data = entry.runtime_data
     add_entities = runtime_data.light_add_entities
@@ -178,6 +146,10 @@ async def async_add_light_groups(
 
     registry = er.async_get(hass)
     already_created = runtime_data.created_light_group_ids
+    if use_group_command is None:
+        use_group_command = entry.options.get(
+            CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+        )
     group_entities = []
     for group_id, group in groups.items():
         if group_id in already_created:
@@ -191,13 +163,17 @@ async def async_add_light_groups(
         if not member_entity_ids:
             # Group has no members that ended up as light entities here
             # (e.g. a group of plugs/binary switches, or devices this
-            # account no longer has) - nothing to aggregate.
+            # account no longer has) - nothing to aggregate. A pure-switch
+            # group gets its aggregate entity from switch.py instead - see
+            # CyncLanSwitchGroup.
             continue
         group_entities.append(
             CyncLanLightGroup(
                 unique_id=f"{entry.entry_id}_group_{group_id}",
                 name=group.get("name") or f"Group {group_id}",
                 entity_ids=member_entity_ids,
+                group_id=group_id,
+                use_group_command=use_group_command,
             )
         )
         already_created.add(group_id)
@@ -208,41 +184,9 @@ async def async_add_light_groups(
         hide_members = entry.options.get(
             CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
         )
-    _apply_group_member_visibility(registry, entry.entry_id, groups, hide_members)
-
-
-def _apply_group_member_visibility(
-    registry: er.EntityRegistry,
-    entry_id: str,
-    groups: dict[int, dict[str, Any]],
-    hide: bool,
-) -> None:
-    """Hide or reveal each light group's member entities, without
-    touching entities the user hid themselves.
-
-    The entity registry tracks *why* an entity is hidden via hidden_by
-    (None, RegistryEntryHider.USER, or RegistryEntryHider.INTEGRATION) -
-    only ever touches entities this integration hid itself
-    (hidden_by == INTEGRATION), so a user who explicitly hid a member
-    light for their own reasons keeps that choice regardless of this
-    option, in either direction.
-    """
-    for group in groups.values():
-        for dev_id in group.get("device_ids", []):
-            unique_id = f"{entry_id}_{dev_id}"
-            entity_id = registry.async_get_entity_id(Platform.LIGHT, DOMAIN, unique_id)
-            if entity_id is None:
-                continue
-            reg_entry = registry.async_get(entity_id)
-            if reg_entry is None:
-                continue
-            if hide:
-                if reg_entry.hidden_by is None:
-                    registry.async_update_entity(
-                        entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION
-                    )
-            elif reg_entry.hidden_by is er.RegistryEntryHider.INTEGRATION:
-                registry.async_update_entity(entity_id, hidden_by=None)
+    apply_group_member_visibility(
+        registry, Platform.LIGHT, entry.entry_id, groups, hide_members
+    )
 
 
 # The device reports this in the temperature field to mean "I am in RGB mode
@@ -411,7 +355,8 @@ class CyncLanLightGroup(LightGroup):
 
     - async_turn_on/async_turn_off forward to every member via the
       standard light.turn_on/light.turn_off services (turning the group on
-      turns every member on, and vice versa).
+      turns every member on, and vice versa) - unless the experimental
+      option is on, see below.
     - is_on is OR-based across members (LightGroup's `mode` parameter,
       left at its default/falsy - `any`, not `all`) - the group reads as
       "on" if any single member is on.
@@ -420,6 +365,21 @@ class CyncLanLightGroup(LightGroup):
 
     No _attr_device_info: like HA's own native "Light Group" helper, this
     is a virtual aggregate, not tied to a physical device.
+
+    **Experimental direct-group-command override.** By default, turning
+    this on/off issues one command per member device via the fanout above -
+    the confirmed-working path. When the experimental option is on and the
+    call carries no other attributes (a plain on/off, not
+    "set brightness to 50%"), a single command addresses the group's own
+    MeshAddress directly instead (cync_lan.devices.set_group_power) -
+    unconfirmed against real firmware, which is exactly why it's opt-in.
+    This replaces the old standalone group-power switch entity, which did
+    the same thing but as a separate control disconnected from the room's
+    actual light entity; folding it in here means there's one group control
+    per room, not two disagreeing ones. Attribute-carrying calls always use
+    the fanout regardless of the option, since the group command carries no
+    such data. See switch.py's CyncLanSwitchGroup for the equivalent on
+    groups with no light-domain members.
 
     icon-translations (gold): translation_key (not a static _attr_icon)
     drives icons.json's entity.light.cync_light_group block, which gives
@@ -439,8 +399,33 @@ class CyncLanLightGroup(LightGroup):
 
     _attr_translation_key = "cync_light_group"
 
-    def __init__(self, unique_id: str, name: str, entity_ids: list[str]) -> None:
+    def __init__(
+        self,
+        unique_id: str,
+        name: str,
+        entity_ids: list[str],
+        group_id: int,
+        use_group_command: bool,
+    ) -> None:
         super().__init__(unique_id, name, entity_ids, mode=False)
+        self._group_id = group_id
+        self._use_group_command = use_group_command
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if self._use_group_command and not kwargs:
+            from cync_lan.devices import set_group_power
+
+            await set_group_power(self._group_id, 1)
+            return
+        await super().async_turn_on(**kwargs)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        if self._use_group_command and not kwargs:
+            from cync_lan.devices import set_group_power
+
+            await set_group_power(self._group_id, 0)
+            return
+        await super().async_turn_off(**kwargs)
 
 
 def _light_run_mode_effects() -> KeysView[str]:

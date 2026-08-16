@@ -9,6 +9,42 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.14.0
+
+**Group entities merged with the experimental group-power switch. Groups of
+switches now get their own aggregate entity too.**
+
+Previously, a Cync device group ("Living Room", etc.) could show up as up to
+two disagreeing controls: a `light` group entity (opt-in, built on Home
+Assistant's own group-light helper, per-member fanout) and, separately, a
+`switch` entity living on the "Cync LAN Bridge" device (opt-in via "Enable
+experimental commands", addressing the group's real mesh address directly).
+Neither appeared "under" the room the way individual devices do, and the two
+could only ever agree by coincidence.
+
+They're one entity per group now:
+
+- A group whose members are all lights gets a `light` group entity, same as
+  before.
+- A group whose members are all switches (no light-domain member) gets a
+  new `switch` group entity instead - same behavior, same options, built on
+  Home Assistant's own group-switch helper. A group with a mix of the two
+  gets the light entity, covering just its light members.
+- "Enable experimental commands" no longer controls whether the group
+  entity *exists* - "Create light group entities" does, for either domain.
+  It now controls the group entity's *turn_on/turn_off behavior*: on, a
+  plain on/off sends one command straight to the group's mesh address
+  (the old switch's behavior, unconfirmed against real firmware); off (the
+  default), it fans out one command per member (the old light group's
+  behavior, confirmed working). Attribute-carrying light calls
+  (brightness/color/etc.) always fan out regardless, since the mesh-address
+  command carries no such data.
+
+**This removes the standalone group-power switch entity** (`switch.<x>_power`
+on the bridge device) - if you had automations or dashboards pointing at it,
+repoint them at the room's own group entity. The `set_group_power` service
+is unaffected.
+
 ### 2.13.1
 
 **Requires cync-lan 0.16.0.** No behaviour change here - this is the

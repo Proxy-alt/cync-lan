@@ -349,15 +349,25 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
         self._config_entry = config_entry
         self._motion_sensor_dev_id: int | None = None
 
-    async def _refresh_and_apply_light_groups(self, hide_members: bool) -> None:
+    async def _refresh_and_apply_light_groups(
+        self, hide_members: bool, use_group_command: bool
+    ) -> None:
         """Best-effort: refresh the cloud export, reparse groups from it,
-        and add any newly-available light-group entities - plus apply the
-        current hide_members setting to every known group's members - to
-        the already-running light platform. All without forcing a full
-        entry reload, which would drop every device's TCP connection just
-        to add or hide a handful of entities. Confirmed via a real user
-        enabling light groups against a stale export and getting none
-        until a full restart; this makes it apply immediately instead.
+        and add any newly-available light- or switch-group entities - plus
+        apply the current hide_members setting to every known group's
+        members - to the already-running light and switch platforms. All
+        without forcing a full entry reload, which would drop every
+        device's TCP connection just to add or hide a handful of entities.
+        Confirmed via a real user enabling light groups against a stale
+        export and getting none until a full restart; this makes it apply
+        immediately instead.
+
+        use_group_command is passed through explicitly rather than left for
+        light.async_add_light_groups/switch.async_add_switch_groups to read
+        from entry.options themselves - this method runs before
+        self.async_create_entry(data=user_input) below actually commits the
+        new options, so entry.options would still read whatever
+        CONF_ENABLE_EXPERIMENTAL was before this save.
 
         A failure at any step here logs and falls back to whatever group
         data/entities already exist, rather than blocking the rest of the
@@ -393,8 +403,20 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                 _LOGGER.exception("Failed to parse refreshed Cync device groups")
 
         from .light import async_add_light_groups
+        from .switch import async_add_switch_groups
 
-        await async_add_light_groups(self.hass, entry, hide_members=hide_members)
+        await async_add_light_groups(
+            self.hass,
+            entry,
+            hide_members=hide_members,
+            use_group_command=use_group_command,
+        )
+        await async_add_switch_groups(
+            self.hass,
+            entry,
+            hide_members=hide_members,
+            use_group_command=use_group_command,
+        )
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -435,7 +457,10 @@ class CyncLanOptionsFlow(config_entries.OptionsFlow):
                 await self._refresh_and_apply_light_groups(
                     hide_members=user_input.get(
                         CONF_HIDE_GROUP_MEMBERS, DEFAULT_HIDE_GROUP_MEMBERS
-                    )
+                    ),
+                    use_group_command=user_input.get(
+                        CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL
+                    ),
                 )
             experimental_changed = user_input.get(
                 CONF_ENABLE_EXPERIMENTAL, DEFAULT_ENABLE_EXPERIMENTAL

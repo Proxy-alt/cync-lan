@@ -520,7 +520,10 @@ async def test_options_flow_applies_groups_without_reload(hass, mock_cloud_api):
     ), patch(
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
-    ) as mock_add_groups:
+    ) as mock_add_groups, patch(
+        "custom_components.cync_lan.switch.async_add_switch_groups",
+        new=AsyncMock(),
+    ) as mock_add_switch_groups:
         result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
@@ -533,7 +536,12 @@ async def test_options_flow_applies_groups_without_reload(hass, mock_cloud_api):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.runtime_data.groups == fresh_groups
-    mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)
+    mock_add_groups.assert_awaited_once_with(
+        hass, entry, hide_members=False, use_group_command=False
+    )
+    mock_add_switch_groups.assert_awaited_once_with(
+        hass, entry, hide_members=False, use_group_command=False
+    )
 
 
 async def test_options_flow_light_groups_noop_before_initial_setup(
@@ -560,7 +568,10 @@ async def test_options_flow_light_groups_noop_before_initial_setup(
     with patch(
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
-    ) as mock_add_groups:
+    ) as mock_add_groups, patch(
+        "custom_components.cync_lan.switch.async_add_switch_groups",
+        new=AsyncMock(),
+    ) as mock_add_switch_groups:
         result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
@@ -573,6 +584,7 @@ async def test_options_flow_light_groups_noop_before_initial_setup(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     mock_add_groups.assert_not_awaited()
+    mock_add_switch_groups.assert_not_awaited()
 
 
 async def test_options_flow_applies_stale_groups_when_export_fails(hass, mock_cloud_api):
@@ -602,7 +614,10 @@ async def test_options_flow_applies_stale_groups_when_export_fails(hass, mock_cl
     ) as mock_parse_groups, patch(
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
-    ) as mock_add_groups:
+    ) as mock_add_groups, patch(
+        "custom_components.cync_lan.switch.async_add_switch_groups",
+        new=AsyncMock(),
+    ) as mock_add_switch_groups:
         result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
@@ -616,7 +631,12 @@ async def test_options_flow_applies_stale_groups_when_export_fails(hass, mock_cl
     assert result["type"] is FlowResultType.CREATE_ENTRY
     mock_parse_groups.assert_not_awaited()
     assert entry.runtime_data.groups == cached_groups
-    mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)
+    mock_add_groups.assert_awaited_once_with(
+        hass, entry, hide_members=False, use_group_command=False
+    )
+    mock_add_switch_groups.assert_awaited_once_with(
+        hass, entry, hide_members=False, use_group_command=False
+    )
 
 
 async def test_options_flow_parse_groups_failure_does_not_block_save(
@@ -647,7 +667,10 @@ async def test_options_flow_parse_groups_failure_does_not_block_save(
     ), patch(
         "custom_components.cync_lan.light.async_add_light_groups",
         new=AsyncMock(),
-    ) as mock_add_groups:
+    ) as mock_add_groups, patch(
+        "custom_components.cync_lan.switch.async_add_switch_groups",
+        new=AsyncMock(),
+    ) as mock_add_switch_groups:
         result = await _start_general_settings(hass, entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
@@ -661,7 +684,12 @@ async def test_options_flow_parse_groups_failure_does_not_block_save(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     # groups left untouched at the cached value since the reparse failed
     assert entry.runtime_data.groups == cached_groups
-    mock_add_groups.assert_awaited_once_with(hass, entry, hide_members=False)
+    mock_add_groups.assert_awaited_once_with(
+        hass, entry, hide_members=False, use_group_command=False
+    )
+    mock_add_switch_groups.assert_awaited_once_with(
+        hass, entry, hide_members=False, use_group_command=False
+    )
 
 
 def _make_motion_sensor_node(dev_id: int, name: str, has_motion_sensor: bool = True):

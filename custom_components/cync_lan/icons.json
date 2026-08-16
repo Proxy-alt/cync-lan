@@ -28,6 +28,15 @@
           "unavailable": "mdi:lightbulb-group-off"
         }
       }
+    },
+    "switch": {
+      "cync_switch_group": {
+        "default": "mdi:toggle-switch-variant",
+        "state": {
+          "off": "mdi:toggle-switch-variant-off",
+          "unavailable": "mdi:toggle-switch-variant-off"
+        }
+      }
     }
   }
 }
