@@ -33,13 +33,31 @@ Cost: one extra FIND_INFORMATION per notify/indicate characteristic
 whose sole descriptor was synthesized, the first time register_notify()
 is called for it.
 
-Not built or run - same as the patch this replaces, I have the
-affected hardware but no BlueZ build environment on it, and would
-rather send this for review than sit on it further. I have re-read it
-against current master's src/shared/gatt-client.c line by line, but
-that is the extent of my verification. Happy to test whatever form is
-preferred - including against bluetoothd specifically, as asked -
-against the physical devices.
+Built against bluetoothd itself this time, as asked. Applied to the
+5.86 release tree (matching this adapter's running version exactly),
+compiled clean, and run in place of the system bluetoothd against the
+onboard BCM4345C0 with passive scanning enabled: it found and powered
+hci0 normally, and discovered the live mesh - dozens of devices across
+both OUI families from the original report, F4:BC:DA and 78:6D:EB.
+
+What I could not get in this pass is a clean connect-and-subscribe
+trace through it. Testing through bluetoothd meant testing without
+this adapter's usual paired/cached state, which does not carry over to
+a freshly started daemon, and on this multi-device mesh that showed up
+as connection instability before GATT discovery completed - MTU
+exchange succeeding but primary service discovery failing outright a
+few times in a row. I did not chase that further, since it looks like
+the adapter's known multi-connection contention on this system rather
+than anything this patch touches; it never got far enough into a
+session to reach discover_descs() or register_notify() either way. I'd
+rather report that plainly than claim a trace I don't have.
+
+So: build-verified against your own binary this time, and confirmed
+running live against the real controller and the real mesh, but not
+yet a traced repro of the fix itself in action. Will attempt that again
+when the mesh is quieter, or happy to take direction on a more targeted
+way to reach it (a single already-paired device, a longer test window)
+given the concurrent-connection limits observed here.
 
 Fixes: https://github.com/bluez/bluez/issues/2383
 Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
