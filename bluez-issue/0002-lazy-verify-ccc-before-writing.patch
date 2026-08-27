@@ -40,31 +40,53 @@ onboard BCM4345C0: it found and powered hci0 normally, and discovered
 the live mesh - dozens of devices across both OUI families from the
 original report, F4:BC:DA and 78:6D:EB.
 
-Two attempts at a connect-and-subscribe trace through it, and I still
-don't have one, but I narrowed why. I build and run this inside a
-container (a management add-on with D-Bus/adapter access, not a full
-host shell). Every connection attempt from it - multiple real devices,
-both OUI families, RSSI down to -76 dBm so not signal quality - fails
-one of two ways: the ATT socket connect itself returns "Function not
-implemented" (ENOSYS) in att_connect_cb() right after the HCI-level LE
-connection succeeds, or, less often, it gets past that, MTU exchange
-completes, and discover_primary_cb() fails immediately with
-ATT ECODE: 0x00 - a local abort, nothing on the wire. Neither reaches
-discover_descs() or register_notify(). Right after, I confirmed the
-real host-native bluetoothd does not have this problem: restarting it,
-Home Assistant's own Bluetooth stack reconnected through it and
-completed a normal GATT write to an unrelated BLE device with no
-issue. So this looks like a capability/seccomp gap specific to opening
-new L2CAP CoC sockets from inside this build container, not the
-adapter, not the mesh, and not this patch - but I can't rule that out
-with certainty from here, and would rather report that plainly than
-claim a trace I don't have.
+Four attempts at a connect-and-subscribe trace through it, across two
+sessions, and I still don't have one - but the picture changed partway
+through, so here is the honest sequence rather than a rounded-off
+summary.
 
-So: build-verified against your own binary, confirmed powering the
-real adapter and discovering the real mesh, but no traced repro of the
-fix in action yet. I'd need either a host shell on this box or a
-different, non-containerized machine with a real L2CAP path to get
-that.
+First two attempts, from inside a container (a management add-on with
+D-Bus/adapter access, not a full host shell): every connection attempt
+- multiple real devices, both OUI families, RSSI down to -76 dBm so
+not signal quality - failed one of two ways: the ATT socket connect
+itself returning "Function not implemented" (ENOSYS) in
+att_connect_cb() right after the HCI-level LE connection succeeded, or,
+less often, getting past that to a completed MTU exchange before
+discover_primary_cb() failed immediately with ATT ECODE: 0x00 - a
+local abort, nothing on the wire. I suspected a capability/seccomp gap
+specific to that container.
+
+A third attempt retried the one device address my Home Assistant BLE
+integration has itself proven it can complete a full GATT session
+against (it keeps that list; right now it has exactly one entry).
+Same failures.
+
+A fourth attempt got genuinely unconstrained access - root on the
+host's Bluetooth stack directly, not a container - and reran the same
+build there. It immediately completed a full GATT session against a
+different BLE device on this host (services, characteristics, and
+descriptors, including a real discovered 0x2902 on that device) on the
+first attempt. So the capability/seccomp theory from the first two
+attempts was wrong, and I'm retracting it. But connecting to the Cync
+mesh nodes specifically was still unreliable even with unconstrained
+access - the same two failure signatures, on two different nodes.
+Neither of the four attempts total ever reached discover_descs() or
+register_notify().
+
+My own report on this issue already recorded "outcome varies by
+attempt on the same device and the same firmware ... every one ended
+in UNLIKELY_ERROR" against the real host daemon, across 14 attempts.
+Taken together with this, I now think connection establishment to this
+specific hardware is genuinely marginal on this adapter, independent
+of which bluetoothd binary is driving it - not a property of my test
+setup, and not something this patch's code path is even reached by.
+
+So: build-verified against your own binary, confirmed completing full
+GATT sessions (proven against another device, not a Cync node) with
+unconstrained host-level access, but still no traced repro of the fix
+in action. I don't want to keep asserting causes I haven't verified,
+so I'm reporting that plainly rather than continuing to chase it
+blind.
 
 Fixes: https://github.com/bluez/bluez/issues/2383
 Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
