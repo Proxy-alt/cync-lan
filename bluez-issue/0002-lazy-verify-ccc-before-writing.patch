@@ -36,28 +36,35 @@ is called for it.
 Built against bluetoothd itself this time, as asked. Applied to the
 5.86 release tree (matching this adapter's running version exactly),
 compiled clean, and run in place of the system bluetoothd against the
-onboard BCM4345C0 with passive scanning enabled: it found and powered
-hci0 normally, and discovered the live mesh - dozens of devices across
-both OUI families from the original report, F4:BC:DA and 78:6D:EB.
+onboard BCM4345C0: it found and powered hci0 normally, and discovered
+the live mesh - dozens of devices across both OUI families from the
+original report, F4:BC:DA and 78:6D:EB.
 
-What I could not get in this pass is a clean connect-and-subscribe
-trace through it. Testing through bluetoothd meant testing without
-this adapter's usual paired/cached state, which does not carry over to
-a freshly started daemon, and on this multi-device mesh that showed up
-as connection instability before GATT discovery completed - MTU
-exchange succeeding but primary service discovery failing outright a
-few times in a row. I did not chase that further, since it looks like
-the adapter's known multi-connection contention on this system rather
-than anything this patch touches; it never got far enough into a
-session to reach discover_descs() or register_notify() either way. I'd
-rather report that plainly than claim a trace I don't have.
+Two attempts at a connect-and-subscribe trace through it, and I still
+don't have one, but I narrowed why. I build and run this inside a
+container (a management add-on with D-Bus/adapter access, not a full
+host shell). Every connection attempt from it - multiple real devices,
+both OUI families, RSSI down to -76 dBm so not signal quality - fails
+one of two ways: the ATT socket connect itself returns "Function not
+implemented" (ENOSYS) in att_connect_cb() right after the HCI-level LE
+connection succeeds, or, less often, it gets past that, MTU exchange
+completes, and discover_primary_cb() fails immediately with
+ATT ECODE: 0x00 - a local abort, nothing on the wire. Neither reaches
+discover_descs() or register_notify(). Right after, I confirmed the
+real host-native bluetoothd does not have this problem: restarting it,
+Home Assistant's own Bluetooth stack reconnected through it and
+completed a normal GATT write to an unrelated BLE device with no
+issue. So this looks like a capability/seccomp gap specific to opening
+new L2CAP CoC sockets from inside this build container, not the
+adapter, not the mesh, and not this patch - but I can't rule that out
+with certainty from here, and would rather report that plainly than
+claim a trace I don't have.
 
-So: build-verified against your own binary this time, and confirmed
-running live against the real controller and the real mesh, but not
-yet a traced repro of the fix itself in action. Will attempt that again
-when the mesh is quieter, or happy to take direction on a more targeted
-way to reach it (a single already-paired device, a longer test window)
-given the concurrent-connection limits observed here.
+So: build-verified against your own binary, confirmed powering the
+real adapter and discovering the real mesh, but no traced repro of the
+fix in action yet. I'd need either a host shell on this box or a
+different, non-containerized machine with a real L2CAP path to get
+that.
 
 Fixes: https://github.com/bluez/bluez/issues/2383
 Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
