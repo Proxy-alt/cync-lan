@@ -1,0 +1,55 @@
+From abb50fa2218966942c3b9e2b8f15e3923ea5f803 Mon Sep 17 00:00:00 2001
+From: Proxy <proxy-alt@proxy-alt.dev>
+Date: Fri, 4 Sep 2026 16:38:42 -0400
+Subject: [PATCH BlueZ v3 2/2] unit/test-micp: expect the FIND_INFORMATION the
+ CCC fix adds
+
+Companion to the shared/gatt-client.c fix (bluez/bluez#2383): the
+lazy-verify patch adds one FIND_INFORMATION exchange before the first
+CCC write to a characteristic whose descriptor discover_descs()
+synthesized. MICS_MUTE's CCC (handle 0x0004) is exactly that case, so
+the three client subtests that drive it now need that exchange in
+their scripted ATT sequence, right where register_notify() actually
+issues it (after the value read, before the CCC-enable write).
+
+Verified: ./unit/test-micp passes 7/7 with zero leaks under
+LeakSanitizer, against the corresponding shared/gatt-client.c fix.
+
+unit/test-mcp.c and unit/test-bap.c need the equivalent update for
+their own synthesized-CCC subtests; not included here.
+
+Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
+Assisted-by: Claude:claude-sonnet-5
+---
+ unit/test-micp.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/unit/test-micp.c b/unit/test-micp.c
+index ff17300..2229642 100644
+--- a/unit/test-micp.c
++++ b/unit/test-micp.c
+@@ -455,18 +455,21 @@ static void test_server(const void *user_data)
+ 
+ #define MICP_CL_CGGIT_SER_BV_01_C \
+ 	MICS_MUTE_READ, \
++	MICP_FIND_INFO_REQ, \
+ 	MICS_EN_MUTE_DISCPTR, \
+ 	IOV_DATA(0x12, 0x03, 0x00, 0x01, 0x00), \
+ 	IOV_DATA(0x01, 0x12, 0x03, 0x00, 0x013)
+ 
+ #define	MICP_CL_CGGIT_CHA_BV_01_C	\
+ 	MICS_MUTE_READ, \
++	MICP_FIND_INFO_REQ, \
+ 	MICS_EN_MUTE_DISCPTR, \
+ 	IOV_DATA(0x12, 0x03, 0x00, 0x01, 0x00), \
+ 	IOV_DATA(0x013)
+ 
+ #define MICP_CL_SPE_BI_01_C	\
+ 	MICS_MUTE_READ, \
++	MICP_FIND_INFO_REQ, \
+ 	MICS_EN_MUTE_DISCPTR, \
+ 	IOV_DATA(0x12, 0x03, 0x00, 0x01, 0x00), \
+ 	IOV_DATA(0x01, 0x12, 0x03, 0x00, 0x80)
+-- 
+2.54.0 (Apple Git-157)
+
