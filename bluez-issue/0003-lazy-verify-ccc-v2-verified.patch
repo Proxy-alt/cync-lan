@@ -1,6 +1,6 @@
-From 5ad9279d558415f74152fec374bbcf2f73ad267c Mon Sep 17 00:00:00 2001
+From 4011fb2a2c2b19a3df7e8a5d2982b2904745d07b Mon Sep 17 00:00:00 2001
 From: Proxy <proxy-alt@proxy-alt.dev>
-Date: Fri, 4 Sep 2026 11:08:39 -0400
+Date: Fri, 4 Sep 2026 14:26:58 -0400
 Subject: [PATCH BlueZ v2] shared/gatt-client: confirm a synthesized CCC handle
  before writing to it
 
@@ -63,10 +63,10 @@ Signed-off-by: Proxy <proxy-alt@proxy-alt.dev>
  1 file changed, 178 insertions(+), 4 deletions(-)
 
 diff --git a/src/shared/gatt-client.c b/src/shared/gatt-client.c
-index f8ebab3..cce73e6 100644
+index a6abe8a..8c50131 100644
 --- a/src/shared/gatt-client.c
 +++ b/src/shared/gatt-client.c
-@@ -94,6 +94,14 @@ struct bt_gatt_client {
+@@ -86,6 +86,14 @@ struct bt_gatt_client {
  	int next_reg_id;
  	unsigned int disc_id, nfy_id, nfy_mult_id, ind_id;
  
@@ -81,8 +81,8 @@ index f8ebab3..cce73e6 100644
  	/*
  	 * Handles of the GATT Service and the Service Changed characteristic
  	 * value handle. These will have the value 0 if they are not present on
-@@ -116,6 +124,23 @@ struct bt_gatt_client {
- 	unsigned int mtu_req_id;
+@@ -112,6 +120,23 @@ struct bt_gatt_client {
+ 	uint16_t pending_error_handle;
  };
  
 +/*
@@ -105,7 +105,7 @@ index f8ebab3..cce73e6 100644
  struct request {
  	struct bt_gatt_client *client;
  	bool long_write;
-@@ -223,10 +248,20 @@ struct notify_chrc {
+@@ -219,10 +244,20 @@ struct notify_chrc {
  	int notify_count;  /* Reference count of registered notify callbacks */
  
  	/* Pending calls to register_notify are queued here so that they can be
@@ -127,7 +127,7 @@ index f8ebab3..cce73e6 100644
  };
  
  struct notify_data {
-@@ -287,6 +322,11 @@ static void notify_chrc_free(void *data)
+@@ -283,6 +318,11 @@ static void notify_chrc_free(void *data)
  	if (chrc->notify_id)
  		gatt_db_attribute_unregister(chrc->attr, chrc->notify_id);
  
@@ -139,7 +139,7 @@ index f8ebab3..cce73e6 100644
  	queue_destroy(chrc->reg_notify_queue, notify_data_unref);
  	free(chrc);
  }
-@@ -338,9 +378,19 @@ static struct notify_chrc *notify_chrc_create(struct bt_gatt_client *client,
+@@ -334,9 +374,19 @@ static struct notify_chrc *notify_chrc_create(struct bt_gatt_client *client,
  	}
  
  	ccc = gatt_db_attribute_get_ccc(attr);
@@ -160,7 +160,7 @@ index f8ebab3..cce73e6 100644
  	chrc->client = client;
  	chrc->attr = attr;
  	chrc->value_handle = value_handle;
-@@ -793,6 +843,16 @@ static bool discover_descs(struct discovery_op *op, bool *discovering)
+@@ -789,6 +839,16 @@ static bool discover_descs(struct discovery_op *op, bool *discovering)
  							&ccc_uuid, 0, NULL,
  							NULL, NULL);
  			if (attr) {
@@ -177,7 +177,7 @@ index f8ebab3..cce73e6 100644
  				free(chrc_data);
  				continue;
  			}
-@@ -1751,6 +1811,102 @@ static bool match_notify_chrc_value_handle(const void *a, const void *b)
+@@ -1747,6 +1807,102 @@ static bool match_notify_chrc_value_handle(const void *a, const void *b)
  	return chrc->value_handle == value_handle;
  }
  
@@ -280,7 +280,7 @@ index f8ebab3..cce73e6 100644
  static unsigned int register_notify(struct bt_gatt_client *client,
  				uint16_t handle,
  				bt_gatt_client_register_callback_t callback,
-@@ -1804,10 +1960,11 @@ static unsigned int register_notify(struct bt_gatt_client *client,
+@@ -1800,10 +1956,11 @@ static unsigned int register_notify(struct bt_gatt_client *client,
  	__sync_fetch_and_add(&notify_data->chrc->notify_count, 1);
  
  	/*
@@ -294,7 +294,7 @@ index f8ebab3..cce73e6 100644
  		queue_push_tail(chrc->reg_notify_queue, notify_data);
  		return notify_data->id;
  	}
-@@ -1821,6 +1978,21 @@ static unsigned int register_notify(struct bt_gatt_client *client,
+@@ -1817,6 +1974,21 @@ static unsigned int register_notify(struct bt_gatt_client *client,
  		return notify_data->id;
  	}
  
@@ -316,7 +316,7 @@ index f8ebab3..cce73e6 100644
  	/* Write to the CCC descriptor */
  	if (!notify_data_write_ccc(notify_data, true, enable_ccc_callback)) {
  		queue_remove(client->notify_list, notify_data);
-@@ -2295,6 +2467,7 @@ static void bt_gatt_client_free(struct bt_gatt_client *client)
+@@ -2291,6 +2463,7 @@ static void bt_gatt_client_free(struct bt_gatt_client *client)
  
  	queue_destroy(client->notify_chrcs, notify_chrc_free);
  	queue_destroy(client->notify_list, notify_data_cleanup);
@@ -324,7 +324,7 @@ index f8ebab3..cce73e6 100644
  
  	queue_destroy(client->ready_cbs, ready_destroy);
  	queue_destroy(client->idle_cbs, idle_destroy);
-@@ -2361,6 +2534,7 @@ static struct bt_gatt_client *gatt_client_new(struct gatt_db *db,
+@@ -2507,6 +2680,7 @@ static struct bt_gatt_client *gatt_client_new(struct gatt_db *db,
  	client->svc_chngd_queue = queue_new();
  	client->notify_list = queue_new();
  	client->notify_chrcs = queue_new();
