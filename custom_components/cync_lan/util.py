@@ -93,8 +93,13 @@ async def configure_environment(
     wifi_device_count = await hass.async_add_executor_job(
         _prepare_config_dir, config_dir
     )
-    os.environ["CYNC_ACCOUNT_USERNAME"] = username
-    os.environ["CYNC_ACCOUNT_PASSWORD"] = password
+    # Defensive: Cync's cloud API does strict email validation and rejects
+    # a trailing/leading space with a 400 ("[email] is not a email"). The
+    # config flow's schema is plain `str` with no trim validator, so
+    # whatever the browser/autofill submits (including stray whitespace)
+    # passed straight through to the API call unmodified before this.
+    os.environ["CYNC_ACCOUNT_USERNAME"] = username.strip()
+    os.environ["CYNC_ACCOUNT_PASSWORD"] = password.strip()
     os.environ.setdefault("CYNC_CONFIG_DIR", config_dir)
     os.environ.setdefault("CYNC_SECRET_KEY", await stable_secret(hass))
     # cync_lan.const's CYNC_BASE_DIR defaults to "/root/cync-lan" - a path
