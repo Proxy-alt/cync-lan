@@ -964,17 +964,253 @@ and has not been made.
 `0x49` `QueryHubFirmwareUpdates` is **deliberately not implemented**. Its
 reply is not a fixed record like the others: `HubFirmwareUpdatesNotification`
 reads a status byte and three 2-byte counters, then a variable-length list of
-per-device entries each carrying a 2-byte id and two 10-byte version strings.
-Getting the field order or the record stride wrong yields plausible-looking
-garbage rather than an obvious failure, and there is no capture to check a
-decoder against - so it stays documented rather than guessed at.
+per-device entries. A background-agent pass has since decoded the real parser
+class (`HubFirmwareUpdatesNotification.XlinkParser.mo14294a()`) - **confirmed
+via decompiled source, still not against a real packet capture**, so the
+distinction this doc otherwise draws between those two still applies:
+
+```
+[0..1]   updateCount    (u16 LE)
+[2..3]   u16 LE, read but discarded
+[4..5]   u16 LE, read but discarded
+[6]      status byte -> HubUpdateStatusType (0=NONE,1=CHECK_IN_PROGRESS,
+                         2=DOWNLOADING,3=UPGRADING,4=FAILED; raw 50/51 -> UNKNOWN)
+[7]      1 byte, discarded
+[8]      progress       (1 byte)
+if status==FAILED: stop here, entry list is empty
+else, entries loop while remaining bytes >= 27, each entry is 27 bytes:
+  +0     1 byte, discarded
+  +1..2  device id       (u16 LE, masked & 255 - only the low byte is ever used)
+  +3..12 currentVersion  (10 B, NUL-truncated ASCII)
+  +13..22 updateVersion  (10 B, NUL-truncated ASCII)
+  +23..26 4-byte int, discarded
+  id==0 -> hub's own entry (MeshAddress broadcast sentinel), buffered
+           separately and only merged in if exactly 2 such entries were
+           collected - otherwise dropped
+```
+
+27 = 1+2+10+10+4, matching the loop guard. Getting the field order or record
+stride wrong still yields plausible-looking garbage rather than an obvious
+failure - this correction lowers that risk but doesn't eliminate it, so `0x49`
+stays unimplemented in the codebase pending a real capture.
+
+**New, also unimplemented**: sending `0x49` is not one outbound packet but
+two. `QueryHubFirmwareUpdatesCommand.mo14023N()` sends the documented
+32-byte-zero `0x49` envelope, then immediately sends a second hub-envelope
+packet on a distinct outer op, **`0x8C`** (`XlinkCommandCode.HUB_PASSTHROUGH_8C`
+- a real, separate enum value from the `0x94`/`-108` entry that happens to be
+named identically elsewhere in the same file), carrying a fixed 12-byte
+payload: `00 00 01 00 00 01 00 EA 11 02 10 06`. The trailing 5 bytes are
+byte-for-byte `QueryWifiOtaUpdateStatusCommand`'s own opcode bytes (below) -
+embedded directly rather than sent through the normal `0x8E` mesh-relay
+wrapper. The leading 7 bytes' meaning is **not** determined from source -
+plausible only.
 
 The three firmware-*applying* commands (`0x4F` `StartHubFirmwareUpdates`,
 `StartWifiOtaUpdate`, `SetWifiOtaUpdateMode`) are **intentionally absent from
 the codebase entirely**, not merely unwired. Everywhere else in this family a
 wrong predicted `cmd_code` means the device ignores the packet; these flash
 firmware, where the same mistake has a much worse floor. They stay documented
-until someone confirms the envelope against a real packet capture.
+until someone confirms the envelope against a real packet capture - their
+envelopes, confirmed via decompiled source only:
+
+- **`0x4F` `StartHubFirmwareUpdatesCommand`**: 32-byte hub envelope, `0x00` +
+  (`{0x00,0x00}` if hub-only else `{0xFF,0xFF}`) - matches this doc's existing
+  entry. `0xFFFF` is plausibly the real `MeshAddress` broadcast value (already
+  documented elsewhere in this file as `65535`), not an arbitrary mode flag -
+  i.e. this field plausibly selects hub-only vs. all-devices by literal
+  target address. Reply: `HubFirmwareUpdateStatusNotification`, not decoded.
+- **`StartWifiOtaUpdateCommand`** and **`SetWifiOtaUpdateModeCommand`** are
+  *not* hub-envelope commands at all - both build a 5-byte Telink
+  opcode/vendor-id payload and send it through the documented `0x8E`
+  mesh-relay wrapper, targeted at the device's real `MeshAddress` (not
+  broadcast): `StartWifiOtaUpdateCommand` = `F7 11 02 0D 01`,
+  `SetWifiOtaUpdateModeCommand` = `F7 11 02 0C` + `[mode byte]`. Same family:
+  `QueryWifiOtaUpdateStatusCommand` = `EA 11 02 10 06` (the payload embedded
+  in the hidden `0x8C` packet above). All three share the same `F7`/`EA`
+  opcode + `11 02` Telink vendor-id prefix already documented for
+  `query_device_time`'s `E8 11 02 10`.
+
+### Firmware OTA delivery is a separate REST subsystem, not a mesh opcode at all
+
+A live, real-account test (2026-08-30, one real WIFI-type device) confirmed
+the actual path this project would need to elicit/capture an OTA image is
+**not** any of the above at all. See
+[cloud_independence_research.md](cloud_independence_research.md)'s firmware
+OTA section for the full trace: a REST call
+(`POST /upgrade/firmware/check/{deviceId}/geapp`) that returns a direct
+download URL/MD5/size, already implemented read-only in
+`cloud_api.py`'s `check_firmware_update()`/`capture_firmware()` - gated behind
+a device "subscription" state that turns out to be a live TCP/XLink artifact
+(`XlinkAgent.subscribeDevice()`, a packet sent over an open session to
+`cm.gelighting.com:23779` during WiFi commissioning), not something a REST
+call alone can satisfy. The `0x49`/`0x8C`/`0x4F` mesh opcodes above are a
+separate, hub-mediated subsystem whose relationship to the REST path (same
+underlying check surfaced two ways, or two independent OTA subsystems) has
+not been traced.
+
+### `F6 11 02 04` / `F6 11 02 03` — query a device's live subKey/accessKey
+
+Follow-up static research (2026-08-31) into the OTA "subscription" blocker (see
+[cloud_independence_research.md](cloud_independence_research.md)'s Finding 9)
+turned up a **confirmed-via-decompiled-source** pair of Telink mesh commands
+that were not on this doc's radar before: `QueryWifiStatusAndKeysCommand`
+(opcode bytes `{-10, 17, 2, 4}` = `F6 11 02 04`) and
+`QueryWifiStatusRouterAndKeysCommand` (`{-10, 17, 2, 3}` = `F6 11 02 03`) -
+same `11 02` Telink vendor-id prefix already documented for `E8 11 02 10`/
+`F7 11 02 0D`/`0C` above. Both are sent via
+`TelinkCommandDelegate.mo14046d(opcodeBytes, meshAddress, 0, continuation)` -
+**targeted at a real `MeshAddress`, not broadcast** - unlike this project's own
+still-broadcast-only `0x49`/`0x4B`/etc. self-addressed commands. As with those,
+the same caution this project has learned the hard way elsewhere applies: these
+bytes are the *inner* Telink opcode as declared on the command class itself,
+not independently confirmed as what actually goes out on the wire or as
+whatever outer op_code wraps it for transport - plausible pending a real
+capture, same caveat as every other opcode in this file that hasn't been
+hardware-tested.
+
+The reply, `WifiConnectionAndKeysStatusNotification`, arrives as a Telink
+*multipart* notification (`TelinkWifiMultipartNotificationJoiner.mo14291c()`,
+subtype byte `0x83`/`0x84`) and is fully decoded there - **confirmed via
+decompiled source**:
+
+```
+[1]      connection status byte -> WifiConnectionStatus enum
+[3..8]   wifiMacAddress   (6 B, colon-joined hex string)
+[10..13] subKey           (4 B, big-endian on the wire - decoded via a
+                            byte-reversal into Utilities.m13395d()'s
+                            little-endian reader)
+[15..18] accessKey        (4 B, same big-endian-on-wire / reversed-to-decode
+                            treatment as subKey)
+```
+
+Bytes 0, 2, 9, 14 are unused/reserved gaps in this layout - not zeroed or
+explained in source, just skipped by the field ranges above.
+
+**Why this matters**: `cloud_independence_research.md`'s Finding 8 established
+that a device's `subKey`/`accessKey` - needed to send the *cloud* TCP
+`subscriptionDevice()` packet at `cm.gelighting.com:23779` - are handed to the
+phone once, during WiFi commissioning, with no REST path to recover them
+afterward. This command is a **third channel** neither REST nor the
+commissioning-time handoff: a live mesh query, sent over the exact same
+unauthenticated relay channel this doc's own Finding 1 (in the research doc)
+already established has no meaningful per-device auth. If cync-lan's local TCP
+server stands in for that relay for an already-paired device the way it
+already does for ordinary control traffic, sending this opcode to the real
+device and decoding the reply per the layout above is - on paper - a way to
+recover a device's current `subKey`/`accessKey` without touching Cync's cloud
+at all. **Not yet attempted against real hardware.** It does not by itself
+solve the OTA-subscribe problem: having the keys still leaves the actual
+cloud-side "mark this device subscribed" bookkeeping unsolved, which is a
+property of Cync's own relay server, not something a local query can fake.
+
+**Update, 2026-08-31**: the OTA-subscribe problem this opcode was aimed at got solved a different
+way - see [cloud_independence_research.md](cloud_independence_research.md)'s Finding 11. The app's
+own live session already had a real `accessKey` cached in memory (from ordinary login, not this
+opcode), which was enough to send a real, confirmed-successful subscribe packet directly. This
+opcode may still be useful for a device the current app session hasn't already cached keys for,
+but it's no longer the load-bearing piece it looked like when this section was written.
+
+**This opcode was tried against real hardware, later the same day** - a genuinely mixed result,
+recorded precisely rather than rounded up or down. Sent via `XlinkAgent.sendPipeData(device, [F6 11
+02 04], 0, listener)` (bypassing the `DeviceService`/`DeviceController` layer the app's own debug
+menu uses for this - see the `QueryWifiStatusAndKeysCommand` attempt above; `sendPipeData` uses the
+same `XDeviceManage` device lookup `subscribeDevice()` already proved works). **Confirmed sent**:
+`73 00 00 00 0b 10 d0 97 8b 76 45 00 f6 11 02 04` - the device's own `deviceId` (`10 d0 97 8b`,
+matching the same field confirmed elsewhere in this file), a 2-byte msgId (`76 45` = `30277`,
+exactly matching `sendPipeData()`'s own return value - confirms the SDK returns the msgId it just
+assigned), a `00` channel byte, then the raw opcode. **Confirmed acknowledged**: `7b 00 00 00 07 10
+d0 97 8b 76 45 00` arrived ~150ms later - same deviceId and msgId echoed back, `type=7`'s
+already-documented response-header shape (`0x7B`, marker OR'd with response bit). This is a
+simpler, unwrapped pipe-frame shape - `[deviceId][msgId][channel][raw opcode bytes]`, no `0x7E`
+HDLC bracketing - distinct from the `SetPowerStateCommand` capture elsewhere in this file, which
+goes through the full `DeviceCommand`/`DeviceController` path and gets wrapped in that bracketed
+envelope. **Not confirmed**: no `WifiConnectionAndKeysStatusNotification`-shaped reply (or anything
+resembling one) appeared for this device in several seconds of capture after the ack, despite the
+capture continuing to show dozens of other devices' ordinary status frames throughout that same
+window - so the capture pipeline itself was demonstrably still working. Plausible reads, neither
+confirmed: the device may need the opcode delivered through the proper mesh-relay (`0x8E`)
+envelope rather than a bare `sendPipeData()` payload for its Telink stack to recognize it as this
+specific query, or this particular device/firmware may simply not implement this query at all
+despite the SDK declaring it generically. Left here - the send format is now real and confirmed,
+the reply is not.
+
+**Follow-up attempt, same day**: tried to invoke `QueryWifiStatusAndKeysCommand` directly via
+Frida against the same emulator session as Finding 11, the same way `subscribeDevice()` was
+called directly. Confirmed along the way: the actual runtime method names in the installed app
+differ from what's in the decompiled sources checked into this project (`DeviceServiceDefault`'s
+`mo13784p` is `X` at runtime; `MacAddressKt`'s `m13563b` is `b`) - R8 renumbers on every build, not
+just every JADX pass, so a name recovered from one decompile of one APK build is not guaranteed to
+match a different build's installed bytecode. Worked around by reflecting the live class
+(`getDeclaredMethods()`) to recover the real names, and by using `ConnectionType.valueOf` logic
+indirectly (enum constant *names* survive obfuscation even when static field names don't - field
+`d` held `WIFI` here, confirmed by declaration order matching `ROUTING, BLE, BLE_PROXY, WIFI,
+WIFI_PROXY`). The call itself then executed synchronously and threw a real, structured
+`DeviceNotFoundException: Device 78:6D:EB:33:5B:46 not found` - this specific service layer
+(`DeviceServiceDefault`/`DeviceController`, the one the app's own debug menu uses) tracks devices
+by a registry `subscribeDevice()`'s lower-level `XDeviceManage` lookup doesn't share; scanning the
+live heap found 1,697 `DeviceId` objects and none matched this device or even shared its vendor
+MAC prefix - whatever populates that registry, ordinary login/polling in this emulator session
+never did. **Not resolved** - would need the app in a state (a Location/room screen actually
+opened, most likely) this test never reached. Stopped here rather than keep guessing at app state.
+
+### New frame types and structural details, from the same live capture
+
+Also from the Finding 11 emulator capture, unrelated to the subscribe investigation itself -
+things about the wire format this project didn't have real bytes for before. All **confirmed via
+live capture**, decoded from an actual device toggle (on then off) and the app's ordinary
+background polling.
+
+**The first 4 bytes of every `0x7`-type (pipe/relay) and `0x8`-type payload are the target
+device's own `deviceId`, big-endian.** Confirmed exactly: this account's real device has
+`deviceId=282105739` (decimal, from its own account record) = `0x10D0978B` - byte-for-byte the
+`10 d0 97 8b` prefix on every single pipe/relay frame captured for it, both directions. Not
+previously documented anywhere in this file.
+
+**The real `SetPowerStateCommand` (`D0 11 02`, per the command catalogue) toggle bytes,
+captured live** - a device toggled on then off from the real app UI, ~2 seconds apart:
+
+```
+ON:  73 00 00 00 1f 10 d0 97 8b 49 41 00 7e 06 00 00 00 f8 d0 0d 00 06 00 00 00 00 0f 80 d0 11 02 01 00 00 56 7e
+OFF: 73 00 00 00 1f 10 d0 97 8b 49 43 00 7e 07 00 00 00 f8 d0 0d 00 07 00 00 00 00 0f 80 d0 11 02 00 00 00 56 7e
+```
+
+The `D0 11 02` mesh opcode itself matches the command catalogue exactly, and the only content
+byte that differs between the two captures is the one immediately after it - `01` (on) vs `00`
+(off) - exactly as expected. The bytes around it (a per-request sequence counter that increments
+between the two calls, an `0x7e`-bracketed inner section, an `f8` marker matching the `f8`/`f9`
+request/response pairing seen elsewhere in this project's captures) are visible and consistent
+between both captures but **not fully mapped** in this pass - flagging the visible structure
+rather than guessing at field boundaries this description isn't confident in.
+
+**A new, previously-undocumented `0x8`-type outer frame** - a status broadcast, not a
+request/response pair (all 6 sightings were server-to-app, none had a matching client request).
+Fired three times in quick succession right after the device-off toggle above, for three
+*different* devices sharing a room/group with the one actually toggled - each carrying a `DB 11 02
+01`-shaped status payload (this project's already-documented status-notification opcode) inside
+the same `deviceId`-prefixed, `0x7e`-bracketed envelope as the pipe/relay frames. Plausible reading:
+this is how the relay pushes "something else in your room just changed" without the app having
+asked - **not independently confirmed**, inferred from the timing and payload shape alone.
+
+**One frame that doesn't map to anything in the command catalogue at all**, seen 3 times over ~35
+minutes of otherwise-ordinary app activity - a `0xA`-type response (same outer type as the
+per-device liveness probe already documented in Finding 11) whose payload contains the literal
+ASCII string `xlink_dev`, followed by what look like eight `(u16, u16)` pairs incrementing 0
+through 7 in the first slot. Real bytes: `10 d0 97 8b [msgid] 00 07 00 09 78 6c 69 6e 6b 5f 64 65
+76 00 00 01 00 01 00 01 00 02 00 01 00 03 00 01 00 04 00 01 00 05 00 01 00 06 00 01 00 07 00 01
+00`. Plausible guess: some kind of capability/feature-version table the relay reports about
+itself - **genuinely not understood**, flagged here only so a future pass with more captures
+doesn't have to rediscover it from scratch.
+
+**The outer-frame response-header nibble rule, resolved with real volume**: Finding 11 flagged
+`0x18` (type 1 response) and `0x9B` (type 9 response) as disagreeing about whether the response bit
+ORs with the `3` marker or replaces it, with too little data to tell which rule was type-specific.
+This capture has hundreds of samples of several types answering that cleanly: **types `1`, `10`,
+and `13` use a mutually-exclusive low nibble** (`3` for a request, `8` for a response - confirmed
+across 3, 750+546, and 14+14 samples respectively) - **while types `7` and `9` OR the response bit
+into the marker** (`3` for a request, `B` for a response - confirmed across 188+208 samples for
+type `7`, and the one subscribe request/reply pair for type `9`). Not yet understood *why* the
+split falls where it does, but the split itself is no longer a two-data-point guess.
 
 ### The two write commands
 
