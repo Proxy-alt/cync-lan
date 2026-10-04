@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -23,8 +24,29 @@ if TYPE_CHECKING:
     from cync_lan.structs import EntityState
 
 
-def build_device_info(entry_id: str, node: "CyncDevice") -> DeviceInfo:
-    """devices (gold): every entity belongs to a proper HA device entry."""
+# HA deprecated DeviceInfo's via_device (a (domain, id) tuple) in favour of
+# via_device_id (the registry id), removal 2027.8. Older cores only know the former.
+_HAS_VIA_DEVICE_ID = "via_device_id" in getattr(DeviceInfo, "__annotations__", {})
+
+
+def _bridge_device_id(hass: Optional[HomeAssistant], entry_id: str) -> Optional[str]:
+    if hass is None or not _HAS_VIA_DEVICE_ID:
+        return None
+    try:
+        device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry_id)})
+    except Exception:  # noqa: BLE001 - fall back to the legacy tuple
+        return None
+    return device.id if device else None
+
+
+def build_device_info(
+    entry_id: str, node: "CyncDevice", hass: Optional[HomeAssistant] = None
+) -> DeviceInfo:
+    """devices (gold): every entity belongs to a proper HA device entry.
+
+    Pass hass so the bridge link can use via_device_id on cores that deprecate
+    via_device; the bridge device must already be registered (see
+    async_setup_entry)."""
     unique_id = f"{entry_id}_{node.id}"
     connections = {("bluetooth", node.mac.casefold())} if node.mac else set()
     if not node.bt_only and node.wifi_mac:
@@ -32,15 +54,19 @@ def build_device_info(entry_id: str, node: "CyncDevice") -> DeviceInfo:
     model = "Unknown"
     if node.metadata is not None:
         model = node.metadata.model_string
-    return DeviceInfo(
+    info = DeviceInfo(
         identifiers={(DOMAIN, unique_id)},
         connections=connections,
         manufacturer=MANUFACTURER,
         name=node.name,
         model=model,
         sw_version=node.version_str,
-        via_device=(DOMAIN, entry_id),
     )
+    if bridge_id := _bridge_device_id(hass, entry_id):
+        info["via_device_id"] = bridge_id  # type: ignore[typeddict-unknown-key]
+    else:
+        info["via_device"] = (DOMAIN, entry_id)
+    return info
 
 
 class CyncLanEntity(Entity):
@@ -72,7 +98,9 @@ class CyncLanEntity(Entity):
             f"_{sub_id}" if sub_id else ""
         ) + unique_id_suffix
         self._attr_unique_id = self._unique_id
-        self._attr_device_info = build_device_info(entry_id, node)
+        self._attr_device_info = build_device_info(
+            entry_id, node, getattr(bridge, "hass", None)
+        )
 
     @property
     def available(self) -> bool:
