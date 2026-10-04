@@ -24,6 +24,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
+from cync_lan.cloud_api import CyncCloudAPI
+
 from .bridge import CyncLanBridge
 from .const import (
     CONF_ENABLE_EXPERIMENTAL,
@@ -363,8 +365,6 @@ class CyncLanLastFirmwareSensor(SensorEntity):
     @property
     def _capture(self) -> Optional[dict[str, Any]]:
         try:
-            from cync_lan.cloud_api import CyncCloudAPI
-
             # shared(), not CyncCloudAPI(): this reads what the server's
             # periodic firmware check captured, so it has to be the same
             # client that did the capturing. Bare construction returned that

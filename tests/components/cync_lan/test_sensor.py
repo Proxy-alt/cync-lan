@@ -555,7 +555,7 @@ def test_last_firmware_sensor_reports_nothing_before_a_release_lands():
     """Months of "None" is the expected steady state, not a fault - GE
     publishes rarely. It must not look broken while waiting."""
     sensor = _firmware_sensor()
-    with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
+    with patch("custom_components.cync_lan.sensor.CyncCloudAPI") as api:
         api.shared.return_value.last_firmware_capture = None
         assert sensor.native_value is None
         assert sensor.extra_state_attributes == {"captured": False}
@@ -577,7 +577,7 @@ def test_last_firmware_sensor_reports_the_version_so_state_changes_once():
         "captured_at": "2026-08-04T05:00:00+00:00",
         "url": "https://example.invalid/fw.bin",
     }
-    with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
+    with patch("custom_components.cync_lan.sensor.CyncCloudAPI") as api:
         api.shared.return_value.last_firmware_capture = capture
         assert sensor.native_value == "1234"
         attrs = sensor.extra_state_attributes
@@ -591,7 +591,7 @@ def test_last_firmware_sensor_surfaces_a_verification_mismatch():
     """An image that does not match what the cloud advertised is a finding,
     not something to hide behind a happy-looking state."""
     sensor = _firmware_sensor()
-    with patch("cync_lan.cloud_api.CyncCloudAPI") as api:
+    with patch("custom_components.cync_lan.sensor.CyncCloudAPI") as api:
         api.shared.return_value.last_firmware_capture = {
             "target_version": "9",
             "md5_matches": False,
