@@ -17,6 +17,7 @@ from custom_components.cync_lan.services import (
     SERVICE_DELETE_SCENE,
     SERVICE_DELETE_SCHEDULE,
     SERVICE_EXECUTE_SCENE,
+    SERVICE_IDENTIFY_RAW_DEVICE,
     SERVICE_PUSH_AUTOMATION_TO_HARDWARE,
     SERVICE_QUERY_MESH_CREDENTIALS,
     SERVICE_REMOVE_DEVICE_FROM_SCENE,
@@ -156,12 +157,13 @@ def _make_entry(hass, dev_ids: list[int] = ()):
     return entry
 
 
-async def test_setup_registers_all_fifteen_services(hass):
+async def test_setup_registers_all_sixteen_services(hass):
     async_setup_services(hass)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_INDICATOR_LED)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SETTINGS)
     assert hass.services.has_service(DOMAIN, SERVICE_EXECUTE_SCENE)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_GROUP_POWER)
+    assert hass.services.has_service(DOMAIN, SERVICE_IDENTIFY_RAW_DEVICE)
     assert hass.services.has_service(DOMAIN, SERVICE_SET_MOTION_SENSOR_SCHEDULE)
     assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCENE)
     assert hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE)
@@ -466,6 +468,71 @@ async def test_set_group_power_raises_for_unknown_device_id(hass):
             DOMAIN,
             SERVICE_SET_GROUP_POWER,
             {"device_id": "does-not-exist", "group_id": 32770, "state": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_identify_raw_device_requires_bridge_device(hass):
+    """Same shape as set_group_power: a raw mesh address has no CyncDevice
+    behind it by definition, so this must target the bridge device."""
+    entry = _make_entry(hass, dev_ids=[5])
+    device = _register_device(hass, entry, 5)
+    async_setup_services(hass)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IDENTIFY_RAW_DEVICE,
+            {"device_id": device.id, "raw_dev_id": 183, "state": True},
+            blocking=True,
+        )
+    async_unload_services(hass)
+
+
+async def test_identify_raw_device_calls_identify_raw_device_with_bridge_device(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.identify_raw_device", new=AsyncMock()
+    ) as mock_identify_raw_device:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IDENTIFY_RAW_DEVICE,
+            {"device_id": bridge_device.id, "raw_dev_id": 183, "state": True},
+            blocking=True,
+        )
+    mock_identify_raw_device.assert_awaited_once_with(183, on=True)
+    async_unload_services(hass)
+
+
+async def test_identify_raw_device_maps_state_off(hass):
+    entry = _make_entry(hass)
+    bridge_device = _register_bridge_device(hass, entry)
+    async_setup_services(hass)
+
+    with patch(
+        "cync_lan.devices.identify_raw_device", new=AsyncMock()
+    ) as mock_identify_raw_device:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IDENTIFY_RAW_DEVICE,
+            {"device_id": bridge_device.id, "raw_dev_id": 183, "state": False},
+            blocking=True,
+        )
+    mock_identify_raw_device.assert_awaited_once_with(183, on=False)
+    async_unload_services(hass)
+
+
+async def test_identify_raw_device_raises_for_unknown_device_id(hass):
+    async_setup_services(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IDENTIFY_RAW_DEVICE,
+            {"device_id": "does-not-exist", "raw_dev_id": 183, "state": True},
             blocking=True,
         )
     async_unload_services(hass)

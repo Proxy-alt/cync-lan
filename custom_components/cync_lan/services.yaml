@@ -102,6 +102,23 @@ experimental_set_group_power:
       required: true
       selector:
         boolean: null
+experimental_identify_raw_device:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: cync_lan
+    raw_dev_id:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255
+    state:
+      required: true
+      selector:
+        boolean: null
 experimental_set_motion_sensor_schedule:
   fields:
     device_id:

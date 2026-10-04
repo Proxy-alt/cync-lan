@@ -66,6 +66,7 @@ SERVICE_SET_MULTICOLOR_GRADIENT_MODE = "experimental_set_multicolor_gradient_mod
 SERVICE_SET_MULTICOLOR_SEGMENT_COUNT = "experimental_set_multicolor_segment_count"
 SERVICE_SET_MULTICOLOR_SEGMENTS = "experimental_set_multicolor_segments"
 SERVICE_QUERY_MESH_CREDENTIALS = "experimental_query_mesh_credentials"
+SERVICE_IDENTIFY_RAW_DEVICE = "experimental_identify_raw_device"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_MODE = "mode"
@@ -97,6 +98,7 @@ ATTR_SEGMENT_1_POSITION = "segment_1_position"
 ATTR_SEGMENT_1_RGB = "segment_1_rgb"
 ATTR_SEGMENT_2_POSITION = "segment_2_position"
 ATTR_SEGMENT_2_RGB = "segment_2_rgb"
+ATTR_RAW_DEV_ID = "raw_dev_id"
 
 # Day-of-week bitmask - AddAutomationHubCommand.java's WriteBuffer field
 # (see cync_lan.devices.add_automation's docstring): Sunday=bit0 through
@@ -232,6 +234,18 @@ async def _handle_set_group_power(hass: HomeAssistant, call: ServiceCall) -> Non
     await set_group_power(
         call.data[ATTR_GROUP_ID], 1 if call.data[ATTR_STATE] else 0
     )
+
+
+async def _handle_identify_raw_device(hass: HomeAssistant, call: ServiceCall) -> None:
+    from cync_lan.devices import identify_raw_device
+
+    # Same reason as _handle_set_group_power/_handle_execute_scene: this
+    # targets a raw MeshAddress with no CyncDevice behind it (that's the
+    # whole point - a device on the physical mesh that isn't in the account,
+    # so _resolve_device would just fail), so the only thing device_id can
+    # usefully confirm is that the bridge/entry is loaded at all.
+    _resolve_bridge_entry(hass, call.data[ATTR_DEVICE_ID])
+    await identify_raw_device(call.data[ATTR_RAW_DEV_ID], on=call.data[ATTR_STATE])
 
 
 async def _handle_set_motion_sensor_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -707,6 +721,13 @@ _SERVICE_SCHEMAS = {
             vol.Required(ATTR_STATE): cv.boolean,
         }
     ),
+    SERVICE_IDENTIFY_RAW_DEVICE: vol.Schema(
+        {
+            vol.Required(ATTR_DEVICE_ID): cv.string,
+            vol.Required(ATTR_RAW_DEV_ID): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+            vol.Required(ATTR_STATE): cv.boolean,
+        }
+    ),
     SERVICE_SET_MOTION_SENSOR_SCHEDULE: vol.Schema(
         {
             vol.Required(ATTR_DEVICE_ID): cv.string,
@@ -826,6 +847,7 @@ _HANDLERS: dict[
     SERVICE_SET_MOTION_SENSOR_SETTINGS: _handle_set_motion_sensor_settings,
     SERVICE_EXECUTE_SCENE: _handle_execute_scene,
     SERVICE_SET_GROUP_POWER: _handle_set_group_power,
+    SERVICE_IDENTIFY_RAW_DEVICE: _handle_identify_raw_device,
     SERVICE_SET_MOTION_SENSOR_SCHEDULE: _handle_set_motion_sensor_schedule,
     SERVICE_DELETE_SCENE: _handle_delete_scene,
     SERVICE_DELETE_SCHEDULE: _handle_delete_schedule,
