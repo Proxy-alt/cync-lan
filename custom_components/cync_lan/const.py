@@ -88,3 +88,11 @@ FADE_OPTIONS = {
     "20_minutes": 6,
     "30_minutes": 7,
 }
+
+
+# Battery wire-free switches. They have no separate button-press protocol: a press
+# arrives as the same "recently active" flag a motion sensor uses (confirmed by a
+# real capture, dev_id 34: flag went 1 then back to 0 about 19s after a press). So
+# a press is "the flag was reported set", and which button or how it was pressed
+# is not in the packet.
+WIRE_FREE_SWITCH_TYPES = frozenset({112})

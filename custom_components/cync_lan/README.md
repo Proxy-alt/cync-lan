@@ -170,6 +170,16 @@ Supported entity types in this integration specifically:
 - **Binary sensor** - standalone motion/occupancy sensor accessories, and a
   secondary motion entity on light/switch models with a built-in occupancy
   sensor.
+- **Event** - one discrete trigger per wire-free switch press ("Pressed") and
+  per new motion detection ("Motion detected"), alongside the binary sensor
+  above: use the event for "do this once when it happens" automations and the
+  binary sensor for "while motion is detected". The wire-free switch sends no
+  button-press packet of its own, so the event cannot say *which* button or
+  whether it was a double or long press - a press is the same "recently
+  active" report a motion sensor uses. Duplicates relayed through several
+  bridges within two seconds collapse into one event. Whether a second press
+  inside the first one's ~19 s window is reported again has not been
+  confirmed on hardware.
 - **Select, Number, Switch (config)** - indicator-LED mode, color,
   brightness, and blink-on-WiFi-disconnect, one config entity per device.
   Confirmed working on real hardware. These are write-only (the device

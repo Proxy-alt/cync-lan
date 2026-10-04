@@ -46,6 +46,12 @@ def signal_entity_update(unique_id: str) -> str:
     return f"{DOMAIN}_update_{unique_id}"
 
 
+def signal_trigger_event(entry_id: str, dev_id: int) -> str:
+    """Dispatcher signal for a motion/button trigger report from one device.
+    Carries the previous motion state so a listener can pick edge vs. level."""
+    return f"{DOMAIN}_trigger_{entry_id}_{dev_id}"
+
+
 def signal_device_online(dev_id: int) -> str:
     """Dispatcher signal name for a device's availability changing."""
     return f"{DOMAIN}_online_{dev_id}"
@@ -266,11 +272,16 @@ class CyncLanBridge:
         self, node: "CyncDevice", motion: bool, from_pkt: Optional[str] = None
     ) -> bool:
         bucket = self._get(node.id)
+        previous = bucket.motion
         bucket.motion = motion
         self._set_online(node.id, True)
         async_dispatcher_send(
             self.hass, signal_entity_update(self._entity_unique_id(node.id, 0))
         )
+        if motion:
+            async_dispatcher_send(
+                self.hass, signal_trigger_event(self.entry_id, node.id), previous
+            )
         return True
 
     async def pub_online(self, device_id: int, status: bool) -> bool:

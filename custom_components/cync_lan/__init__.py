@@ -68,6 +68,7 @@ PLATFORMS = [
     # Platform.BUTTON: UI entry points for the experimental actions, created
     # only when the experimental option is on - see button.py.
     Platform.BUTTON,
+    Platform.EVENT,
     Platform.FAN,
     Platform.LIGHT,
     Platform.NUMBER,

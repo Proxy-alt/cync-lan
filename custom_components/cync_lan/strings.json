@@ -295,6 +295,28 @@
       "indicator_led_light": {
         "name": "Indicator ring"
       }
+    },
+    "event": {
+      "motion": {
+        "name": "Motion",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "motion_detected": "Motion detected"
+            }
+          }
+        }
+      },
+      "button": {
+        "name": "Button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
+            }
+          }
+        }
+      }
     }
   },
   "exceptions": {
