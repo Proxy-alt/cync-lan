@@ -9,6 +9,33 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.15.0
+
+**Requires cync-lan 0.16.1.** Capture logs stop eating the disk, and two
+Home Assistant warnings go away.
+
+**New experimental action: `cync_lan.experimental_identify_raw_device`.** Makes
+a raw mesh address flash/announce itself, for a device that is on the mesh but
+not in your Cync export - the kind that shows up as
+`dev_id=NNN name='(not in local config)'` in `unsupported_devices.log`. Pick the
+bridge device, give it the raw mesh ID (0-255) and on or off. The device keeps
+announcing until you send off. Same command and confirmation status as the
+identify button on known devices.
+
+**Capture logs are bounded.** The library kept every rotated capture log
+forever; the MITM logs in particular could reach many gigabytes (one install had
+10 GB across 5,000 files). Fourteen days are kept now, in the new library
+release. Files already on disk are pruned the next time a device connects.
+
+**Home Assistant 2026.9 deprecation warnings.** Devices linked themselves to
+the bridge with `via_device`, which HA deprecated (removal 2027.8) and logged 21
+times per start. The bridge device is now registered before the platforms load
+and devices link by `via_device_id`; older cores keep the previous link.
+
+**No more blocking-call warning from the firmware sensor.** The sensor imported
+the cloud client lazily on first state read, on the event loop; it now imports at
+module level.
+
 ### 2.14.0
 
 **Group entities merged with the experimental group-power switch. Groups of

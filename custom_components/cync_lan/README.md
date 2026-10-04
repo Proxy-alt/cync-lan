@@ -362,6 +362,7 @@ caveats. They appear only when the option above is enabled.
 | `set_motion_sensor_settings` | Tune a motion/ambient-light sensor's sensitivity and timing. |
 | `execute_scene` | Activate a saved Cync scene. |
 | `set_group_power` | Turn a Cync device group on or off as one command. |
+| `identify_raw_device` | Make a raw mesh address announce itself (flash) so you can find it physically - for a device that answers on the mesh but isn't in your Cync export, e.g. an unknown `dev_id` in `unsupported_devices.log`. The address is the raw mesh ID (0-255), not anything the Cync app shows. |
 | `set_motion_sensor_schedule` | Write one slot of a device's native motion-sensor schedule. |
 | `delete_scene` | Delete a saved Cync scene. |
 | `query_mesh_credentials` | Return the BTLE mesh name and password as action response data. |
