@@ -22,6 +22,17 @@ async def test_configure_environment_sets_expected_env_vars(hass, tmp_path):
     assert os.path.isdir(os.environ["CYNC_CONFIG_DIR"])
 
 
+async def test_configure_environment_strips_the_email_but_not_the_password(
+    hass, tmp_path
+):
+    """#46: the vendor 400s on an email with a stray space. A password may
+    legitimately end in one, so it is passed through untouched."""
+    with patch.object(hass.config, "path", return_value=str(tmp_path / "cync_lan")):
+        await configure_environment(hass, " user@example.com \n", "hunter2 ")
+    assert os.environ["CYNC_ACCOUNT_USERNAME"] == "user@example.com"
+    assert os.environ["CYNC_ACCOUNT_PASSWORD"] == "hunter2 "
+
+
 def test_count_wifi_devices_missing_file_returns_zero(tmp_path):
     assert _count_wifi_devices(tmp_path / "does_not_exist.yaml") == 0
 

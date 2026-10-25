@@ -156,7 +156,9 @@ class CyncLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._username = user_input[CONF_ACCOUNT_USERNAME]
+            # Stripped here so the entry and its unique_id are clean too;
+            # configure_environment() also strips, for entries saved before.
+            self._username = user_input[CONF_ACCOUNT_USERNAME].strip()
             self._password = user_input[CONF_ACCOUNT_PASSWORD]
 
             # unique-config-entry: one HA instance, one Cync account (see
