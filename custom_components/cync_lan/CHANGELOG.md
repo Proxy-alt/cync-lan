@@ -9,6 +9,44 @@ Docker/MQTT add-on's own version scheme - all three are versioned and
 released separately, even though this integration depends on `cync-lan` to
 do the actual protocol work.
 
+### 2.15.1
+
+**Requires cync-lan 0.16.2.** The library fixes in it are the main reason to
+update:
+
+- **Dropped devices go offline straight away.** When a Wi-Fi device reset its
+  connection, it stayed "available" with stale state for seconds to about 40
+  minutes, and commands in that window went into a dead socket.
+- **Light groups no longer abort automations when a bridge drops.** Two
+  commands reaching a bridge that had just lost power raised
+  `AttributeError: 'NoneType' object has no attribute 'close'`. The command was
+  lost, and because the error was not a Home Assistant error,
+  `continue_on_error` could not catch it.
+- **Cloud passthrough keeps the Cync app working.** When a device disconnected,
+  its cloud connection stayed open, so the cloud kept sending app commands to a
+  device that was not there. They were lost, or arrived minutes later. The
+  first such command then logged "Error in cloud proxy: 'NoneType' object has
+  no attribute 'write'" and switched passthrough off for that device.
+- **Sign-in failures say why.** A rejected verification code used to log only
+  "400, Bad Request". The log now includes the Cync server's reason, such as
+  `password error (code 4001007)`.
+
+**A stray space in your email no longer breaks sign-in.** Password managers and
+autofill sometimes add one. Cync rejects that email with a 400, before any code
+is sent. The email is now trimmed. Your password is used exactly as typed,
+because spaces are legal in passwords.
+
+**New: event entities for wire-free switches and motion sensors.** One
+"Pressed" or "Motion detected" event per press or detection, alongside the
+existing binary sensors. Use the event for automations that should run once
+each time it happens. The wire-free switch sends no packet of its own for a
+press, so the event cannot tell which button was pressed, or whether it was a
+double or long press. Presses relayed through several bridges within two
+seconds count as one event.
+
+**The manifest no longer lists PyYAML.** Home Assistant already ships it, and
+hassfest rejects a custom integration that declares it.
+
 ### 2.15.0
 
 **Requires cync-lan 0.16.1.** Capture logs stop eating the disk, and two

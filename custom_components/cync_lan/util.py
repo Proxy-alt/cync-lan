@@ -93,7 +93,12 @@ async def configure_environment(
     wifi_device_count = await hass.async_add_executor_job(
         _prepare_config_dir, config_dir
     )
-    os.environ["CYNC_ACCOUNT_USERNAME"] = username
+    # The vendor rejects an email with a stray space - autofill adds them - as
+    # 400 "[email] is not a email" (Proxy-alt/cync-lan#46, @fireboy1919).
+    # The password is deliberately NOT stripped: a space is a legal password
+    # character, and cync_lan.cloud_api truncates it but never trims, with a
+    # test saying why.
+    os.environ["CYNC_ACCOUNT_USERNAME"] = username.strip()
     os.environ["CYNC_ACCOUNT_PASSWORD"] = password
     os.environ.setdefault("CYNC_CONFIG_DIR", config_dir)
     os.environ.setdefault("CYNC_SECRET_KEY", await stable_secret(hass))
