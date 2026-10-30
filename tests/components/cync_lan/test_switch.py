@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -423,6 +424,96 @@ async def test_schedule_switch_restores_last_state(hass):
         await entity.async_added_to_hass()
 
     assert entity.is_on is False
+
+
+async def test_schedule_switch_out_of_wire_range_id_raises_and_sends_nothing():
+    """toggle_automation()'s wire format carries scheduleId as uint16
+    (ToggleAutomationHubCommand.java). A schedule whose cloud-exported ID
+    falls outside 0-65535 used to flip optimistically in HA while the
+    library silently refused to send anything - part of the no-error,
+    nothing-executes failure reported in #55. Must raise instead, and must
+    not flip is_on."""
+    entity = CyncLanScheduleSwitch(
+        "entry1", 70000, 3, "Out of range", enabled=False
+    )
+    entity.async_write_ha_state = MagicMock()
+
+    with patch(
+        "cync_lan.devices.toggle_automation", new=AsyncMock()
+    ) as mock_toggle, pytest.raises(HomeAssistantError):
+        await entity.async_turn_on()
+
+    mock_toggle.assert_not_awaited()
+    assert entity.is_on is False
+
+
+async def test_schedule_switch_no_writable_session_raises_and_sends_nothing():
+    """An empty device pool transmits nothing (debug-logged inside the
+    library's broadcast path, success recorded in HA - issue #55). Must
+    raise rather than optimistically update."""
+    server = MagicMock()
+    server.get_dev_tcp_pool_sync.return_value = []
+    entity = CyncLanScheduleSwitch(
+        "entry1", 7, 3, "Weekday Morning", enabled=False, ncync_server=server
+    )
+    entity.async_write_ha_state = MagicMock()
+
+    with patch(
+        "cync_lan.devices.toggle_automation", new=AsyncMock()
+    ) as mock_toggle, pytest.raises(HomeAssistantError):
+        await entity.async_turn_on()
+
+    mock_toggle.assert_not_awaited()
+    assert entity.is_on is False
+
+
+async def test_schedule_switch_proceeds_when_a_session_can_carry_the_command():
+    server = MagicMock()
+    server.get_dev_tcp_pool_sync.return_value = [
+        SimpleNamespace(ready_to_control=True, observe_only=False)
+    ]
+    entity = CyncLanScheduleSwitch(
+        "entry1", 7, 3, "Weekday Morning", enabled=False, ncync_server=server
+    )
+    entity.async_write_ha_state = MagicMock()
+
+    with patch(
+        "cync_lan.devices.toggle_automation", new=AsyncMock()
+    ) as mock_toggle:
+        await entity.async_turn_on()
+
+    mock_toggle.assert_awaited_once_with(7, 3, True)
+    assert entity.is_on is True
+
+
+async def test_setup_entry_warns_but_still_registers_out_of_wire_range_schedule(
+    hass, caplog
+):
+    """Out-of-range schedules still register (the entity list mirrors the
+    account), but the registration must log that their toggle can never
+    reach hardware."""
+    g = SimpleNamespace()
+    g.ncync_server = MagicMock()
+    g.ncync_server.node_devices = {}
+
+    entry = MagicMock()
+    entry.entry_id = "entry1"
+    entry.options = {}
+    entry.runtime_data.bridge = CyncLanBridge(hass, "entry1")
+    entry.runtime_data.ncync_server = g.ncync_server
+    entry.runtime_data.schedules = {
+        7: {"name": "Weekday Morning", "scene_id": 3, "enabled": True},
+        70000: {"name": "Too Big", "scene_id": 3, "enabled": True},
+    }
+
+    added = []
+    with caplog.at_level(logging.WARNING, logger="custom_components.cync_lan.switch"):
+        await async_setup_entry(hass, entry, lambda entities: added.extend(entities))
+
+    schedule_switches = [e for e in added if isinstance(e, CyncLanScheduleSwitch)]
+    assert len(schedule_switches) == 2
+    assert "70000" in caplog.text
+    assert "Too Big" in caplog.text
 
 
 # ---------------------------------------------------------------------------

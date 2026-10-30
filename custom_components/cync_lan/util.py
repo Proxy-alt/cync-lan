@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
     from cync_lan.cloud_api import CyncCloudAPI
+    from cync_lan.server import nCyncServer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -346,3 +347,40 @@ async def stable_secret(hass: HomeAssistant) -> str:
     from homeassistant.helpers import instance_id
 
     return await instance_id.async_get(hass)
+
+
+def assert_broadcast_target_available(ncync_server: "nCyncServer") -> None:
+    """Raise HomeAssistantError when a home-wide broadcast command has no
+    device connection it could possibly go out through.
+
+    Scene activation (execute_scene) and schedule enable/disable
+    (toggle_automation) ride devices.py's broadcast_control_command(), which
+    returns False - logged at debug level only - when the device TCP pool is
+    empty or no session in it can accept a write, and fire-and-forget callers
+    discard that return value. Entities attached to the always-available
+    "Cync LAN Bridge" device have no availability signal for this state, so
+    without this check an activation records as successful in HA while
+    provably nothing was sent to any bulb - the silent failure shape
+    reported in issue #55.
+
+    The writability condition mirrors the write branch inside
+    broadcast_control_command() itself: a session only carries our commands
+    when it is ready_to_control and not in observe-only MITM capture mode
+    (observe_only is the lib's `mitm_mode and not passthrough` property - the
+    exact combination its own docs measured muting 21 of 46 live sessions).
+    Conservative by design: it only refuses when nothing could be written,
+    never when the send might work.
+    """
+    from homeassistant.exceptions import HomeAssistantError
+
+    pool = ncync_server.get_dev_tcp_pool_sync()
+    if any(
+        session.ready_to_control and not session.observe_only for session in pool
+    ):
+        return
+    raise HomeAssistantError(
+        "No Cync device currently has a connection that can carry this "
+        "command, so it would be silently dropped rather than sent. Wait "
+        "for devices to reconnect (they may still be connecting after a "
+        "restart) and try again."
+    )

@@ -8,6 +8,7 @@ mirrored by the exclusion here.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.group.switch import SwitchGroup
@@ -35,11 +36,21 @@ from .const import (
 )
 from .entity import CyncLanEntity, CyncLanIndicatorLedEntity
 from .groups import apply_group_member_visibility, wait_for_member_entities
+from .util import assert_broadcast_target_available
 
 if TYPE_CHECKING:
     from cync_lan.devices import CyncDevice
+    from cync_lan.server import nCyncServer
 
 PARALLEL_UPDATES = 0
+
+_LOGGER = logging.getLogger(__name__)
+
+# toggle_automation()'s wire format carries scheduleId as a uint16
+# (ToggleAutomationHubCommand.java's WriteBuffer write - docs/cync_automations.md).
+# Nothing outside 0-65535 can ever be transmitted: the library logs and returns
+# without sending, which HA-side looks identical to a successful toggle.
+_SCHEDULE_ID_MAX = 0xFFFF
 
 
 # Indicator-LED presentation: one form or the other, never both. All of these
@@ -91,6 +102,17 @@ async def async_setup_entry(
     # CyncLanScheduleSwitch's docstring.
     schedules = runtime_data.schedules or {}
     for schedule_id, schedule in schedules.items():
+        if not 0 <= schedule_id <= _SCHEDULE_ID_MAX:
+            _LOGGER.warning(
+                "Cync schedule '%s' (id %s) is outside the 0-%d schedule_id "
+                "range the toggle_automation wire command can carry; it will "
+                "register but its enable/disable toggle can never reach "
+                "hardware - toggling it will raise instead of silently doing "
+                "nothing",
+                schedule["name"],
+                schedule_id,
+                _SCHEDULE_ID_MAX,
+            )
         entities.append(
             CyncLanScheduleSwitch(
                 entry.entry_id,
@@ -98,6 +120,7 @@ async def async_setup_entry(
                 schedule["scene_id"],
                 schedule["name"],
                 schedule.get("enabled", True),
+                ncync_server=runtime_data.ncync_server,
             )
         )
     # Experimental-only switches. Gated like the experimental_* services -
@@ -493,17 +516,32 @@ class CyncLanScheduleSwitch(RestoreEntity, SwitchEntity):
     UNVALIDATED against a real populated export - see cloud_api.py's
     parse_schedules() docstring. toggle_automation() itself is also
     EXPERIMENTAL (predicted cmd_code, unresolved transport question) - see
-    docs/cync_automations.md.
+    docs/cync_automations.md. Its silent-refusal failure modes (schedule_id
+    outside the wire format's 0-65535; no device connection to broadcast
+    through) are checked here ahead of the call and raised, so a toggle
+    that cannot reach hardware errors in HA instead of flipping
+    optimistically - the no-error, nothing-executes failure reported in
+    issue #55.
     """
 
     _attr_should_poll = False
     _attr_assumed_state = True
 
     def __init__(
-        self, entry_id: str, schedule_id: int, scene_id: int, name: str, enabled: bool
+        self,
+        entry_id: str,
+        schedule_id: int,
+        scene_id: int,
+        name: str,
+        enabled: bool,
+        ncync_server: "nCyncServer | None" = None,
     ) -> None:
         self._schedule_id = schedule_id
         self._scene_id = scene_id
+        # Held only for the dispatch precondition check in _set_enabled -
+        # the toggle itself goes through the library's module-level
+        # toggle_automation(), which uses the GlobalObject singleton.
+        self._ncync_server = ncync_server
         self._attr_name = name
         self._attr_unique_id = f"{entry_id}_schedule_{schedule_id}"
         self._attr_device_info = DeviceInfo(
@@ -526,6 +564,17 @@ class CyncLanScheduleSwitch(RestoreEntity, SwitchEntity):
         await self._set_enabled(False)
 
     async def _set_enabled(self, enabled: bool) -> None:
+        # Preconditions toggle_automation() would otherwise silently fail
+        # under, checked before it so the optimistic flip below can never
+        # mask a provably-undelivered toggle (issue #55).
+        if not 0 <= self._schedule_id <= _SCHEDULE_ID_MAX:
+            raise HomeAssistantError(
+                f"Schedule id {self._schedule_id} is outside the "
+                f"0-{_SCHEDULE_ID_MAX} range the toggle_automation wire "
+                "command can carry; it cannot be dispatched to the mesh."
+            )
+        if self._ncync_server is not None:
+            assert_broadcast_target_available(self._ncync_server)
         from cync_lan.devices import toggle_automation
 
         await toggle_automation(self._schedule_id, self._scene_id, enabled)
